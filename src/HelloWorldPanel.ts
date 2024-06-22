@@ -43,7 +43,10 @@ function getWebviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
     enableScripts: true,
 
     // And restrict the webview to only loading content from our extension's `media` directory.
-    localResourceRoots: [vscode.Uri.joinPath(extensionUri, "media")],
+    localResourceRoots: [
+      vscode.Uri.joinPath(extensionUri, "media"),
+      vscode.Uri.joinPath(extensionUri, "out/compiled"),
+    ],
   };
 }
 
@@ -173,8 +176,8 @@ export class CatCodingPanel {
     // Local path to main script run in the webview
     const scriptPathOnDisk = vscode.Uri.joinPath(
       this._extensionUri,
-      "media",
-      "main.js"
+      "out/compiled",
+      "HelloWorld.js"
     );
 
     // And the uri we use to load this script in the webview
@@ -218,7 +221,8 @@ export class CatCodingPanel {
 				<title>Cat Coding</title>
 			</head>
 			<body>
-                <h1>🐈 Pedro2 🐈</h1>
+        Hey?
+        <h1>🐈 Pedro2 🐈</h1>
 				<img src="${catGifPath}" width="300" />
 				<h1 id="lines-of-code-counter">0</h1>
                 <button id="do-refactor">Do a refactor</button>
