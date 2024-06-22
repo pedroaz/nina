@@ -72,7 +72,6 @@ export class NinaPanel {
       this._disposables
     );
 
-    // Handle messages from the webview
     this._panel.webview.onDidReceiveMessage(
       (message) => {
         switch (message.command) {
@@ -160,6 +159,9 @@ export class NinaPanel {
 				<title>Cat Coding</title>
 			</head>
 			<body>
+        <script nonce="${nonce}"=>
+          const tsvscode = acquireVsCodeApi();
+        </script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 			</html>`;
