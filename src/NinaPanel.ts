@@ -1,48 +1,8 @@
 import * as vscode from "vscode";
 
-const cats = {
-  "Coding Cat": "https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif",
-  "Compiling Cat": "https://media.giphy.com/media/mlvseq9yvZhba/giphy.gif",
-  "Testing Cat": "https://media.giphy.com/media/3oriO0OEd9QIDdllqo/giphy.gif",
-};
-
-export function activate(context: vscode.ExtensionContext) {
-  context.subscriptions.push(
-    vscode.commands.registerCommand("catCoding.start", () => {
-      CatCodingPanel.createOrShow(context.extensionUri);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("catCoding.doRefactor", () => {
-      if (CatCodingPanel.currentPanel) {
-        CatCodingPanel.currentPanel.doRefactor();
-      }
-    })
-  );
-
-  if (vscode.window.registerWebviewPanelSerializer) {
-    // Make sure we register a serializer in activation event
-    vscode.window.registerWebviewPanelSerializer(CatCodingPanel.viewType, {
-      async deserializeWebviewPanel(
-        webviewPanel: vscode.WebviewPanel,
-        state: any
-      ) {
-        console.log(`Got state: ${state}`);
-        // Reset the webview options so we use latest uri for `localResourceRoots`.
-        webviewPanel.webview.options = getWebviewOptions(context.extensionUri);
-        CatCodingPanel.revive(webviewPanel, context.extensionUri);
-      },
-    });
-  }
-}
-
 function getWebviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
   return {
-    // Enable javascript in the webview
     enableScripts: true,
-
-    // And restrict the webview to only loading content from our extension's `media` directory.
     localResourceRoots: [
       vscode.Uri.joinPath(extensionUri, "media"),
       vscode.Uri.joinPath(extensionUri, "out/compiled"),
@@ -50,16 +10,10 @@ function getWebviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
   };
 }
 
-/**
- * Manages cat coding webview panels
- */
-export class CatCodingPanel {
-  /**
-   * Track the currently panel. Only allow a single panel to exist at a time.
-   */
-  public static currentPanel: CatCodingPanel | undefined;
+export class NinaPanel {
+  public static currentPanel: NinaPanel | undefined;
 
-  public static readonly viewType = "catCoding";
+  public static readonly viewType = "nina-diagrams";
 
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
@@ -71,24 +25,24 @@ export class CatCodingPanel {
       : undefined;
 
     // If we already have a panel, show it.
-    if (CatCodingPanel.currentPanel) {
-      CatCodingPanel.currentPanel._panel.reveal(column);
+    if (NinaPanel.currentPanel) {
+      NinaPanel.currentPanel._panel.reveal(column);
       return;
     }
 
     // Otherwise, create a new panel.
     const panel = vscode.window.createWebviewPanel(
-      CatCodingPanel.viewType,
-      "Cat Coding",
+      NinaPanel.viewType,
+      "Nina",
       column || vscode.ViewColumn.One,
       getWebviewOptions(extensionUri)
     );
 
-    CatCodingPanel.currentPanel = new CatCodingPanel(panel, extensionUri);
+    NinaPanel.currentPanel = new NinaPanel(panel, extensionUri);
   }
 
   public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
-    CatCodingPanel.currentPanel = new CatCodingPanel(panel, extensionUri);
+    NinaPanel.currentPanel = new NinaPanel(panel, extensionUri);
   }
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
@@ -96,7 +50,7 @@ export class CatCodingPanel {
     this._extensionUri = extensionUri;
 
     // Set the webview's initial html content
-    this._update();
+    this.update();
 
     // Listen for when the panel is disposed
     // This happens when the user closes the panel or when the panel is closed programmatically
@@ -106,7 +60,7 @@ export class CatCodingPanel {
     this._panel.onDidChangeViewState(
       (e) => {
         if (this._panel.visible) {
-          this._update();
+          this.update();
         }
       },
       null,
@@ -134,7 +88,7 @@ export class CatCodingPanel {
   }
 
   public dispose() {
-    CatCodingPanel.currentPanel = undefined;
+    NinaPanel.currentPanel = undefined;
 
     // Clean up our resources
     this._panel.dispose();
@@ -147,37 +101,17 @@ export class CatCodingPanel {
     }
   }
 
-  private _update() {
+  private update() {
     const webview = this._panel.webview;
-
-    // Vary the webview's content based on where it is located in the editor.
-    switch (this._panel.viewColumn) {
-      case vscode.ViewColumn.Two:
-        this._updateForCat(webview, "Compiling Cat");
-        return;
-
-      case vscode.ViewColumn.Three:
-        this._updateForCat(webview, "Testing Cat");
-        return;
-
-      case vscode.ViewColumn.One:
-      default:
-        this._updateForCat(webview, "Coding Cat");
-        return;
-    }
+    this._panel.webview.html = this.getHtmlForWebview(webview);
   }
 
-  private _updateForCat(webview: vscode.Webview, catName: keyof typeof cats) {
-    this._panel.title = catName;
-    this._panel.webview.html = this._getHtmlForWebview(webview, cats[catName]);
-  }
-
-  private _getHtmlForWebview(webview: vscode.Webview, catGifPath: string) {
+  private getHtmlForWebview(webview: vscode.Webview) {
     // Local path to main script run in the webview
     const scriptPathOnDisk = vscode.Uri.joinPath(
       this._extensionUri,
       "out/compiled",
-      "HelloWorld.js"
+      "NinaApp.js"
     );
 
     // And the uri we use to load this script in the webview
@@ -221,11 +155,6 @@ export class CatCodingPanel {
 				<title>Cat Coding</title>
 			</head>
 			<body>
-        Hey?
-        <h1>🐈 Pedro2 🐈</h1>
-				<img src="${catGifPath}" width="300" />
-				<h1 id="lines-of-code-counter">0</h1>
-                <button id="do-refactor">Do a refactor</button>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 			</html>`;

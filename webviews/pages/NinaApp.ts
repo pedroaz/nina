@@ -1,4 +1,4 @@
-import App from "../lib/components/HelloWorld.svelte";
+import App from "../lib/components/NinaPage.svelte";
 
 console.log("PEDRO!!");
 

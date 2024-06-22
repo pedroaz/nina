@@ -14,8 +14,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "nina-explorer.helloWorld",
-        "title": "Hello World"
+        "command": "nina-explorer.nina-diagrams",
+        "title": "Nina"
       }
     ]
   },
