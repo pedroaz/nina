@@ -13,7 +13,7 @@ function getWebviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
 export class NinaPanel {
   public static currentPanel: NinaPanel | undefined;
 
-  public static readonly viewType = "nina-diagrams";
+  public static readonly viewType = "nina";
 
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
@@ -43,6 +43,11 @@ export class NinaPanel {
 
   public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     NinaPanel.currentPanel = new NinaPanel(panel, extensionUri);
+  }
+
+  public static kill() {
+    NinaPanel.currentPanel?.dispose();
+    NinaPanel.currentPanel = undefined;
   }
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {

@@ -14,8 +14,14 @@
   "contributes": {
     "commands": [
       {
-        "command": "nina-explorer.nina-diagrams",
-        "title": "Nina"
+        "command": "nina-explorer.nina-show-panel",
+        "title": "show",
+        "category": "Nina"
+      },
+      {
+        "command": "nina-explorer.nina-refresh-panel",
+        "title": "refresh",
+        "category": "Nina"
       }
     ]
   },
