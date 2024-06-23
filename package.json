@@ -15,12 +15,12 @@
     "commands": [
       {
         "command": "nina-explorer.nina-show-panel",
-        "title": "show",
+        "title": "Show",
         "category": "Nina"
       },
       {
         "command": "nina-explorer.nina-refresh-panel",
-        "title": "refresh",
+        "title": "Refresh",
         "category": "Nina"
       }
     ]

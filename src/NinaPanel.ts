@@ -15,7 +15,7 @@ export class NinaPanel {
 
   public static readonly viewType = "nina";
 
-  private readonly _panel: vscode.WebviewPanel;
+  public static webViewPanel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
   private _disposables: vscode.Disposable[] = [];
 
@@ -26,7 +26,7 @@ export class NinaPanel {
 
     // If we already have a panel, show it.
     if (NinaPanel.currentPanel) {
-      NinaPanel.currentPanel._panel.reveal(column);
+      NinaPanel.webViewPanel.reveal(column);
       return;
     }
 
@@ -51,20 +51,20 @@ export class NinaPanel {
   }
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
-    this._panel = panel;
+    NinaPanel.webViewPanel = panel;
     this._extensionUri = extensionUri;
 
-    // Set the webview's initial html content
     this.update();
 
-    // Listen for when the panel is disposed
-    // This happens when the user closes the panel or when the panel is closed programmatically
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    NinaPanel.webViewPanel.onDidDispose(
+      () => this.dispose(),
+      null,
+      this._disposables
+    );
 
-    // Update the content based on view changes
-    this._panel.onDidChangeViewState(
+    NinaPanel.webViewPanel.onDidChangeViewState(
       (e) => {
-        if (this._panel.visible) {
+        if (NinaPanel.webViewPanel.visible) {
           this.update();
         }
       },
@@ -72,7 +72,7 @@ export class NinaPanel {
       this._disposables
     );
 
-    this._panel.webview.onDidReceiveMessage(
+    NinaPanel.webViewPanel.webview.onDidReceiveMessage(
       (message) => {
         switch (message.command) {
           case "alert":
@@ -88,14 +88,14 @@ export class NinaPanel {
   public doRefactor() {
     // Send a message to the webview webview.
     // You can send any JSON serializable data.
-    this._panel.webview.postMessage({ command: "refactor" });
+    NinaPanel.webViewPanel.webview.postMessage({ command: "refactor" });
   }
 
   public dispose() {
     NinaPanel.currentPanel = undefined;
 
     // Clean up our resources
-    this._panel.dispose();
+    NinaPanel.webViewPanel.dispose();
 
     while (this._disposables.length) {
       const x = this._disposables.pop();
@@ -106,8 +106,8 @@ export class NinaPanel {
   }
 
   private update() {
-    const webview = this._panel.webview;
-    this._panel.webview.html = this.getHtmlForWebview(webview);
+    const webview = NinaPanel.webViewPanel.webview;
+    NinaPanel.webViewPanel.webview.html = this.getHtmlForWebview(webview);
   }
 
   private getHtmlForWebview(webview: vscode.Webview) {
