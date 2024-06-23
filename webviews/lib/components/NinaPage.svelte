@@ -6,6 +6,12 @@
   import { onMount } from "svelte";
   import { getFileName } from "../services/Utils";
 
+  import FileNode from "../components/Nodes/FileNodes.svelte";
+
+  const nodeTypes = {
+    file: FileNode,
+  };
+
   onMount(() => {
     window.addEventListener("message", (event) => {
       const message = event.data; // The json data that the extension sent
@@ -20,7 +26,7 @@
 </script>
 
 <main>
-  <SvelteFlow {nodes} {edges} fitView>
+  <SvelteFlow {nodes} {edges} fitView {nodeTypes}>
     <Background bgColor="rgba(126,159,219,0.5)" />
   </SvelteFlow>
 </main>

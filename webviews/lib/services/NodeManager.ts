@@ -8,6 +8,7 @@ export class NodeManager {
         id: `${n.length + 1}`,
         position: { x: 200, y: 200 },
         data: { label: label },
+        type: "file",
       },
     ]);
   }
