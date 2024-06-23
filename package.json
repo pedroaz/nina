@@ -9,7 +9,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -22,8 +24,26 @@
         "command": "nina-explorer.nina-refresh-panel",
         "title": "Refresh",
         "category": "Nina"
+      },
+      {
+        "command": "nina-explorer.add-file-from-tree",
+        "title": "[NINA] Add File"
+      },
+      {
+        "command": "nina-explorer.add-file-from-top",
+        "category": "Nina",
+        "title": "Add File"
       }
-    ]
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "when": "true",
+          "command": "nina-explorer.add-file-from-tree",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

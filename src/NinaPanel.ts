@@ -85,10 +85,11 @@ export class NinaPanel {
     );
   }
 
-  public doRefactor() {
-    // Send a message to the webview webview.
-    // You can send any JSON serializable data.
-    NinaPanel.webViewPanel.webview.postMessage({ command: "refactor" });
+  public static addFileCommand(uri: vscode.Uri) {
+    NinaPanel.webViewPanel.webview.postMessage({
+      command: "addFile",
+      data: uri,
+    });
   }
 
   public dispose() {
