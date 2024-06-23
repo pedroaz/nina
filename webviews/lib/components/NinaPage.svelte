@@ -14,11 +14,11 @@
 
   onMount(() => {
     window.addEventListener("message", (event) => {
-      const message = event.data; // The json data that the extension sent
+      const message = event.data;
       switch (message.command) {
         case "addFile":
           var filename = getFileName(message.data.path);
-          NodeManager.createNode(filename);
+          NodeManager.createNode(filename, message.data.path);
           break;
       }
     });

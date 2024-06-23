@@ -83,6 +83,22 @@ export class NinaPanel {
       null,
       this._disposables
     );
+
+    NinaPanel.webViewPanel.webview.onDidReceiveMessage(
+      (message) => {
+        switch (message.command) {
+          case "open-file":
+            vscode.workspace
+              .openTextDocument(message.data.filePath)
+              .then((document) => {
+                vscode.window.showTextDocument(document);
+              });
+            return;
+        }
+      },
+      null,
+      this._disposables
+    );
   }
 
   public static addFileCommand(uri: vscode.Uri) {
