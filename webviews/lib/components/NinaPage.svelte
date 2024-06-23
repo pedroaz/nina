@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Node, Svelvet, Minimap, Controls, Group } from "svelvet";
 
   onMount(() => {
     window.addEventListener("message", (event) => {
@@ -13,9 +14,13 @@
   });
 </script>
 
-<h1>Hello from Pedro2</h1>
+<div style="border: red 1px solid;">
+  <Svelvet theme="light" controls>
+    <Node id="alpha" bgColor="red" label="Default Node" borderColor="white" />
+  </Svelvet>
+</div>
 
-<button
+<!-- <button
   on:click={() => {
     console.log("click");
     tsvscode.postMessage({
@@ -23,4 +28,4 @@
       text: "🐛  on line ",
     });
   }}>My Btn</button
->
+> -->

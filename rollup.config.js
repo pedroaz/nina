@@ -1,11 +1,14 @@
 import svelte from "rollup-plugin-svelte";
 import resolve from "@rollup/plugin-node-resolve";
+import { nodeResolve } from '@rollup/plugin-node-resolve'
 import commonjs from "@rollup/plugin-commonjs";
 import { terser } from "rollup-plugin-minification";
 import sveltePreprocess from "svelte-preprocess";
 import typescript from "@rollup/plugin-typescript";
 import path from "path";
 import fs from "fs";
+import postcss from 'rollup-plugin-postcss'
+
 
 const production = !process.env.ROLLUP_WATCH;
 
@@ -20,6 +23,7 @@ export default fs
         format: "iife",
         name: "app",
         file: "out/compiled/" + name + ".js",
+        inlineDynamicImports: true
       },
       plugins: [
         svelte({
@@ -32,6 +36,9 @@ export default fs
           },
           preprocess: sveltePreprocess(),
         }),
+        postcss({
+          plugins: []
+        }),
 
         // If you have external dependencies installed from
         // npm, you'll most likely need these plugins. In
@@ -40,7 +47,7 @@ export default fs
         // https://github.com/rollup/plugins/tree/master/packages/commonjs
         resolve({
           browser: true,
-          dedupe: ["svelte"],
+          dedupe: ["svelte"]
         }),
         commonjs(),
         typescript({
