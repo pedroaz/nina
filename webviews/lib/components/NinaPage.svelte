@@ -1,31 +1,42 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { Node, Svelvet, Minimap, Controls, Group } from "svelvet";
+  import {
+    SvelteFlow,
+    Background,
+    Controls,
+    BackgroundVariant,
+  } from "@xyflow/svelte";
 
-  onMount(() => {
-    window.addEventListener("message", (event) => {
-      const message = event.data; // The json data that the extension sent
-      switch (message.command) {
-        case "addFile":
-          console.log(message.data);
-          break;
-      }
-    });
-  });
+  import { nodes, edges } from "../stores/NinaStore";
+
+  import "@xyflow/svelte/dist/style.css";
+  import { NodeManager } from "../services/NodeManager";
+
+  // onMount(() => {
+  //   window.addEventListener("message", (event) => {
+  //     const message = event.data; // The json data that the extension sent
+  //     switch (message.command) {
+  //       case "addFile":
+  //         console.log(message.data);
+  //         break;
+  //     }
+  //   });
+  // });
 </script>
 
-<div style="border: red 1px solid;">
-  <Svelvet theme="light" controls>
-    <Node id="alpha" bgColor="red" label="Default Node" borderColor="white" />
-  </Svelvet>
-</div>
+<main>
+  <button
+    on:click={() => {
+      console.log("clicked");
+      NodeManager.createNode("TEST");
+    }}>Add New Node</button
+  >
+  <SvelteFlow {nodes} {edges} fitView>
+    <Background bgColor="rgba(126,159,219,0.5)" patternColor="white" />
+  </SvelteFlow>
+</main>
 
-<!-- <button
-  on:click={() => {
-    console.log("click");
-    tsvscode.postMessage({
-      command: "alert",
-      text: "🐛  on line ",
-    });
-  }}>My Btn</button
-> -->
+<style>
+  main {
+    height: 100vh;
+  }
+</style>
