@@ -30,7 +30,7 @@
         "title": "[NINA] Add File"
       },
       {
-        "command": "nina-explorer.add-file-from-top",
+        "command": "nina-explorer.add-file-from-menu-bar",
         "category": "Nina",
         "title": "Add File"
       }
