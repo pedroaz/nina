@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SvelteFlow, Background } from "@xyflow/svelte";
+  import { SvelteFlow, Background, ConnectionMode } from "@xyflow/svelte";
   import { nodes, edges } from "../stores/NinaStore";
   import "@xyflow/svelte/dist/style.css";
   import { NodeManager } from "../services/NodeManager";
@@ -40,7 +40,13 @@
 </script>
 
 <main>
-  <SvelteFlow {nodes} {edges} fitView {nodeTypes}>
+  <SvelteFlow
+    {nodes}
+    {edges}
+    fitView
+    {nodeTypes}
+    connectionMode={ConnectionMode.Loose}
+  >
     <Background bgColor="rgba(126,159,219,0.5)" />
   </SvelteFlow>
   <button

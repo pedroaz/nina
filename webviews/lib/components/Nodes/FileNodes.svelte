@@ -17,6 +17,10 @@
 >
   <div class="container">
     {label}
+    <Handle type="source" position={Position.Top} id="a" class="handle" />
+    <Handle type="source" position={Position.Right} id="b" class="handle" />
+    <Handle type="source" position={Position.Bottom} id="c" class="handle" />
+    <Handle type="source" position={Position.Left} id="d" class="handle" />
   </div>
 </div>
 
