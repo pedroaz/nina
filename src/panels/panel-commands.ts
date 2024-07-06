@@ -3,7 +3,7 @@ import { NinaPanel } from "./NinaPanel";
 
 export function addFileCommand(uri: vscode.Uri) {
   NinaPanel.webViewPanel.webview.postMessage({
-    command: "addFile",
+    command: "add-file",
     data: uri,
   });
 }

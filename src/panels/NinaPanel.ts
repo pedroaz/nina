@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import { getNonce } from "../lib/utils";
 import { registerMessageHandlers } from "./panel-message-handlers";
 import { ninaHtml } from "./NinaPanelHtml";
+import * as fs from "fs";
+import * as path from "path";
 
 function getWebviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
   return {
@@ -23,6 +25,7 @@ export class NinaPanel {
   private _disposables: vscode.Disposable[] = [];
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+    console.log("Constructor");
     NinaPanel.webViewPanel = panel;
     this._extensionUri = extensionUri;
 
@@ -48,6 +51,7 @@ export class NinaPanel {
   }
 
   public static createOrShow(extensionUri: vscode.Uri) {
+    console.log("Create or Show");
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -90,7 +94,30 @@ export class NinaPanel {
   }
 
   private update() {
+    console.log("Update");
     const webview = NinaPanel.webViewPanel.webview;
+    const state = {
+      name: "Pedro",
+    };
+    const projectRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+    if (!projectRoot) {
+      return;
+    }
+    const directoryPath = path.join(projectRoot, ".nina");
+    const stateFilePath = path.join(directoryPath, "state.json");
+    if (fs.existsSync(stateFilePath)) {
+      fs.readFile(stateFilePath, (err, data) => {
+        if (err) {
+          return console.error(`Error reading file: ${err.message}`);
+        }
+        const state = JSON.parse(data.toString());
+        NinaPanel.webViewPanel.webview.postMessage({
+          command: "render-state",
+          data: state,
+        });
+      });
+    }
+
     NinaPanel.webViewPanel.webview.html = ninaHtml(webview, this._extensionUri);
   }
 }

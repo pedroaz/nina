@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
-  import type { Writable } from "svelte/store";
+  import { sendMessage } from "../../services/MessageSender";
 
   export let data: { label: string; filePath: string };
 
@@ -12,10 +12,7 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
   on:dblclick={() => {
-    tsvscode.postMessage({
-      command: "open-file",
-      data: { filePath: filePath },
-    });
+    sendMessage("open-file", { filePath: filePath });
   }}
 >
   <div class="container">
