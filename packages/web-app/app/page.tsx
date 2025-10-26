@@ -1,4 +1,6 @@
 import { Lesson } from "shared";
+import { Button } from "@/components/ui/button"
+
 
 export default function Home() {
   const lesson: Lesson = {
@@ -13,6 +15,8 @@ export default function Home() {
         <h2>Current Lesson</h2>
         <p><strong>ID:</strong> {lesson.id}</p>
         <p><strong>Title:</strong> {lesson.title}</p>
+        <Button>Click me</Button>
+
       </div>
     </>
   );
