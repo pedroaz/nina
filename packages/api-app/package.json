@@ -1,0 +1,30 @@
+{
+  "name": "api-app",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch server.ts",
+    "build": "tsc",
+    "start": "node build/src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.13.1",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "shared": "workspace:*",
+    "ts-node": "^10.9.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.4",
+    "@types/node": "^20.19.23",
+    "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
