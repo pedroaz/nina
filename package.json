@@ -12,7 +12,6 @@
   },
   "scripts": {
     "web-app:dev": "cd packages/web-app && pnpm dev",
-    "test:e2e": "pnpm playwright test",
-    "emulator:start": "firebase emulators:start --config firebase/firebase.json"
+    "test:e2e": "pnpm playwright test"
   }
 }
