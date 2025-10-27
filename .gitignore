@@ -1,5 +1,8 @@
 node_modules/
 
+# Firebase
+firebase/*-debug.log
+
 # Playwright
 /test-results/
 /playwright-report/
