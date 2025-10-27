@@ -1,7 +1,8 @@
 node_modules/
 
 # Firebase
-firebase/*-debug.log
+fire*debug.log
+ui-debug.log
 
 # Playwright
 /test-results/
