@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import type { NextAuthOptions } from "next-auth";
+import { createUserCommand, CreateUserData, getUserByEmail, User, UserModel } from "@shared/index";
 
 export const authOptions: NextAuthOptions = {
     providers: [
@@ -9,6 +10,27 @@ export const authOptions: NextAuthOptions = {
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
         }),
     ],
+    callbacks: {
+        async signIn({ user }) {
+            if (!user.email) {
+                return false;
+            }
+
+            const currentUser = await getUserByEmail(user.email);
+
+            if (!currentUser) {
+                const userData: CreateUserData = {
+                    name: user.name || 'No Name',
+                    email: user.email
+                }
+                createUserCommand(userData).catch((err) => {
+                    console.error('Error creating user:', err);
+                })
+            }
+
+            return true;
+        },
+    },
 };
 
 const handler = NextAuth(authOptions);

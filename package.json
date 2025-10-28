@@ -13,5 +13,8 @@
   "scripts": {
     "web-app:dev": "cd packages/web-app && pnpm dev",
     "test:e2e": "pnpm playwright test"
+  },
+  "dependencies": {
+    "mongoose": "^8.19.2"
   }
 }

@@ -1,7 +1,4 @@
-// Export all models
-export * from './models/lesson.js';
-export * from './models/userProfile.js';
-
-// Add more exports here as you create more files in models/
-// export * from './models/user.js';
-// export * from './models/course.js';
+export * from './entities/user';
+export * from './entities/lesson';
+export * from './commands/user-commands';
+export * from './queries/user-queries';
