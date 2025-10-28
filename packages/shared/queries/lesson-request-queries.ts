@@ -1,5 +1,5 @@
 import { connectDatabase } from "../database/database";
-import { LessonRequest, LessonRequestModel } from "../entities/lesson_request";
+import { type LessonRequest, LessonRequestModel } from "../entities/lesson_request";
 
 export async function getLessonRequestsByCreatorId(
     creatorId: string,

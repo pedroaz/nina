@@ -1,5 +1,5 @@
 import { connectDatabase } from "../database/database";
-import { LessonRequest, LessonRequestModel, LessonRequestStatus } from "../entities/lesson_request";
+import { type LessonRequest, LessonRequestModel, LessonRequestStatus } from "../entities/lesson_request";
 
 export interface CreateLessonRequestData {
     creatorId: string;
