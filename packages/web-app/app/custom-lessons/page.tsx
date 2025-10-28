@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -6,6 +7,7 @@ import {
     getLessonRequestsByCreatorId,
     getUserByEmail,
     LessonRequestStatus,
+    deleteLessonRequestCommand,
 } from "@shared/index";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +53,20 @@ export default async function CustomLessons() {
         redirect(signInUrl);
     }
 
+    const creatorId = user.id;
+
+    const deleteLessonRequest = async (formData: FormData) => {
+        "use server";
+        const requestId = formData.get("requestId");
+
+        if (typeof requestId !== "string") {
+            return;
+        }
+
+        await deleteLessonRequestCommand({ requestId, creatorId });
+        revalidatePath("/custom-lessons");
+    };
+
     const lessonRequests = await getLessonRequestsByCreatorId(user.id);
 
     const requestItems: LessonRequestListItem[] = lessonRequests.map((request) => ({
@@ -83,13 +99,21 @@ export default async function CustomLessons() {
                 <div className="grid gap-4 md:grid-cols-2">
                     {requestItems.map((request) => (
                         <Card key={request.id}>
-                            <CardHeader className="gap-1">
-                                <CardTitle className="text-base font-medium">
-                                    Custom lesson request
-                                </CardTitle>
-                                <CardDescription>
-                                    Status: {STATUS_LABELS[request.status]}
-                                </CardDescription>
+                            <CardHeader className="flex flex-row items-start justify-between gap-4">
+                                <div className="space-y-1">
+                                    <CardTitle className="text-base font-medium">
+                                        Custom lesson request
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Status: {STATUS_LABELS[request.status]}
+                                    </CardDescription>
+                                </div>
+                                <form action={deleteLessonRequest} method="post">
+                                    <input type="hidden" name="requestId" value={request.id} />
+                                    <Button variant="outline" size="sm" type="submit">
+                                        Delete
+                                    </Button>
+                                </form>
                             </CardHeader>
                             <CardContent className="flex flex-col gap-4 text-sm text-slate-600">
                                 <p className="whitespace-pre-wrap leading-relaxed">

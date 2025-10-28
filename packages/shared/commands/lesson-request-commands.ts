@@ -21,3 +21,18 @@ export async function createLessonRequestCommand(
     await lessonRequest.save();
     return lessonRequest;
 }
+
+export interface DeleteLessonRequestData {
+    requestId: string;
+    creatorId: string;
+}
+
+export async function deleteLessonRequestCommand(
+    data: DeleteLessonRequestData,
+): Promise<void> {
+    await connectDatabase();
+    await LessonRequestModel.deleteOne({
+        _id: data.requestId,
+        creatorId: data.creatorId,
+    }).exec();
+}
