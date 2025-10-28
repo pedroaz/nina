@@ -9,7 +9,6 @@ export function AuthButton() {
     if (session) {
         return (
             <div className="flex items-center gap-4">
-                <p>{session.user?.email}</p>
                 <Button onClick={() => signOut()}>Sign Out</Button>
             </div>
         );
