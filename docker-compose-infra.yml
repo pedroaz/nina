@@ -16,3 +16,25 @@ services:
       - 27017:27017
     environment:
       - FERRETDB_POSTGRESQL_URL=postgres://username:password@postgres:5432/postgres
+
+  redis:
+    image: redis:7-alpine
+    restart: on-failure
+    ports:
+      - 6379:6379
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+    volumes:
+      - ./redis-data:/redis-data
+
+  redisinsight:
+    image: redis/redisinsight
+    restart: on-failure
+    ports:
+      - 5540:5540
+    depends_on:
+      - redis
+    volumes:
+      - ./redisinsight-data:/redisinsight-data

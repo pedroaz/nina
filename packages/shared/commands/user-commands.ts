@@ -1,3 +1,4 @@
+import { connectDatabase } from "../database/database";
 import { UserModel } from "../entities/user";
 
 export interface CreateUserData {
@@ -6,6 +7,7 @@ export interface CreateUserData {
 }
 
 export async function createUserCommand(userData: CreateUserData) {
+    await connectDatabase();
     const user = new UserModel(userData);
     await user.save();
 }
