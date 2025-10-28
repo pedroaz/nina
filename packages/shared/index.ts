@@ -5,4 +5,3 @@ export * from './commands/user-commands';
 export * from './commands/lesson-request-commands';
 export * from './queries/user-queries';
 export * from './queries/lesson-request-queries';
-export * from './redis/lesson-request-stream';
