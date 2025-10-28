@@ -10,4 +10,6 @@ export const userSchema = new mongoose.Schema({
     email: String
 });
 
-export const UserModel = mongoose.model<User>('users', userSchema);
+export const UserModel =
+    (mongoose.models.users as mongoose.Model<User> | undefined) ??
+    mongoose.model<User>('users', userSchema);
