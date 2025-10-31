@@ -9,3 +9,12 @@ export async function getLessonsByCreatorId(
         .sort({ createdAt: -1 })
         .exec();
 }
+
+export async function getLessonByIdAndCreator(
+    lessonId: string,
+    creatorId: string,
+): Promise<Lesson | null> {
+    await connectDatabase();
+
+    return LessonModel.findOne({ _id: lessonId, creatorId }).exec();
+}

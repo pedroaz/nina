@@ -13,6 +13,7 @@ import {
     Card,
     CardContent,
     CardDescription,
+    CardFooter,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
@@ -20,6 +21,7 @@ import {
 type LessonListItem = {
     id: string;
     prompt: string;
+    title: string;
 };
 
 function formatCreatedAt(dateIso: string | null) {
@@ -63,6 +65,7 @@ export default async function CustomLessons() {
     const lessonItems: LessonListItem[] = lessons.map((request) => ({
         id: request.id,
         prompt: request.userPrompt,
+        title: request.title ?? "Untitled lesson",
     }));
 
     return (
@@ -90,8 +93,16 @@ export default async function CustomLessons() {
                             <CardHeader className="flex flex-row items-start justify-between gap-4">
                                 <div className="space-y-1">
                                     <CardTitle className="text-base font-medium">
-                                        Lesson request
+                                        <Link
+                                            className="transition-colors hover:text-slate-900"
+                                            href={`/lessons/${lesson.id}`}
+                                        >
+                                            {lesson.title}
+                                        </Link>
                                     </CardTitle>
+                                    <CardDescription className="text-xs text-slate-500">
+                                        {lesson.prompt}
+                                    </CardDescription>
                                 </div>
                                 <form action={deleteLessonRequest}>
                                     <input type="hidden" name="requestId" value={lesson.id} />
@@ -100,11 +111,16 @@ export default async function CustomLessons() {
                                     </Button>
                                 </form>
                             </CardHeader>
-                            <CardContent className="flex flex-col gap-4 text-sm text-slate-600">
+                            <CardContent className="flex flex-col gap-2 text-sm text-slate-600">
                                 <p className="whitespace-pre-wrap leading-relaxed">
                                     {lesson.prompt}
                                 </p>
                             </CardContent>
+                            <CardFooter className="flex justify-end">
+                                <Button asChild size="sm">
+                                    <Link href={`/lessons/${lesson.id}`}>Start lesson</Link>
+                                </Button>
+                            </CardFooter>
                         </Card>
                     ))}
                 </div>
