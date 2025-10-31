@@ -1,63 +1,36 @@
 import mongoose from 'mongoose';
+import { studentDataSchemaZ, studentSchemaM } from './student';
+import { z } from 'zod';
+import { dualLanguageSchemaM, dualLanguageSchemaZ } from './base';
 
-export interface Lesson extends mongoose.Document {
-    creatorId: string;
-    title: string;
-    userPrompt: string;
-    germanContent: string;
-    englishContent: string;
-    exercises: Exercise[];
-}
 
-export interface Exercise {
-    question: string;
-    answer: string;
-    type: ExerciseType;
-    category: ExerciseCategory;
-    data: ExerciseDataAnswerQuestion | ExerciseDataCreateSentence | null;
-}
 
-export enum ExerciseType {
-    AnswerQuestion = "answer_question",
-    CreateSentence = "create_sentence",
-}
-
-export enum ExerciseCategory {
-    Writing = "writing",
-    Reading = "reading",
-    Listening = "listening",
-    Speaking = "speaking",
-}
-
-export interface ExerciseDataAnswerQuestion {
-    question: string;
-}
-
-export interface ExerciseDataCreateSentence {
-    userInstruction: string;
-}
-
-const exerciseSchema = new mongoose.Schema({
-    question: String,
-    answer: String,
-    type: {
-        type: String,
-        enum: Object.values(ExerciseType),
-    },
-    category: {
-        type: String,
-        enum: Object.values(ExerciseCategory),
-    },
-    data: mongoose.Schema.Types.Mixed,
+export const lessonSchemaZ = z.object({
+    _id: z.string(),
+    __v: z.number(),
+    topic: z.string(),
+    vocabulary: z.string(),
+    studentData: studentDataSchemaZ,
+    title: dualLanguageSchemaZ,
+    quickSummary: dualLanguageSchemaZ,
+    quickExamples: z.array(dualLanguageSchemaZ),
+    // quickExercises: z.array(dualLanguageSchemaZ),
+    fullExplanation: dualLanguageSchemaZ,
+    // exercises: z.array(exerciseSchemaZ),
 });
 
-export const lessonSchema = new mongoose.Schema({
-    creatorId: String,
-    title: String,
-    userPrompt: String,
-    germanContent: String,
-    englishContent: String,
-    exercises: [exerciseSchema],
+export type Lesson = z.infer<typeof lessonSchemaZ>;
+
+export const lessonSchema = new mongoose.Schema<Lesson>({
+    topic: { type: String, required: true },
+    vocabulary: { type: String, required: true },
+    studentData: studentSchemaM,
+    title: dualLanguageSchemaM,
+    quickSummary: dualLanguageSchemaM,
+    quickExamples: [dualLanguageSchemaM],
+    // quickExercises: [dualLanguageSchemaM],
+    fullExplanation: dualLanguageSchemaM,
+    // exercises: [exerciseSchemaZ],
 });
 
 export const LessonModel =

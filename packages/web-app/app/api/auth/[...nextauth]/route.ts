@@ -21,7 +21,8 @@ export const authOptions: NextAuthOptions = {
             if (!currentUser) {
                 const userData: CreateUserData = {
                     name: user.name || 'No Name',
-                    email: user.email
+                    email: user.email,
+                    level: 'A1',
                 }
                 createUserCommand(userData).catch((err) => {
                     console.error('Error creating user:', err);

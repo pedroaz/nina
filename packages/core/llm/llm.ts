@@ -1,6 +1,8 @@
 import { googleAI } from '@genkit-ai/google-genai';
-import { genkit, z } from 'genkit';
+import { genkit } from 'genkit';
+import { z } from 'zod';
 import { createFinalPrompt } from './prompt';
+import { lessonSchemaZ } from '../entities/lesson';
 
 // Initialize Genkit with the Google AI plugin
 const ai = genkit({
@@ -13,31 +15,30 @@ const ai = genkit({
 
 // Define input schema
 export const LessonInputSchema = z.object({
-    userPrompt: z.string().describe('User prompt for the german lesson to be created'),
+    topic: z.string().describe('User topic for the german lesson to be created'),
+    vocabulary: z.string().describe('Key vocabulary words to include in the lesson'),
 });
 
 // Define output schema
-export const LessonSchema = z.object({
-    title: z.string(),
-    englishContent: z.string(),
-    germanContent: z.string(),
-});
+export const LessonSchemaLLM = lessonSchemaZ.omit({
+    studentData: true,
+})
 
 // Define a lesson creation flow
 export const createLessonFlow = ai.defineFlow(
     {
         name: 'createLessonFlow',
         inputSchema: LessonInputSchema,
-        outputSchema: LessonSchema,
+        outputSchema: LessonSchemaLLM,
     },
     async (input) => {
         // Create a prompt based on the input
-        const userPrompt = createFinalPrompt(input.userPrompt);
+        const userPrompt = createFinalPrompt(input.topic);
 
         // Generate structured lesson data using the same schema
         const { output } = await ai.generate({
             prompt: userPrompt,
-            output: { schema: LessonSchema },
+            output: { schema: LessonSchemaLLM },
         });
 
         if (!output) throw new Error('Failed to generate lesson');

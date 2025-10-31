@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import {
     deleteLessonCommand,
-    getLessonsByCreatorId,
+    getLessonsByUserId,
     getUserByEmail,
 } from "@core/index";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,7 @@ export default async function CustomLessons() {
         revalidatePath("/lessons");
     };
 
-    const lessons = await getLessonsByCreatorId(user.id);
+    const lessons = await getLessonsByUserId(user.id);
 
     const lessonItems: LessonListItem[] = lessons.map((request) => ({
         id: request.id,

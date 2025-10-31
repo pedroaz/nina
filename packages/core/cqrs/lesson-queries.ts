@@ -1,20 +1,12 @@
-import { Lesson, LessonModel } from "@core/entities/lesson";
 import { connectDatabase } from "../database/database";
+import { Lesson, LessonModel } from "../entities/lesson";
 
-export async function getLessonsByCreatorId(
-    creatorId: string,
+export async function getLessonsByUserId(
+    userId: string,
 ): Promise<Lesson[]> {
     await connectDatabase();
-    return LessonModel.find({ creatorId })
+    console.log('Fetching lessons for userId:', userId);
+    return LessonModel.find({ 'studentData.userId': userId })
         .sort({ createdAt: -1 })
         .exec();
-}
-
-export async function getLessonByIdAndCreator(
-    lessonId: string,
-    creatorId: string,
-): Promise<Lesson | null> {
-    await connectDatabase();
-
-    return LessonModel.findOne({ _id: lessonId, creatorId }).exec();
 }

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import {
     createLessonCommand,
-    getLessonsByCreatorId,
+    getLessonsByUserId,
     getUserByEmail,
 } from "@core/index";
 
@@ -16,10 +16,11 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => null);
-    const userPrompt = typeof body?.userPrompt === "string" ? body.userPrompt.trim() : "";
+    const topic = typeof body?.topic === "string" ? body.topic.trim() : "";
+    const vocabulary = typeof body?.vocabulary === "string" ? body.vocabulary.trim() : "";
 
-    if (!userPrompt) {
-        return NextResponse.json({ error: "User prompt is required" }, { status: 400 });
+    if (!topic) {
+        return NextResponse.json({ error: "Lesson topic is required" }, { status: 400 });
     }
 
     const user = await getUserByEmail(session.user.email);
@@ -29,8 +30,9 @@ export async function POST(req: Request) {
     }
 
     const created = await createLessonCommand({
-        creatorId: user.id,
-        userPrompt,
+        userId: user._id,
+        topic,
+        vocabulary
     });
 
     return NextResponse.json(created, { status: 201 });
@@ -49,7 +51,7 @@ export async function GET() {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const lessons = await getLessonsByCreatorId(user.id);
+    const lessons = await getLessonsByUserId(user._id);
 
     return NextResponse.json({ data: lessons });
 }

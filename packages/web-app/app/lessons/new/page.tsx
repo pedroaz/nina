@@ -4,20 +4,23 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { CreateLessonRequestData } from "@core/cqrs/lesson-commands";
 
 export default function CustomLessonsNew() {
     const router = useRouter();
-    const [userPrompt, setUserPrompt] = useState("");
+    const [topic, setTopic] = useState("");
+    const [vocabulary, setVocabulary] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
-        const sanitizedPrompt = userPrompt.trim();
+        const sanitizedTopic = topic.trim();
+        const sanitizedVocabulary = vocabulary.trim();
 
-        if (!sanitizedPrompt) {
-            setError("Please provide a prompt for your lesson request.");
+        if (!sanitizedTopic) {
+            setError("Please provide a topic for your lesson request.");
             return;
         }
 
@@ -25,10 +28,14 @@ export default function CustomLessonsNew() {
         setError(null);
 
         try {
+            const requestBody: CreateLessonRequestData = {
+                topic: sanitizedTopic,
+                vocabulary: sanitizedVocabulary,
+            };
             const response = await fetch("/api/lessons", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userPrompt: sanitizedPrompt }),
+                body: JSON.stringify(requestBody),
             });
 
             if (response.status === 401) {
@@ -47,7 +54,8 @@ export default function CustomLessonsNew() {
                 throw new Error(message);
             }
 
-            setUserPrompt("");
+            setTopic("");
+            setVocabulary("");
             router.push("/lessons");
             router.refresh();
         } catch (err) {
@@ -65,14 +73,27 @@ export default function CustomLessonsNew() {
                 className="flex w-full max-w-2xl flex-col gap-6 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
             >
                 <div className="flex flex-col gap-2">
-                    <Label htmlFor="prompt">Lesson prompt</Label>
+                    <Label htmlFor="topic">Lesson topic</Label>
                     <textarea
-                        id="prompt"
-                        name="prompt"
-                        value={userPrompt}
-                        onChange={(event) => setUserPrompt(event.target.value)}
+                        id="topic"
+                        name="topic"
+                        value={topic}
+                        onChange={(event) => setTopic(event.target.value)}
                         className="min-h-48 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                        placeholder="Describe what you want to learn..."
+                        placeholder="Describe what you want to learn... e.g., Say hello in German; Explain the Dative Case"
+                        disabled={isSubmitting}
+                    />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                    <Label htmlFor="vocabulary">Vocabulary focus</Label>
+                    <textarea
+                        id="vocabulary"
+                        name="vocabulary"
+                        value={vocabulary}
+                        onChange={(event) => setVocabulary(event.target.value)}
+                        className="min-h-24 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        placeholder="Animals, Furniture"
                         disabled={isSubmitting}
                     />
                 </div>

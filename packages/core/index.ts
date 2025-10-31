@@ -4,3 +4,6 @@ export * from './cqrs/user-commands';
 export * from './cqrs/lesson-commands';
 export * from './cqrs/user-queries';
 export * from './cqrs/lesson-queries';
+export * from './entities/exercise';
+export * from './entities/student';
+export * from './entities/base';
