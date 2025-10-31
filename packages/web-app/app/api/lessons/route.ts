@@ -2,23 +2,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import {
-    createLessonRequestCommand,
-    getLessonRequestsByCreatorId,
+    createLessonCommand,
+    getLessonsByCreatorId,
     getUserByEmail,
 } from "@core/index";
-import type { LessonRequest } from "@core/index";
+import type { Lesson } from "@core/index";
 
-function serializeLessonRequest(request: LessonRequest) {
-    return {
-        id: request.id,
-        creatorId: request.creatorId,
-        prompt: request.prompt,
-        lessonId: request.lessonId,
-        status: request.status,
-        createdAt: request.createdAt?.toISOString?.() ?? null,
-        updatedAt: request.updatedAt?.toISOString?.() ?? null,
-    };
-}
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
@@ -40,12 +29,14 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const created = await createLessonRequestCommand({
+    console.log("Creating lesson with prompt:", prompt);
+
+    const created = await createLessonCommand({
         creatorId: user.id,
         prompt,
     });
 
-    return NextResponse.json(serializeLessonRequest(created), { status: 201 });
+    return NextResponse.json(created, { status: 201 });
 }
 
 export async function GET() {
@@ -61,7 +52,7 @@ export async function GET() {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const requests = await getLessonRequestsByCreatorId(user.id);
+    const lessons = await getLessonsByCreatorId(user.id);
 
-    return NextResponse.json({ data: requests.map(serializeLessonRequest) });
+    return NextResponse.json({ data: lessons });
 }

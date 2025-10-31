@@ -17,7 +17,7 @@ export default function CustomLessonsNew() {
         const sanitizedPrompt = prompt.trim();
 
         if (!sanitizedPrompt) {
-            setError("Please provide a prompt for your custom lesson request.");
+            setError("Please provide a prompt for your lesson request.");
             return;
         }
 
@@ -25,7 +25,7 @@ export default function CustomLessonsNew() {
         setError(null);
 
         try {
-            const response = await fetch("/api/custom-lessons", {
+            const response = await fetch("/api/lessons", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ prompt: sanitizedPrompt }),
@@ -33,7 +33,7 @@ export default function CustomLessonsNew() {
 
             if (response.status === 401) {
                 router.push(
-                    `/api/auth/signin?callbackUrl=${encodeURIComponent("/custom-lessons/new")}`,
+                    `/api/auth/signin?callbackUrl=${encodeURIComponent("/lessons/new")}`,
                 );
                 return;
             }
@@ -43,12 +43,12 @@ export default function CustomLessonsNew() {
                 const message =
                     typeof payload?.error === "string"
                         ? payload.error
-                        : "Unable to submit your custom lesson request.";
+                        : "Unable to submit your lesson request.";
                 throw new Error(message);
             }
 
             setPrompt("");
-            router.push("/custom-lessons");
+            router.push("/lessons");
             router.refresh();
         } catch (err) {
             const message = err instanceof Error ? err.message : "Something went wrong.";
@@ -87,7 +87,7 @@ export default function CustomLessonsNew() {
                     <Button
                         type="button"
                         variant="outline"
-                        onClick={() => router.push("/custom-lessons")}
+                        onClick={() => router.push("/lessons")}
                         disabled={isSubmitting}
                     >
                         Cancel

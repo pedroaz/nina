@@ -1,5 +1,5 @@
+import { Lesson, LessonModel } from "@core/entities/lesson";
 import { connectDatabase } from "../database/database";
-import { type LessonRequest, LessonRequestModel, LessonRequestStatus } from "../entities/lesson_request";
 
 export interface CreateLessonRequestData {
     creatorId: string;
@@ -7,19 +7,18 @@ export interface CreateLessonRequestData {
     lessonId?: string | null;
 }
 
-export async function createLessonRequestCommand(
+export async function createLessonCommand(
     data: CreateLessonRequestData,
-): Promise<LessonRequest> {
+): Promise<Lesson> {
     await connectDatabase();
-    const lessonRequest = new LessonRequestModel({
+    const lesson = new LessonModel({
         creatorId: data.creatorId,
         prompt: data.prompt,
         lessonId: data.lessonId ?? null,
-        status: LessonRequestStatus.Requested,
     });
 
-    await lessonRequest.save();
-    return lessonRequest;
+    await lesson.save();
+    return lesson;
 }
 
 export interface DeleteLessonRequestData {
@@ -27,11 +26,11 @@ export interface DeleteLessonRequestData {
     creatorId: string;
 }
 
-export async function deleteLessonRequestCommand(
+export async function deleteLessonCommand(
     data: DeleteLessonRequestData,
 ): Promise<void> {
     await connectDatabase();
-    await LessonRequestModel.deleteOne({
+    await LessonModel.deleteOne({
         _id: data.requestId,
         creatorId: data.creatorId,
     }).exec();

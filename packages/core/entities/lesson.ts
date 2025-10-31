@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 export interface Lesson extends mongoose.Document {
     creatorId: string;
     title: string;
+    prompt: string;
     content: string;
     exercises: Exercise[];
 }
@@ -52,6 +53,7 @@ const exerciseSchema = new mongoose.Schema({
 export const lessonSchema = new mongoose.Schema({
     creatorId: String,
     title: String,
+    prompt: String,
     content: String,
     exercises: [exerciseSchema],
 });

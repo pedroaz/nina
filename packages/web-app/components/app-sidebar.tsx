@@ -26,8 +26,8 @@ const data = {
       url: "/profile",
     },
     {
-      title: "Custom Lessons",
-      url: "/custom-lessons",
+      title: "Lessons",
+      url: "/lessons",
     },
   ],
 };
