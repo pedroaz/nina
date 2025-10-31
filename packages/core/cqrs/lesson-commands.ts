@@ -1,5 +1,6 @@
-import { Lesson, LessonModel } from "@core/entities/lesson";
 import { connectDatabase } from "../database/database";
+import { Lesson, LessonModel } from "../entities/lesson";
+import { createLessonFlow } from "../llm/llm";
 
 export interface CreateLessonRequestData {
     creatorId: string;
@@ -17,7 +18,16 @@ export async function createLessonCommand(
         lessonId: data.lessonId ?? null,
     });
 
+    var llmResult = await createLessonFlow({
+        prompt: data.prompt,
+    });
+
+    lesson.title = llmResult.title;
+    lesson.content = llmResult.content;
+
     await lesson.save();
+
+
     return lesson;
 }
 

@@ -10,56 +10,35 @@ const ai = genkit({
 });
 
 // Define input schema
-const RecipeInputSchema = z.object({
-    ingredient: z.string().describe('Main ingredient or cuisine type'),
-    dietaryRestrictions: z.string().optional().describe('Any dietary restrictions'),
+export const LessonInputSchema = z.object({
+    prompt: z.string().describe('Prompt for the german lesson to be created'),
 });
 
 // Define output schema
-const RecipeSchema = z.object({
+export const LessonSchema = z.object({
     title: z.string(),
-    description: z.string(),
-    prepTime: z.string(),
-    cookTime: z.string(),
-    servings: z.number(),
-    ingredients: z.array(z.string()),
-    instructions: z.array(z.string()),
-    tips: z.array(z.string()).optional(),
+    content: z.string(),
 });
 
-// Define a recipe generator flow
-export const recipeGeneratorFlow = ai.defineFlow(
+// Define a lesson creation flow
+export const createLessonFlow = ai.defineFlow(
     {
-        name: 'recipeGeneratorFlow',
-        inputSchema: RecipeInputSchema,
-        outputSchema: RecipeSchema,
+        name: 'createLessonFlow',
+        inputSchema: LessonInputSchema,
+        outputSchema: LessonSchema,
     },
     async (input) => {
         // Create a prompt based on the input
-        const prompt = `Create a recipe with the following requirements:
-      Main ingredient: ${input.ingredient}
-      Dietary restrictions: ${input.dietaryRestrictions || 'none'}`;
+        const prompt = `Create a german summary of the topic writing in english following the topic:${input.prompt}`;
 
-        // Generate structured recipe data using the same schema
+        // Generate structured lesson data using the same schema
         const { output } = await ai.generate({
             prompt,
-            output: { schema: RecipeSchema },
+            output: { schema: LessonSchema },
         });
 
-        if (!output) throw new Error('Failed to generate recipe');
+        if (!output) throw new Error('Failed to generate lesson');
 
         return output;
     },
 );
-
-// // Run the flow
-// async function main() {
-//     const recipe = await recipeGeneratorFlow({
-//         ingredient: 'avocado',
-//         dietaryRestrictions: 'vegetarian',
-//     });
-
-//     console.log(recipe);
-// }
-
-// main().catch(console.error);
