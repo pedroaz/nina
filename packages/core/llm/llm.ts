@@ -3,13 +3,11 @@ import { genkit } from 'genkit';
 import { z } from 'zod';
 import { createFinalPrompt } from './prompt';
 import { lessonSchemaZ } from '../entities/lesson';
+import { openAI } from '@genkit-ai/compat-oai/openai';
 
-// Initialize Genkit with the Google AI plugin
 const ai = genkit({
-    plugins: [googleAI()],
-    model: googleAI.model('gemini-2.5-flash', {
-        temperature: 0.8,
-    }),
+    plugins: [openAI({ apiKey: process.env.OPENAI_API_KEY })],
+    model: openAI.model('gpt-5-nano'),
     promptDir: './packages/core/llm/prompts',
 });
 

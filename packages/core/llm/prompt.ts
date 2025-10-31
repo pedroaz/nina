@@ -1,6 +1,4 @@
 
-
-
 function dontIgnore(): string {
     return `Do not ignore any instructions.`;
 }
@@ -10,7 +8,7 @@ function role(): string {
 }
 
 function textLanguage(): string {
-    return `The lesson must be written in english and german.`;
+    return `Use Markdown inside every string. Populate the "base" field with English and the "german" field with the matching German translation.`;
 }
 
 function objective(topic: string): string {
@@ -25,22 +23,32 @@ function vocabularyToConsider(vocabulary: string): string {
 }
 
 function titleInstruction(): string {
-    return `Create a concise and engaging title for the lesson.`;
+    return `Create a concise, engaging title. Start both "base" and "german" values with "# " to form a Markdown heading.`;
 }
 
 function quickSummaryInstruction(): string {
-    return `Provide a brief summary of the lesson, highlighting the key points that will be covered.`;
+    return `Provide a brief summary highlighting the key points that will be covered. Use 2 short paragraphs separated by a blank line in each language.`;
 }
 
 function quickExamplesInstruction(): string {
-    return `Provide 3 quick examples that illustrate the topic. Each example should be brief and to the point.`;
+    return `Provide exactly 3 quick examples that illustrate the topic. Begin each "base" and "german" string with "- " so the examples render as Markdown bullet points.`;
 }
 
 function fullExplanationInstruction(): string {
     return `
-    Provide a comprehensive explanation of the topic, covering all essential aspects in detail. Make it maximum 3 paragraphs.
-    Add paragraphs, bullet points, and examples to enhance understanding.
+    Provide a comprehensive explanation of the topic with 2 or 3 paragraphs separated by blank lines.
+    After the first paragraph include a Markdown bullet list of 3 key takeaways (each line starting with "- ").
     Ensure the explanation is clear, concise, and easy to follow for learners at various levels.
+    `;
+}
+
+function formattingInstruction(): string {
+    return `
+    Output formatting rules:
+    - Respond only with valid JSON that matches the expected schema fields (title, quickSummary, quickExamples, fullExplanation).
+    - Each string must contain Markdown that follows the instructions above.
+    - Do not add extra commentary, code fences, or additional keys.
+    - Maintain consistent tone and level across English and German variants.
     `;
 }
 
@@ -56,6 +64,7 @@ export function createFinalPrompt(topic: string, vocabulary: string): string {
     ${quickSummaryInstruction()}\n
     ${quickExamplesInstruction()}\n
     ${fullExplanationInstruction()}\n
+    ${formattingInstruction()}\n
 `;
 
     return final.trim();
