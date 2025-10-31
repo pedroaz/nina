@@ -9,7 +9,7 @@ export const lessonSchemaZ = z.object({
     _id: z.string(),
     __v: z.number(),
     topic: z.string(),
-    vocabulary: z.string(),
+    vocabulary: z.string().optional(),
     studentData: studentDataSchemaZ,
     title: dualLanguageSchemaZ,
     quickSummary: dualLanguageSchemaZ,
@@ -23,7 +23,7 @@ export type Lesson = z.infer<typeof lessonSchemaZ>;
 
 export const lessonSchema = new mongoose.Schema<Lesson>({
     topic: { type: String, required: true },
-    vocabulary: { type: String, required: true },
+    vocabulary: { type: String, required: false },
     studentData: studentSchemaM,
     title: dualLanguageSchemaM,
     quickSummary: dualLanguageSchemaM,

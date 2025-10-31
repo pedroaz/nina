@@ -1,12 +1,12 @@
 
 
 
-export interface PromptInput {
-
+function dontIgnore(): string {
+    return `Do not ignore any instructions.`;
 }
 
 function role(): string {
-    return `Your Role: You are a helpful german teacher.`;
+    return `Your Role: You are a helpful german teacher. Be polite and informative. Your goal is to create educational lessons that effectively teach the specified topic to learners.`;
 }
 
 function textLanguage(): string {
@@ -18,6 +18,9 @@ function objective(topic: string): string {
 }
 
 function vocabularyToConsider(vocabulary: string): string {
+    if (vocabulary.trim().length === 0) {
+        return `No specific vocabulary to consider. Use appropriate vocabulary for the topic.`;
+    }
     return `Include the following vocabulary when creating exercises and examples in the lesson: ${vocabulary}.`;
 }
 
@@ -34,12 +37,17 @@ function quickExamplesInstruction(): string {
 }
 
 function fullExplanationInstruction(): string {
-    return `Provide a comprehensive explanation of the topic, covering all essential aspects in detail. Make it maximum 3 paragraphs.`;
+    return `
+    Provide a comprehensive explanation of the topic, covering all essential aspects in detail. Make it maximum 3 paragraphs.
+    Add paragraphs, bullet points, and examples to enhance understanding.
+    Ensure the explanation is clear, concise, and easy to follow for learners at various levels.
+    `;
 }
 
 
 export function createFinalPrompt(topic: string, vocabulary: string): string {
     const final = `
+    ${dontIgnore()}\n
     ${role()}\n
     ${textLanguage()}\n
     ${objective(topic)}\n

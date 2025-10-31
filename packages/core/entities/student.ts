@@ -29,7 +29,7 @@ export const studentSchemaM = new mongoose.Schema({
     userId: {
         type: String,
         required: true,
-        unique: true
+        unique: false
     },
     userName: {
         type: String,

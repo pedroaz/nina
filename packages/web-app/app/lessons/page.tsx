@@ -67,7 +67,7 @@ export default async function CustomLessons() {
         id: request._id.toString(),
         title: request.title?.base ?? "Untitled lesson",
         topic: request.topic,
-        vocabulary: request.vocabulary,
+        vocabulary: request.vocabulary ?? "",
     }));
 
     return (

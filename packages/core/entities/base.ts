@@ -9,4 +9,8 @@ export const dualLanguageSchemaZ = z.object({
 export const dualLanguageSchemaM = new Schema({
     base: { type: String, required: true },
     german: { type: String, required: true }
+}, {
+    _id: false,
+    id: false,
+    versionKey: false,
 });

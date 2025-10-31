@@ -3,26 +3,19 @@ import { redirect, notFound } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Button } from "@/components/ui/button";
-import { getLessonById, getLessonsByUserId, getUserByEmail } from "@core/index";
+import { DualLanguageTextCard, type DualLanguageContent } from "@/components/dual-language-text-card";
+import { getLessonById, getUserByEmail } from "@core/index";
 
 type LessonPageProps = {
-    params: {
+    params: Promise<{
         lessonId: string;
-    };
+    }>;
 };
 
-function formatLabel(value: string | undefined | null) {
-    if (!value) return "";
-
-    return value
-        .split("_")
-        .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-        .join(" ");
-}
-
 export default async function LessonDetailsPage({ params }: LessonPageProps) {
+    const { lessonId } = await params;
     const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent(`/lessons/${params.lessonId}`)}`;
+    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent(`/lessons/${lessonId}`)}`;
 
     if (!session?.user?.email) {
         redirect(signInUrl);
@@ -34,15 +27,39 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         redirect(signInUrl);
     }
 
-    const lesson = await getLessonById(params.lessonId);
+    const lesson = await getLessonById(lessonId);
 
     if (!lesson) {
         notFound();
     }
 
-    // const englishContent = lesson.englishContent?.trim();
-    const germanContent = lesson.germanContent?.trim();
-    const exercises = Array.isArray(lesson.exercises) ? lesson.exercises : [];
+    const sanitizeDualLanguage = <T extends Partial<Record<"base" | "german", unknown>>>(
+        entry: T | null | undefined,
+    ): DualLanguageContent => {
+        if (!entry) return {};
+
+        const base = typeof entry.base === "string" ? entry.base : undefined;
+        const german = typeof entry.german === "string" ? entry.german : undefined;
+
+        return { base, german };
+    };
+
+    const sanitizeDualLanguageList = (
+        entries: Array<Partial<Record<"base" | "german", unknown>>> | null | undefined,
+    ): DualLanguageContent[] => {
+        if (!Array.isArray(entries)) return [];
+        return entries.map((entry) => sanitizeDualLanguage(entry));
+    };
+
+    const sanitizedLesson = {
+        title: sanitizeDualLanguage(lesson.title),
+        quickSummary: sanitizeDualLanguage(lesson.quickSummary),
+        quickExamples: sanitizeDualLanguageList(lesson.quickExamples),
+        fullExplanation: sanitizeDualLanguage(lesson.fullExplanation),
+    };
+
+    const lessonTitle =
+        sanitizedLesson.title.base || sanitizedLesson.title.german || "Untitled lesson";
 
     return (
         <section className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10">
@@ -50,8 +67,14 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
                 <div className="space-y-2">
                     <p className="text-sm text-slate-500">Custom lesson</p>
                     <h1 className="text-3xl font-semibold">
-                        {lesson.title || "Untitled lesson"}
+                        {lessonTitle}
                     </h1>
+                    {lesson.topic && (
+                        <p className="text-sm text-slate-500">Topic: {lesson.topic}</p>
+                    )}
+                    {lesson.vocabulary && (
+                        <p className="text-sm text-slate-500">Vocabulary focus: {lesson.vocabulary}</p>
+                    )}
                 </div>
                 <Button variant="outline" asChild>
                     <Link href="/lessons">Back to lessons</Link>
@@ -59,54 +82,29 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
             </header>
 
             <article className="space-y-8">
-                <section className="space-y-3">
-                    <h2 className="text-xl font-semibold">English content</h2>
-                    <p className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white/70 p-4 text-slate-700">
-                        {englishContent || "This lesson does not have English content yet."}
-                    </p>
-                </section>
+                <DualLanguageTextCard
+                    heading="Title"
+                    content={sanitizedLesson.title}
+                    emptyMessage="This lesson does not have a title yet."
+                />
 
-                <section className="space-y-3">
-                    <h2 className="text-xl font-semibold">German content</h2>
-                    <p className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white/70 p-4 text-slate-700">
-                        {germanContent || "This lesson does not have German content yet."}
-                    </p>
-                </section>
+                <DualLanguageTextCard
+                    heading="Summary"
+                    content={sanitizedLesson.quickSummary}
+                    emptyMessage="This lesson does not have a summary yet."
+                />
 
-                {exercises.length > 0 && (
-                    <section className="space-y-4">
-                        <h2 className="text-xl font-semibold">Exercises</h2>
-                        <div className="space-y-3">
-                            {exercises.map((exercise, index) => (
-                                <div
-                                    key={`${exercise.question ?? "exercise"}-${index}`}
-                                    className="rounded-lg border border-slate-200 p-4"
-                                >
-                                    {(exercise.category || exercise.type) && (
-                                        <p className="text-xs uppercase text-slate-500">
-                                            {[
-                                                formatLabel(exercise.category),
-                                                formatLabel(exercise.type),
-                                            ]
-                                                .filter(Boolean)
-                                                .join(" • ")}
-                                        </p>
-                                    )}
-                                    {exercise.question && (
-                                        <p className="mt-2 text-base font-medium text-slate-800">
-                                            {exercise.question}
-                                        </p>
-                                    )}
-                                    {exercise.answer && (
-                                        <p className="mt-2 text-sm text-slate-600">
-                                            Suggested answer: {exercise.answer}
-                                        </p>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
+                <DualLanguageTextCard
+                    heading="Examples"
+                    content={sanitizedLesson.quickExamples}
+                    emptyMessage="This lesson does not have examples yet."
+                />
+
+                <DualLanguageTextCard
+                    heading="Detailed Explanation"
+                    content={sanitizedLesson.fullExplanation}
+                    emptyMessage="This lesson does not have a detailed explanation yet."
+                />
             </article>
         </section>
     );
