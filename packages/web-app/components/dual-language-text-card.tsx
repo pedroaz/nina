@@ -112,7 +112,7 @@ export function DualLanguageTextCard({
                         wrapperElement={{ 'data-color-mode': 'light' }}
                     />
                 ) : (
-                    <div className="space-y-2">
+                    <div>
                         {entries.map((entry, index) => (
                             <MarkdownPreview
                                 key={`${heading}-${index}`}
