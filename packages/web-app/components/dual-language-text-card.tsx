@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
+import MarkdownPreview from '@uiw/react-markdown-preview';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -32,6 +34,18 @@ const languageLabel: Record<LanguageKey, string> = {
     base: 'Base',
     german: 'German',
 };
+
+const markdownPreviewStyle = {
+    backgroundColor: 'transparent',
+    padding: 0,
+    color: 'inherit',
+    fontFamily: 'inherit',
+    '--color-canvas-default': 'transparent',
+    '--color-canvas-subtle': 'transparent',
+} as CSSProperties;
+
+const markdownPreviewClassName =
+    'text-sm leading-6 text-slate-700 whitespace-pre-wrap [&>*]:m-0 [&>*:not(:last-child)]:mb-2';
 
 function getEntries(
     content: DualLanguageContent | DualLanguageContent[] | null | undefined,
@@ -91,17 +105,25 @@ export function DualLanguageTextCard({
                 {!hasAnyContent ? (
                     <p className="text-sm text-muted-foreground">{emptyMessage}</p>
                 ) : entries.length === 1 ? (
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                        {getEntryText(entries[0], activeLanguage)}
-                    </p>
+                    <MarkdownPreview
+                        className={markdownPreviewClassName}
+                        source={getEntryText(entries[0], activeLanguage)}
+                        style={markdownPreviewStyle}
+                        wrapperElement={{ 'data-color-mode': 'light' }}
+                    />
                 ) : (
                     <ol className="list-decimal space-y-2 pl-5">
                         {entries.map((entry, index) => (
                             <li
                                 key={`${heading}-${index}`}
-                                className="whitespace-pre-wrap text-sm leading-6 text-slate-700"
+                                className="text-sm leading-6 text-slate-700"
                             >
-                                {getEntryText(entry, activeLanguage)}
+                                <MarkdownPreview
+                                    className={markdownPreviewClassName}
+                                    source={getEntryText(entry, activeLanguage)}
+                                    style={markdownPreviewStyle}
+                                    wrapperElement={{ 'data-color-mode': 'light' }}
+                                />
                             </li>
                         ))}
                     </ol>
