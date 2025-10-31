@@ -93,12 +93,8 @@ export default async function CustomLessons() {
                             <CardHeader className="flex flex-row items-start justify-between gap-4">
                                 <div className="space-y-1">
                                     <CardTitle className="text-base font-medium">
-                                        <Link
-                                            className="transition-colors hover:text-slate-900"
-                                            href={`/lessons/${lesson.id}`}
-                                        >
-                                            {lesson.title}
-                                        </Link>
+
+                                        {lesson.title}
                                     </CardTitle>
                                     <CardDescription className="text-xs text-slate-500">
                                         {lesson.prompt}
