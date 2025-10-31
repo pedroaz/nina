@@ -112,21 +112,17 @@ export function DualLanguageTextCard({
                         wrapperElement={{ 'data-color-mode': 'light' }}
                     />
                 ) : (
-                    <ol className="list-decimal space-y-2 pl-5">
+                    <div className="space-y-2">
                         {entries.map((entry, index) => (
-                            <li
+                            <MarkdownPreview
                                 key={`${heading}-${index}`}
-                                className="text-sm leading-6 text-slate-700"
-                            >
-                                <MarkdownPreview
-                                    className={markdownPreviewClassName}
-                                    source={getEntryText(entry, activeLanguage)}
-                                    style={markdownPreviewStyle}
-                                    wrapperElement={{ 'data-color-mode': 'light' }}
-                                />
-                            </li>
+                                className={markdownPreviewClassName}
+                                source={getEntryText(entry, activeLanguage)}
+                                style={markdownPreviewStyle}
+                                wrapperElement={{ 'data-color-mode': 'light' }}
+                            />
                         ))}
-                    </ol>
+                    </div>
                 )}
             </CardContent>
         </Card>

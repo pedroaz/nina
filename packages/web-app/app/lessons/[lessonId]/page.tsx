@@ -58,20 +58,15 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         fullExplanation: sanitizeDualLanguage(lesson.fullExplanation),
     };
 
-    const lessonTitle =
+    const lessonTitleRaw =
         sanitizedLesson.title.base || sanitizedLesson.title.german || "Untitled lesson";
+    const lessonTitle = lessonTitleRaw.replace(/^#+\s*/, "").trimStart();
 
     return (
         <section className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10">
             <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-2">
-                    <p className="text-sm text-slate-500">Custom lesson</p>
-                    <h1 className="text-3xl font-semibold">
-                        {lessonTitle}
-                    </h1>
-                    {lesson.topic && (
-                        <p className="text-sm text-slate-500">Topic: {lesson.topic}</p>
-                    )}
+                    <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
                     {lesson.vocabulary && (
                         <p className="text-sm text-slate-500">Vocabulary focus: {lesson.vocabulary}</p>
                     )}
@@ -82,12 +77,6 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
             </header>
 
             <article className="space-y-8">
-                <DualLanguageTextCard
-                    heading="Title"
-                    content={sanitizedLesson.title}
-                    emptyMessage="This lesson does not have a title yet."
-                />
-
                 <DualLanguageTextCard
                     heading="Summary"
                     content={sanitizedLesson.quickSummary}
