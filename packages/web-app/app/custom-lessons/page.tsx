@@ -8,7 +8,7 @@ import {
     getUserByEmail,
     LessonRequestStatus,
     deleteLessonRequestCommand,
-} from "@shared/index";
+} from "@core/index";
 import { Button } from "@/components/ui/button";
 import {
     Card,

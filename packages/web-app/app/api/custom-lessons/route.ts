@@ -5,8 +5,8 @@ import {
     createLessonRequestCommand,
     getLessonRequestsByCreatorId,
     getUserByEmail,
-} from "@shared/index";
-import type { LessonRequest } from "@shared/index";
+} from "@core/index";
+import type { LessonRequest } from "@core/index";
 
 function serializeLessonRequest(request: LessonRequest) {
     return {
