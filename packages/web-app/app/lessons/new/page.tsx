@@ -7,14 +7,14 @@ import { Label } from "@/components/ui/label";
 
 export default function CustomLessonsNew() {
     const router = useRouter();
-    const [prompt, setPrompt] = useState("");
+    const [userPrompt, setUserPrompt] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
-        const sanitizedPrompt = prompt.trim();
+        const sanitizedPrompt = userPrompt.trim();
 
         if (!sanitizedPrompt) {
             setError("Please provide a prompt for your lesson request.");
@@ -28,7 +28,7 @@ export default function CustomLessonsNew() {
             const response = await fetch("/api/lessons", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt: sanitizedPrompt }),
+                body: JSON.stringify({ userPrompt: sanitizedPrompt }),
             });
 
             if (response.status === 401) {
@@ -47,7 +47,7 @@ export default function CustomLessonsNew() {
                 throw new Error(message);
             }
 
-            setPrompt("");
+            setUserPrompt("");
             router.push("/lessons");
             router.refresh();
         } catch (err) {
@@ -69,8 +69,8 @@ export default function CustomLessonsNew() {
                     <textarea
                         id="prompt"
                         name="prompt"
-                        value={prompt}
-                        onChange={(event) => setPrompt(event.target.value)}
+                        value={userPrompt}
+                        onChange={(event) => setUserPrompt(event.target.value)}
                         className="min-h-48 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                         placeholder="Describe what you want to learn..."
                         disabled={isSubmitting}

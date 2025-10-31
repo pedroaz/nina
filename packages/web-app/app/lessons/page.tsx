@@ -62,7 +62,7 @@ export default async function CustomLessons() {
 
     const lessonItems: LessonListItem[] = lessons.map((request) => ({
         id: request.id,
-        prompt: request.prompt,
+        prompt: request.userPrompt,
     }));
 
     return (
@@ -95,7 +95,7 @@ export default async function CustomLessons() {
                                 </div>
                                 <form action={deleteLessonRequest}>
                                     <input type="hidden" name="requestId" value={lesson.id} />
-                                    <Button variant="outline" size="sm" type="submit">
+                                    <Button variant="destructive" size="sm" type="submit">
                                         Delete
                                     </Button>
                                 </form>

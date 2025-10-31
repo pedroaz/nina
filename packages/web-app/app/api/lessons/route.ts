@@ -6,7 +6,6 @@ import {
     getLessonsByCreatorId,
     getUserByEmail,
 } from "@core/index";
-import type { Lesson } from "@core/index";
 
 
 export async function POST(req: Request) {
@@ -17,10 +16,10 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => null);
-    const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+    const userPrompt = typeof body?.userPrompt === "string" ? body.userPrompt.trim() : "";
 
-    if (!prompt) {
-        return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    if (!userPrompt) {
+        return NextResponse.json({ error: "User prompt is required" }, { status: 400 });
     }
 
     const user = await getUserByEmail(session.user.email);
@@ -29,11 +28,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    console.log("Creating lesson with prompt:", prompt);
-
     const created = await createLessonCommand({
         creatorId: user.id,
-        prompt,
+        userPrompt,
     });
 
     return NextResponse.json(created, { status: 201 });

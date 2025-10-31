@@ -8,3 +8,4 @@ data/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+.genkit

@@ -4,8 +4,7 @@ import { createLessonFlow } from "../llm/llm";
 
 export interface CreateLessonRequestData {
     creatorId: string;
-    prompt: string;
-    lessonId?: string | null;
+    userPrompt: string;
 }
 
 export async function createLessonCommand(
@@ -14,16 +13,18 @@ export async function createLessonCommand(
     await connectDatabase();
     const lesson = new LessonModel({
         creatorId: data.creatorId,
-        prompt: data.prompt,
-        lessonId: data.lessonId ?? null,
+        prompt: data.userPrompt,
     });
 
     var llmResult = await createLessonFlow({
-        prompt: data.prompt,
+        userPrompt: data.userPrompt,
     });
 
+    if (!llmResult) throw new Error('Failed to generate lesson');
+
     lesson.title = llmResult.title;
-    lesson.content = llmResult.content;
+    lesson.germanContent = llmResult.germanContent;
+    lesson.englishContent = llmResult.englishContent;
 
     await lesson.save();
 
