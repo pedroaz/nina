@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Button } from "@/components/ui/button";
-import { getLessonByIdAndCreator, getUserByEmail } from "@core/index";
+import { getLessonById, getLessonsByUserId, getUserByEmail } from "@core/index";
 
 type LessonPageProps = {
     params: {
@@ -34,13 +34,13 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         redirect(signInUrl);
     }
 
-    const lesson = await getLessonByIdAndCreator(params.lessonId, user.id);
+    const lesson = await getLessonById(params.lessonId);
 
     if (!lesson) {
         notFound();
     }
 
-    const englishContent = lesson.englishContent?.trim();
+    // const englishContent = lesson.englishContent?.trim();
     const germanContent = lesson.germanContent?.trim();
     const exercises = Array.isArray(lesson.exercises) ? lesson.exercises : [];
 

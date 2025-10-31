@@ -20,8 +20,9 @@ import {
 
 type LessonListItem = {
     id: string;
-    prompt: string;
     title: string;
+    topic: string;
+    vocabulary: string;
 };
 
 function formatCreatedAt(dateIso: string | null) {
@@ -46,7 +47,7 @@ export default async function CustomLessons() {
         redirect(signInUrl);
     }
 
-    const creatorId = user.id;
+    const creatorId = user._id;
 
     const deleteLessonRequest = async (formData: FormData) => {
         "use server";
@@ -56,16 +57,17 @@ export default async function CustomLessons() {
             return;
         }
 
-        await deleteLessonCommand({ requestId, creatorId });
+        await deleteLessonCommand({ requestId });
         revalidatePath("/lessons");
     };
 
-    const lessons = await getLessonsByUserId(user.id);
+    const lessons = await getLessonsByUserId(user._id);
 
     const lessonItems: LessonListItem[] = lessons.map((request) => ({
-        id: request.id,
-        prompt: request.userPrompt,
-        title: request.title ?? "Untitled lesson",
+        id: request._id.toString(),
+        title: request.title?.base ?? "Untitled lesson",
+        topic: request.topic,
+        vocabulary: request.vocabulary,
     }));
 
     return (
@@ -93,12 +95,8 @@ export default async function CustomLessons() {
                             <CardHeader className="flex flex-row items-start justify-between gap-4">
                                 <div className="space-y-1">
                                     <CardTitle className="text-base font-medium">
-
                                         {lesson.title}
                                     </CardTitle>
-                                    <CardDescription className="text-xs text-slate-500">
-                                        {lesson.prompt}
-                                    </CardDescription>
                                 </div>
                                 <form action={deleteLessonRequest}>
                                     <input type="hidden" name="requestId" value={lesson.id} />
@@ -109,7 +107,7 @@ export default async function CustomLessons() {
                             </CardHeader>
                             <CardContent className="flex flex-col gap-2 text-sm text-slate-600">
                                 <p className="whitespace-pre-wrap leading-relaxed">
-                                    {lesson.prompt}
+                                    {lesson.topic}
                                 </p>
                             </CardContent>
                             <CardFooter className="flex justify-end">

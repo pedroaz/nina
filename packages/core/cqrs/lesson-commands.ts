@@ -16,7 +16,7 @@ export async function createLessonCommand(
     const user = await getUserById(data.userId!); // ensure user exists
 
     if (!user) throw new Error('User not found');
-    const lesson = new LessonModel({
+    const lessonObject = new LessonModel({
         topic: data.topic,
         vocabulary: data.vocabulary,
         studentData: {
@@ -27,26 +27,26 @@ export async function createLessonCommand(
         },
     });
 
-    // var llmResult = await createLessonFlow({
-    //     topic: data.topic,
-    //     vocabulary: data.vocabulary,
-    // });
+    var llmResult = await createLessonFlow({
+        topic: data.topic,
+        vocabulary: data.vocabulary,
+    });
 
-    // if (!llmResult) throw new Error('Failed to generate lesson');
+    if (!llmResult) throw new Error('Failed to generate lesson');
 
-    // lesson.title = llmResult.title;
-    // lesson.germanContent = llmResult.germanContent;
-    // lesson.englishContent = llmResult.englishContent;
+    lessonObject.title = llmResult.title;
+    lessonObject.quickSummary = llmResult.quickSummary;
+    lessonObject.quickExamples = llmResult.quickExamples;
+    lessonObject.fullExplanation = llmResult.fullExplanation;
 
-    await lesson.save();
+    await lessonObject.save();
 
 
-    return lesson;
+    return lessonObject;
 }
 
 export interface DeleteLessonRequestData {
     requestId: string;
-    creatorId: string;
 }
 
 export async function deleteLessonCommand(
@@ -55,6 +55,5 @@ export async function deleteLessonCommand(
     await connectDatabase();
     await LessonModel.deleteOne({
         _id: data.requestId,
-        creatorId: data.creatorId,
     }).exec();
 }

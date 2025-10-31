@@ -21,6 +21,8 @@ export const LessonInputSchema = z.object({
 
 // Define output schema
 export const LessonSchemaLLM = lessonSchemaZ.omit({
+    topic: true,
+    vocabulary: true,
     studentData: true,
 })
 
@@ -32,10 +34,9 @@ export const createLessonFlow = ai.defineFlow(
         outputSchema: LessonSchemaLLM,
     },
     async (input) => {
-        // Create a prompt based on the input
-        const userPrompt = createFinalPrompt(input.topic);
 
-        // Generate structured lesson data using the same schema
+        const userPrompt = createFinalPrompt(input.topic, input.vocabulary);
+
         const { output } = await ai.generate({
             prompt: userPrompt,
             output: { schema: LessonSchemaLLM },
