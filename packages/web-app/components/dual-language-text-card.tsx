@@ -11,6 +11,12 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 
 type LanguageKey = 'base' | 'german';
 
@@ -79,11 +85,26 @@ export function DualLanguageTextCard({
     emptyMessage = 'No content available.',
 }: DualLanguageTextCardProps) {
     const [activeLanguage, setActiveLanguage] = useState<LanguageKey>('base');
+    const [highlightedText, setHighlightedText] = useState<string>('');
     const entries = getEntries(content);
     const hasAnyContent = entries.some(hasContent);
 
     const handleToggle = () => {
         setActiveLanguage((prev) => (prev === 'base' ? 'german' : 'base'));
+    };
+
+    const handleContextMenu = () => {
+        // Capture the highlighted text right before the custom menu opens.
+        const text = window.getSelection()?.toString().trim() ?? '';
+        setHighlightedText(text);
+    };
+
+    const handleTranslate = () => {
+        console.log('Translate sentence:', highlightedText);
+    };
+
+    const handleAddToFlashcard = () => {
+        console.log('Add to flash card:', highlightedText);
     };
 
     return (
@@ -102,28 +123,47 @@ export function DualLanguageTextCard({
                 </CardAction>
             </CardHeader>
             <CardContent>
-                {!hasAnyContent ? (
-                    <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-                ) : entries.length === 1 ? (
-                    <MarkdownPreview
-                        className={markdownPreviewClassName}
-                        source={getEntryText(entries[0], activeLanguage)}
-                        style={markdownPreviewStyle}
-                        wrapperElement={{ 'data-color-mode': 'light' }}
-                    />
-                ) : (
-                    <div>
-                        {entries.map((entry, index) => (
-                            <MarkdownPreview
-                                key={`${heading}-${index}`}
-                                className={markdownPreviewClassName}
-                                source={getEntryText(entry, activeLanguage)}
-                                style={markdownPreviewStyle}
-                                wrapperElement={{ 'data-color-mode': 'light' }}
-                            />
-                        ))}
-                    </div>
-                )}
+                <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                        <div onContextMenu={handleContextMenu}>
+                            {!hasAnyContent ? (
+                                <p className="text-sm text-muted-foreground">
+                                    {emptyMessage}
+                                </p>
+                            ) : entries.length === 1 ? (
+                                <MarkdownPreview
+                                    className={markdownPreviewClassName}
+                                    source={getEntryText(entries[0], activeLanguage)}
+                                    style={markdownPreviewStyle}
+                                    wrapperElement={{ 'data-color-mode': 'light' }}
+                                />
+                            ) : (
+                                <div>
+                                    {entries.map((entry, index) => (
+                                        <MarkdownPreview
+                                            key={`${heading}-${index}`}
+                                            className={markdownPreviewClassName}
+                                            source={getEntryText(entry, activeLanguage)}
+                                            style={markdownPreviewStyle}
+                                            wrapperElement={{ 'data-color-mode': 'light' }}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                        <ContextMenuItem onSelect={handleTranslate} disabled={!highlightedText}>
+                            Translate sentence
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                            onSelect={handleAddToFlashcard}
+                            disabled={!highlightedText}
+                        >
+                            Add to flash card
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
             </CardContent>
         </Card>
     );

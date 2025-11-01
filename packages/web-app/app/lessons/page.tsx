@@ -1,13 +1,8 @@
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import {
-    deleteLessonCommand,
-    getLessonsByUserId,
-    getUserByEmail,
-} from "@core/index";
+import { getLessonsByUserId, getUserByEmail } from "@core/index";
 import { Button } from "@/components/ui/button";
 import {
     Card,
@@ -47,20 +42,6 @@ export default async function CustomLessons() {
         redirect(signInUrl);
     }
 
-    const creatorId = user._id;
-
-    const deleteLessonRequest = async (formData: FormData) => {
-        "use server";
-        const requestId = formData.get("requestId");
-
-        if (typeof requestId !== "string") {
-            return;
-        }
-
-        await deleteLessonCommand({ requestId });
-        revalidatePath("/lessons");
-    };
-
     const lessons = await getLessonsByUserId(user._id);
 
     const lessonItems: LessonListItem[] = lessons.map((request) => ({
@@ -98,8 +79,7 @@ export default async function CustomLessons() {
                                         {lesson.title}
                                     </CardTitle>
                                 </div>
-                                <form action={deleteLessonRequest}>
-                                    <input type="hidden" name="requestId" value={lesson.id} />
+                                <form action={`/api/lessons/${lesson.id}`} method="post">
                                     <Button variant="destructive" size="sm" type="submit">
                                         Delete
                                     </Button>
