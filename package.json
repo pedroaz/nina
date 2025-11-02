@@ -5,5 +5,18 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.13.1"
+  "packageManager": "pnpm@10.13.1",
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^24.9.1"
+  },
+  "scripts": {
+    "web-app:dev": "cd packages/web-app && pnpm dev",
+    "test:e2e": "pnpm playwright test",
+    "genkit": "genkit start -- npx tsx --watch ./packages/core/llm/llm.ts"
+  },
+  "dependencies": {
+    "mongoose": "^8.19.2",
+    "tsx": "^4.20.6"
+  }
 }
