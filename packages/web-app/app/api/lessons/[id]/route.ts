@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -45,10 +45,12 @@ async function deleteLessonById(req: Request, lessonId: string | undefined) {
     return NextResponse.redirect(redirectUrl);
 }
 
-export async function POST(req: Request, { params }: { params: { id?: string } }) {
-    return deleteLessonById(req, params.id);
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+    const { id } = await context.params;
+    return deleteLessonById(req, id);
 }
 
-export async function DELETE(req: Request, { params }: { params: { id?: string } }) {
-    return deleteLessonById(req, params.id);
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+    const { id } = await context.params;
+    return deleteLessonById(req, id);
 }
