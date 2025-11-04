@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Button } from "@/components/ui/button";
 import { DualLanguageTextCard, type DualLanguageContent } from "@/components/dual-language-text-card";
+import { AvatarHelper } from "@/components/avatar-helper";
 import { getLessonById, getUserByEmail } from "@core/index";
 
 type LessonPageProps = {
@@ -63,38 +64,42 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
     const lessonTitle = lessonTitleRaw.replace(/^#+\s*/, "").trimStart();
 
     return (
-        <section className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10">
-            <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-2">
-                    <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
-                    {lesson.vocabulary && (
-                        <p className="text-sm text-slate-500">Vocabulary focus: {lesson.vocabulary}</p>
-                    )}
-                </div>
-                <Button variant="outline" asChild>
-                    <Link href="/lessons">Back to lessons</Link>
-                </Button>
-            </header>
+        <>
+            <section className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10">
+                <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-2">
+                        <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
+                        {lesson.vocabulary && (
+                            <p className="text-sm text-slate-500">Vocabulary focus: {lesson.vocabulary}</p>
+                        )}
+                    </div>
+                    <Button variant="outline" asChild>
+                        <Link href="/lessons">Back to lessons</Link>
+                    </Button>
+                </header>
 
-            <article className="space-y-8">
-                <DualLanguageTextCard
-                    heading="Summary"
-                    content={sanitizedLesson.quickSummary}
-                    emptyMessage="This lesson does not have a summary yet."
-                />
+                <article className="space-y-8">
+                    <DualLanguageTextCard
+                        heading="Summary"
+                        content={sanitizedLesson.quickSummary}
+                        emptyMessage="This lesson does not have a summary yet."
+                    />
 
-                <DualLanguageTextCard
-                    heading="Examples"
-                    content={sanitizedLesson.quickExamples}
-                    emptyMessage="This lesson does not have examples yet."
-                />
+                    <DualLanguageTextCard
+                        heading="Examples"
+                        content={sanitizedLesson.quickExamples}
+                        emptyMessage="This lesson does not have examples yet."
+                    />
 
-                <DualLanguageTextCard
-                    heading="Detailed Explanation"
-                    content={sanitizedLesson.fullExplanation}
-                    emptyMessage="This lesson does not have a detailed explanation yet."
-                />
-            </article>
-        </section>
+                    <DualLanguageTextCard
+                        heading="Detailed Explanation"
+                        content={sanitizedLesson.fullExplanation}
+                        emptyMessage="This lesson does not have a detailed explanation yet."
+                    />
+                </article>
+            </section>
+
+            <AvatarHelper />
+        </>
     );
 }
