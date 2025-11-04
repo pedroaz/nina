@@ -31,16 +31,6 @@ type DualLanguageTextCardProps = {
     emptyMessage?: string;
 };
 
-const buttonLabel: Record<LanguageKey, string> = {
-    base: 'Show German',
-    german: 'Show Base',
-};
-
-const languageLabel: Record<LanguageKey, string> = {
-    base: 'Base',
-    german: 'German',
-};
-
 const markdownPreviewStyle = {
     backgroundColor: 'transparent',
     padding: 0,
@@ -50,8 +40,20 @@ const markdownPreviewStyle = {
     '--color-canvas-subtle': 'transparent',
 } as CSSProperties;
 
+const translationPreviewStyle = {
+    backgroundColor: 'transparent',
+    padding: 0,
+    color: '#c2410c', // orange-700
+    fontFamily: 'inherit',
+    '--color-canvas-default': 'transparent',
+    '--color-canvas-subtle': 'transparent',
+} as CSSProperties;
+
 const markdownPreviewClassName =
     'text-sm leading-6 text-slate-700 whitespace-pre-wrap [&>*]:m-0 [&>*:not(:last-child)]:mb-2';
+
+const translationPreviewClassName =
+    'text-xs leading-5 whitespace-pre-wrap [&>*]:m-0 [&>*:not(:last-child)]:mb-2 mt-2';
 
 function getEntries(
     content: DualLanguageContent | DualLanguageContent[] | null | undefined,
@@ -70,13 +72,94 @@ function hasContent(entry: DualLanguageContent): boolean {
     });
 }
 
+function splitIntoParagraphs(text: string): string[] {
+    // Split by double newlines and filter out empty paragraphs
+    return text
+        .split('\n\n')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+}
+
+function canSplitIntoParagraphs(entry: DualLanguageContent): boolean {
+    const germanText = entry?.german;
+    const baseText = entry?.base;
+
+    if (
+        typeof germanText !== 'string' ||
+        germanText.trim().length === 0 ||
+        typeof baseText !== 'string' ||
+        baseText.trim().length === 0
+    ) {
+        return false;
+    }
+
+    const germanParagraphs = splitIntoParagraphs(germanText);
+    const baseParagraphs = splitIntoParagraphs(baseText);
+
+    return germanParagraphs.length === baseParagraphs.length && germanParagraphs.length > 0;
+}
+
 function getEntryText(entry: DualLanguageContent, language: LanguageKey): string {
     const value = entry?.[language];
     if (typeof value === 'string' && value.trim().length > 0) {
         return value.trim();
     }
 
-    return `No ${languageLabel[language]} content provided.`;
+    const languageNames: Record<LanguageKey, string> = {
+        base: 'English',
+        german: 'German',
+    };
+
+    return `No ${languageNames[language]} content provided.`;
+}
+
+function renderEntryContent(entry: DualLanguageContent, showTranslation: boolean) {
+    const canSplit = canSplitIntoParagraphs(entry);
+
+    if (canSplit) {
+        // Split into paragraphs and show German with optional translation below
+        const germanText = entry.german?.trim() ?? '';
+        const baseText = entry.base?.trim() ?? '';
+        const germanParagraphs = splitIntoParagraphs(germanText);
+        const baseParagraphs = splitIntoParagraphs(baseText);
+
+        return (
+            <div>
+                {germanParagraphs.map((germanPara, index) => (
+                    <div key={index} className="mb-4 last:mb-0">
+                        <MarkdownPreview
+                            className={markdownPreviewClassName}
+                            source={germanPara}
+                            style={markdownPreviewStyle}
+                            wrapperElement={{ 'data-color-mode': 'light' }}
+                        />
+                        {showTranslation && (
+                            <MarkdownPreview
+                                className={translationPreviewClassName}
+                                source={baseParagraphs[index]}
+                                style={translationPreviewStyle}
+                                wrapperElement={{ 'data-color-mode': 'light' }}
+                            />
+                        )}
+                    </div>
+                ))}
+            </div>
+        );
+    } else {
+        // Fallback: show German by default, toggle to show base if needed
+        console.warn(
+            'Paragraph counts do not match for entry. Falling back to toggle behavior.',
+        );
+        const displayLanguage: LanguageKey = showTranslation ? 'base' : 'german';
+        return (
+            <MarkdownPreview
+                className={markdownPreviewClassName}
+                source={getEntryText(entry, displayLanguage)}
+                style={markdownPreviewStyle}
+                wrapperElement={{ 'data-color-mode': 'light' }}
+            />
+        );
+    }
 }
 
 export function DualLanguageTextCard({
@@ -84,13 +167,13 @@ export function DualLanguageTextCard({
     content,
     emptyMessage = 'No content available.',
 }: DualLanguageTextCardProps) {
-    const [activeLanguage, setActiveLanguage] = useState<LanguageKey>('base');
+    const [showTranslation, setShowTranslation] = useState<boolean>(false);
     const [highlightedText, setHighlightedText] = useState<string>('');
     const entries = getEntries(content);
     const hasAnyContent = entries.some(hasContent);
 
     const handleToggle = () => {
-        setActiveLanguage((prev) => (prev === 'base' ? 'german' : 'base'));
+        setShowTranslation((prev) => !prev);
     };
 
     const handleContextMenu = () => {
@@ -113,11 +196,8 @@ export function DualLanguageTextCard({
                 <CardTitle className="text-lg font-semibold">{heading}</CardTitle>
                 <CardAction>
                     <div className="flex items-center gap-2">
-                        {/* <span className="text-xs font-medium uppercase text-muted-foreground">
-                            {languageLabel[activeLanguage]}
-                        </span> */}
                         <Button size="sm" variant="outline" onClick={handleToggle}>
-                            {buttonLabel[activeLanguage]}
+                            {showTranslation ? 'Translate' : 'Translate'}
                         </Button>
                     </div>
                 </CardAction>
@@ -130,23 +210,14 @@ export function DualLanguageTextCard({
                                 <p className="text-sm text-muted-foreground">
                                     {emptyMessage}
                                 </p>
-                            ) : entries.length === 1 ? (
-                                <MarkdownPreview
-                                    className={markdownPreviewClassName}
-                                    source={getEntryText(entries[0], activeLanguage)}
-                                    style={markdownPreviewStyle}
-                                    wrapperElement={{ 'data-color-mode': 'light' }}
-                                />
                             ) : (
                                 <div>
                                     {entries.map((entry, index) => (
-                                        <MarkdownPreview
+                                        <div
                                             key={`${heading}-${index}`}
-                                            className={markdownPreviewClassName}
-                                            source={getEntryText(entry, activeLanguage)}
-                                            style={markdownPreviewStyle}
-                                            wrapperElement={{ 'data-color-mode': 'light' }}
-                                        />
+                                        >
+                                            {renderEntryContent(entry, showTranslation)}
+                                        </div>
                                     ))}
                                 </div>
                             )}
