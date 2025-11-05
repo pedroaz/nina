@@ -6,6 +6,7 @@ import {
     getLessonsByUserId,
     getUserByEmail,
 } from "@core/index";
+import { MODEL_CATEGORIES, getModelConfig } from "@core/llm/llm";
 
 
 export async function POST(req: Request) {
@@ -29,11 +30,21 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.DETAILED);
+    const startTime = performance.now();
+
+    console.log(`[Lesson API] Creating lesson for user: ${user.email}`);
+    console.log(`[Lesson API] Using model: ${modelConfig.displayName}`);
+    console.log(`[Lesson API] Topic: "${topic}"`);
+
     const created = await createLessonCommand({
         userId: user._id,
         topic,
         vocabulary
     });
+
+    const totalTime = performance.now() - startTime;
+    console.log(`[Lesson API] Lesson created in ${totalTime.toFixed(2)}ms`);
 
     return NextResponse.json(created, { status: 201 });
 }

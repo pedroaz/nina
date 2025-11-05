@@ -104,6 +104,17 @@ export default function CustomLessonsNew() {
                     </p>
                 ) : null}
 
+                {isSubmitting && (
+                    <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
+                        <p className="text-sm text-blue-800">
+                            Creating lesson with <span className="font-semibold">Detailed Model (GPT-5 Nano)</span>...
+                        </p>
+                        <p className="text-xs text-blue-600 mt-1">
+                            This may take a moment as we generate comprehensive content for you.
+                        </p>
+                    </div>
+                )}
+
                 <div className="flex items-center justify-end gap-4">
                     <Button
                         type="button"
@@ -114,7 +125,7 @@ export default function CustomLessonsNew() {
                         Cancel
                     </Button>
                     <Button type="submit" disabled={isSubmitting}>
-                        {isSubmitting ? "Submitting..." : "Submit request"}
+                        {isSubmitting ? "Creating lesson..." : "Submit request"}
                     </Button>
                 </div>
             </form>

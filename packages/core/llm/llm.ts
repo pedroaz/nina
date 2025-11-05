@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createFinalPrompt } from './prompt';
 import { lessonSchemaZ, type Lesson } from '../entities/lesson';
 import { openAI } from '@genkit-ai/compat-oai/openai';
+import { MODEL_CATEGORIES, getModelName, getModelConfig } from './model-config';
 
 /*
 gpt-4.5
@@ -36,21 +37,22 @@ gpt-5-nano
 gpt-5-chat-latest
 */
 
-// AI instance for lesson creation (slower but more capable)
+// AI instance for lesson creation - uses DETAILED model category
 const ai = genkit({
     plugins: [openAI({ apiKey: process.env.OPENAI_API_KEY })],
-    model: openAI.model('gpt-5-nano'),
+    model: openAI.model(getModelName(MODEL_CATEGORIES.DETAILED)),
     promptDir: './packages/core/llm/prompts',
 });
 
-// AI instance for chat (fast and optimized for real-time interaction)
+// AI instance for chat - uses FAST model category
 const chatAi = genkit({
     plugins: [openAI({ apiKey: process.env.OPENAI_API_KEY })],
-    model: openAI.model('gpt-4o-mini'),
+    model: openAI.model(getModelName(MODEL_CATEGORIES.FAST)),
     promptDir: './packages/core/llm/prompts',
 });
 
 export { ai };
+export { MODEL_CATEGORIES, getModelConfig } from './model-config';
 
 // Define input schema
 export const LessonInputSchema = z.object({
@@ -73,15 +75,30 @@ export const createLessonFlow = ai.defineFlow(
         outputSchema: LessonSchemaLLM,
     },
     async (input) => {
+        const modelConfig = getModelConfig(MODEL_CATEGORIES.DETAILED);
+        const startTime = performance.now();
+
+        console.log(`[Lesson Creation] Starting lesson generation`);
+        console.log(`[Lesson Creation] Using ${modelConfig.displayName}`);
+        console.log(`[Lesson Creation] Topic: "${input.topic}"`);
+        console.log(`[Lesson Creation] Vocabulary: "${input.vocabulary}"`);
 
         const userPrompt = createFinalPrompt(input.topic, input.vocabulary);
 
+        const generateStart = performance.now();
         const { output } = await ai.generate({
             prompt: userPrompt,
             output: { schema: LessonSchemaLLM },
         });
+        const generateEnd = performance.now();
+
+        console.log(`[Lesson Creation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
 
         if (!output) throw new Error('Failed to generate lesson');
+
+        const totalTime = performance.now() - startTime;
+        console.log(`[Lesson Creation] Total time: ${totalTime.toFixed(2)}ms`);
+        console.log(`[Lesson Creation] Lesson created successfully`);
 
         return output;
     },
