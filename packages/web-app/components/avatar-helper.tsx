@@ -3,8 +3,13 @@
 import { useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { AvatarChatPanel } from './avatar-chat-panel';
+import type { Lesson } from '@core/entities/lesson';
 
-export function AvatarHelper() {
+interface AvatarHelperProps {
+    lesson?: Lesson;
+}
+
+export function AvatarHelper({ lesson }: AvatarHelperProps) {
     const [isOpen, setIsOpen] = useState(false);
 
     return (
@@ -30,7 +35,7 @@ export function AvatarHelper() {
             </TooltipProvider>
 
             {/* Chat Panel */}
-            <AvatarChatPanel isOpen={isOpen} onClose={() => setIsOpen(false)} />
+            <AvatarChatPanel isOpen={isOpen} onClose={() => setIsOpen(false)} lesson={lesson} />
         </>
     );
 }

@@ -59,6 +59,20 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         fullExplanation: sanitizeDualLanguage(lesson.fullExplanation),
     };
 
+    // Convert lesson to plain object for client component
+    // Use JSON serialization to strip MongoDB types (ObjectId, Date, etc.)
+    const plainLesson = JSON.parse(JSON.stringify({
+        _id: lesson._id.toString(),
+        __v: lesson.__v,
+        topic: lesson.topic,
+        vocabulary: lesson.vocabulary,
+        studentData: lesson.studentData,
+        title: lesson.title,
+        quickSummary: lesson.quickSummary,
+        quickExamples: lesson.quickExamples,
+        fullExplanation: lesson.fullExplanation,
+    }));
+
     const lessonTitleRaw =
         sanitizedLesson.title.base || sanitizedLesson.title.german || "Untitled lesson";
     const lessonTitle = lessonTitleRaw.replace(/^#+\s*/, "").trimStart();
@@ -99,7 +113,7 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
                 </article>
             </section>
 
-            <AvatarHelper />
+            <AvatarHelper lesson={plainLesson} />
         </>
     );
 }
