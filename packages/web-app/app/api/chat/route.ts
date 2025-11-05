@@ -5,20 +5,33 @@ import { sendChatMessage, type ChatMessage } from '@core/llm/llm';
 import type { Lesson } from '@core/entities/lesson';
 
 export async function POST(request: NextRequest) {
+    const startTime = performance.now();
+    console.log('[Chat API] Request received');
+
     try {
         // Check authentication
+        const authStart = performance.now();
         const session = await getServerSession(authOptions);
+        const authEnd = performance.now();
+        console.log(`[Chat API] Authentication check: ${(authEnd - authStart).toFixed(2)}ms`);
+
         if (!session?.user?.email) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         // Parse request body
+        const parseStart = performance.now();
         const body = await request.json();
         const { message, history, lessonContext } = body as {
             message: string;
             history: ChatMessage[];
             lessonContext?: Lesson;
         };
+        const parseEnd = performance.now();
+        console.log(`[Chat API] Body parsing: ${(parseEnd - parseStart).toFixed(2)}ms`);
+        console.log(`[Chat API] Message length: ${message.length} chars`);
+        console.log(`[Chat API] History length: ${history.length} messages`);
+        console.log(`[Chat API] Has lesson context: ${!!lessonContext}`);
 
         // Validate input
         if (!message || typeof message !== 'string') {
@@ -30,11 +43,20 @@ export async function POST(request: NextRequest) {
         }
 
         // Send chat message
+        console.log('[Chat API] Sending message to LLM...');
+        const llmStart = performance.now();
         const response = await sendChatMessage(message, history, lessonContext);
+        const llmEnd = performance.now();
+        console.log(`[Chat API] LLM response time: ${(llmEnd - llmStart).toFixed(2)}ms`);
+        console.log(`[Chat API] Response length: ${response.length} chars`);
+
+        const totalTime = performance.now() - startTime;
+        console.log(`[Chat API] Total request time: ${totalTime.toFixed(2)}ms`);
 
         return NextResponse.json({ response }, { status: 200 });
     } catch (error) {
-        console.error('Chat API error:', error);
+        const totalTime = performance.now() - startTime;
+        console.error(`[Chat API] Error after ${totalTime.toFixed(2)}ms:`, error);
         return NextResponse.json(
             { error: 'Failed to process chat message' },
             { status: 500 }

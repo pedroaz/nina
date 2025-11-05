@@ -4,9 +4,49 @@ import { createFinalPrompt } from './prompt';
 import { lessonSchemaZ, type Lesson } from '../entities/lesson';
 import { openAI } from '@genkit-ai/compat-oai/openai';
 
+/*
+gpt-4.5
+gpt-4.5-preview
+gpt-4o
+gpt-4o-2024-05-13
+o1
+o3
+o3-mini
+o4-mini
+gpt-4o-mini
+gpt-4o-mini-2024-07-18
+gpt-4-turbo
+gpt-4-turbo-2024-04-09
+gpt-4-turbo-preview
+gpt-4-0125-preview
+gpt-4-1106-preview
+gpt-4-vision
+gpt-4-vision-preview
+gpt-4-1106-vision-preview
+gpt-4
+gpt-4-0613
+gpt-4-32k
+gpt-4-32k-0613
+gpt-3.5-turbo
+gpt-3.5-turbo-0125
+gpt-3.5-turbo-1106
+gpt-5
+gpt-5-mini
+gpt-5-nano
+gpt-5-chat-latest
+*/
+
+// AI instance for lesson creation (slower but more capable)
 const ai = genkit({
     plugins: [openAI({ apiKey: process.env.OPENAI_API_KEY })],
     model: openAI.model('gpt-5-nano'),
+    promptDir: './packages/core/llm/prompts',
+});
+
+// AI instance for chat (fast and optimized for real-time interaction)
+const chatAi = genkit({
+    plugins: [openAI({ apiKey: process.env.OPENAI_API_KEY })],
+    model: openAI.model('gpt-4o-mini'),
     promptDir: './packages/core/llm/prompts',
 });
 
@@ -70,6 +110,10 @@ export async function sendChatMessage(
     history: ChatMessage[],
     lessonContext?: Lesson
 ): Promise<string> {
+    const startTime = performance.now();
+    console.log('[LLM] Building prompt...');
+
+    const promptStart = performance.now();
     const systemPrompt = lessonContext
         ? `You are Nina, a friendly and helpful German learning assistant. You help students understand German grammar, vocabulary, and usage.
 
@@ -98,10 +142,21 @@ Student: ${userMessage}
 
 Nina:`;
 
-    // Generate response in a single call
-    const { text } = await ai.generate({
+    const promptEnd = performance.now();
+    console.log(`[LLM] Prompt built in: ${(promptEnd - promptStart).toFixed(2)}ms`);
+    console.log(`[LLM] Prompt length: ${fullPrompt.length} chars`);
+
+    // Generate response in a single call using fast chat model
+    console.log('[LLM] Calling AI model (gpt-4o-mini)...');
+    const generateStart = performance.now();
+    const { text } = await chatAi.generate({
         prompt: fullPrompt,
     });
+    const generateEnd = performance.now();
+    console.log(`[LLM] AI generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+
+    const totalTime = performance.now() - startTime;
+    console.log(`[LLM] Total LLM function time: ${totalTime.toFixed(2)}ms`);
 
     return text;
 }
