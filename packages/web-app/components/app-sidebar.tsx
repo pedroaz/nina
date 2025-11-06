@@ -29,6 +29,18 @@ const data = {
       title: "Lessons",
       url: "/lessons",
     },
+    {
+      title: "Community",
+      url: "/community",
+    },
+    {
+      title: "Learning Path",
+      url: "/learning-path",
+    },
+    {
+      title: "Flash Cards",
+      url: "/flash-cards",
+    },
   ],
 };
 
