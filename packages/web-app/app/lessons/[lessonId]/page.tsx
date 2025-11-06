@@ -5,6 +5,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Button } from "@/components/ui/button";
 import { DualLanguageTextCard, type DualLanguageContent } from "@/components/dual-language-text-card";
 import { AvatarHelper } from "@/components/avatar-helper";
+import { ExtraSectionsInput } from "@/components/extra-sections-input";
 import { getLessonById, getUserByEmail } from "@core/index";
 
 type LessonPageProps = {
@@ -57,6 +58,7 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         quickSummary: sanitizeDualLanguage(lesson.quickSummary),
         quickExamples: sanitizeDualLanguageList(lesson.quickExamples),
         fullExplanation: sanitizeDualLanguage(lesson.fullExplanation),
+        extraSections: sanitizeDualLanguageList(lesson.extraSections),
     };
 
     // Convert lesson to plain object for client component
@@ -109,6 +111,11 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
                         heading="Detailed Explanation"
                         content={sanitizedLesson.fullExplanation}
                         emptyMessage="This lesson does not have a detailed explanation yet."
+                    />
+
+                    <ExtraSectionsInput
+                        lessonId={lessonId}
+                        initialExtraSections={sanitizedLesson.extraSections}
                     />
                 </article>
             </section>

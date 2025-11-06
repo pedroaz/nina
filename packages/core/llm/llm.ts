@@ -2,6 +2,7 @@ import { genkit } from 'genkit/beta';
 import { z } from 'zod';
 import { createFinalPrompt } from './prompt';
 import { lessonSchemaZ, type Lesson } from '../entities/lesson';
+import { dualLanguageSchemaZ } from '../entities/base';
 import { openAI } from '@genkit-ai/compat-oai/openai';
 import { MODEL_CATEGORIES, getModelName, getModelConfig } from './model-config';
 
@@ -99,6 +100,68 @@ export const createLessonFlow = ai.defineFlow(
         const totalTime = performance.now() - startTime;
         console.log(`[Lesson Creation] Total time: ${totalTime.toFixed(2)}ms`);
         console.log(`[Lesson Creation] Lesson created successfully`);
+
+        return output;
+    },
+);
+
+// Define input schema for extra sections
+export const ExtraSectionInputSchema = z.object({
+    request: z.string().describe('User request for additional content'),
+    lessonContext: z.object({
+        topic: z.string(),
+        vocabulary: z.string().optional(),
+        title: dualLanguageSchemaZ,
+        quickSummary: dualLanguageSchemaZ,
+    }),
+});
+
+// Define a flow for appending extra sections
+export const appendExtraSectionFlow = chatAi.defineFlow(
+    {
+        name: 'appendExtraSectionFlow',
+        inputSchema: ExtraSectionInputSchema,
+        outputSchema: dualLanguageSchemaZ,
+    },
+    async (input) => {
+        const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+        const startTime = performance.now();
+
+        console.log(`[Extra Section] Starting extra section generation`);
+        console.log(`[Extra Section] Using ${modelConfig.displayName}`);
+        console.log(`[Extra Section] Request: "${input.request}"`);
+        console.log(`[Extra Section] Topic: "${input.lessonContext.topic}"`);
+
+        const prompt = `You are Nina, a German learning assistant. A student is studying a lesson about "${input.lessonContext.topic}" ${input.lessonContext.vocabulary ? `with vocabulary: ${input.lessonContext.vocabulary}` : ''}.
+
+Lesson Title: ${input.lessonContext.title.base} / ${input.lessonContext.title.german}
+Summary: ${input.lessonContext.quickSummary.base}
+
+The student has requested: "${input.request}"
+
+Generate educational content that addresses the student's request. Provide:
+
+1. A complete response in English (this will be the "base" field)
+2. The same content translated to German (this will be the "german" field)
+
+Use markdown formatting for better readability. If they asked for examples, provide all examples in a well-formatted list. Keep it educational and engaging.
+
+Important: Return a JSON object with exactly two string fields: "base" (English content) and "german" (German content). Do not return the schema structure itself.`;
+
+        const generateStart = performance.now();
+        const { output } = await chatAi.generate({
+            prompt: prompt,
+            output: { schema: dualLanguageSchemaZ },
+        });
+        const generateEnd = performance.now();
+
+        console.log(`[Extra Section] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+
+        if (!output) throw new Error('Failed to generate extra section');
+
+        const totalTime = performance.now() - startTime;
+        console.log(`[Extra Section] Total time: ${totalTime.toFixed(2)}ms`);
+        console.log(`[Extra Section] Extra section created successfully`);
 
         return output;
     },
