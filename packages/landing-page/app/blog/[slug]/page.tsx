@@ -79,7 +79,7 @@ export default function BlogPostPage({
                 const tagText = typeof tag === 'string' ? tag : tag.text;
                 return (
                   <span
-                    key={index}
+                    key={tagText}
                     className="px-3 py-1 text-sm rounded-full bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300"
                   >
                     {tagText}

@@ -85,6 +85,7 @@ export const LandingPrimaryImageCtaSection = ({
   imagePosition = 'right',
   imagePerspective = 'none',
   imageShadow = 'hard',
+  imagePriority = false,
   minHeight = 350,
   withBackground = false,
   withBackgroundGlow = false,
@@ -114,6 +115,7 @@ export const LandingPrimaryImageCtaSection = ({
     | 'bottom-lg'
     | 'paper';
   imageShadow?: 'none' | 'soft' | 'hard';
+  imagePriority?: boolean;
   minHeight?: number;
   withBackground?: boolean;
   withBackgroundGlow?: boolean;
@@ -206,6 +208,7 @@ export const LandingPrimaryImageCtaSection = ({
                   alt={imageAlt}
                   width={minHeight + 75}
                   height={minHeight + 75}
+                  priority={imagePriority}
                 />
               </section>
             ) : null}
@@ -229,6 +232,7 @@ export const LandingPrimaryImageCtaSection = ({
                 src={imageSrc}
                 width={minHeight + 75}
                 height={minHeight + 75}
+                priority={imagePriority}
               />
             ) : null}
           </>

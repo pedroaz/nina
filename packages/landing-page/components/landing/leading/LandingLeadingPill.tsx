@@ -171,6 +171,7 @@ export const LandingLeadingPill = ({
   };
 
   const textStyleClasses = {
+    default: '',
     capitalize: 'capitalize',
     uppercase: 'uppercase tracking-wider',
   };
@@ -254,7 +255,7 @@ export const LandingLeadingPill = ({
       opacity: 1,
       transition: {
         duration: 0.3,
-        ease: 'easeOut',
+        ease: 'easeOut' as const,
       },
     },
   };
@@ -267,7 +268,7 @@ export const LandingLeadingPill = ({
       opacity: 1,
       transition: {
         duration: 0.3,
-        ease: 'easeOut',
+        ease: 'easeOut' as const,
       },
     },
   };

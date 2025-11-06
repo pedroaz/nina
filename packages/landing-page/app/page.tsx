@@ -38,6 +38,7 @@ export default function Component() {
         imageSrc="/nina-teacher.png"
         imageAlt="Sample image"
         imagePerspective="left"
+        imagePriority={true}
       >
         <Button size="xl" asChild>
           <a href="#">Start for Free</a>
