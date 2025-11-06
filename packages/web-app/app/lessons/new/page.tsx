@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,26 @@ export default function CustomLessonsNew() {
     const [vocabulary, setVocabulary] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout | null = null;
+
+        if (isSubmitting) {
+            setElapsedSeconds(0);
+            interval = setInterval(() => {
+                setElapsedSeconds(prev => prev + 1);
+            }, 1000);
+        } else {
+            setElapsedSeconds(0);
+        }
+
+        return () => {
+            if (interval) {
+                clearInterval(interval);
+            }
+        };
+    }, [isSubmitting]);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -112,6 +132,14 @@ export default function CustomLessonsNew() {
                         <p className="text-xs text-blue-600 mt-1">
                             This may take a moment as we generate comprehensive content for you.
                         </p>
+                        <div className="mt-3 pt-3 border-t border-blue-200">
+                            <p className="text-sm text-blue-800">
+                                Time elapsed: <span className="font-semibold">{elapsedSeconds}s</span>
+                            </p>
+                            <p className="text-xs text-blue-600 mt-1">
+                                Average generation time: ~1 minute
+                            </p>
+                        </div>
                     </div>
                 )}
 
