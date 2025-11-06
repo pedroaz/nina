@@ -12,6 +12,7 @@
   },
   "scripts": {
     "web-app:dev": "cd packages/web-app && pnpm dev",
+    "landing-page:dev": "cd packages/landing-page && pnpm dev",
     "test:e2e": "pnpm playwright test",
     "genkit": "genkit start -- npx tsx --watch ./packages/core/llm/llm.ts"
   },

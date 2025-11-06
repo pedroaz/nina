@@ -47,7 +47,7 @@ export const LandingFeatureList = ({
         withBackground && variant === 'secondary'
           ? 'bg-secondary-100/20 dark:bg-secondary-900/10'
           : '',
-        withBackgroundGlow ? 'overflow-hidden' : '',
+        withBackgroundGlow ? 'relative overflow-hidden' : '',
         className,
       )}
     >
@@ -64,7 +64,7 @@ export const LandingFeatureList = ({
         className={clsx('w-full p-6 max-w-full container-wide relative z-10')}
       >
         {title ? (
-          <h2 className="text-3xl font-semibold leading-tight max-w-xs sm:max-w-none md:text-4xl lg:text-5xl fancyHeading">
+          <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold leading-tight max-w-xs sm:max-w-none fancyHeading">
             {title}
           </h2>
         ) : (

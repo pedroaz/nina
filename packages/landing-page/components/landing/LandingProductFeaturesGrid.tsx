@@ -1,5 +1,6 @@
 import { LandingProductFeature } from '@/components/landing/LandingProductFeature';
 import { LandingProductVideoFeature } from '@/components/landing/LandingProductVideoFeature';
+import { GlowBg } from '@/components/shared/ui/glow-bg';
 import clsx from 'clsx';
 import { Children, ReactElement, cloneElement } from 'react';
 
@@ -17,8 +18,11 @@ export const LandingProductFeaturesGrid = ({
   description,
   descriptionComponent,
   withBackground = true,
+  withBackgroundGlow = false,
   variant = 'primary',
+  backgroundGlowVariant = 'primary',
   containerType = 'ultrawide',
+  numberOfColumns,
 }: {
   className?: string;
   children?: React.ReactNode;
@@ -27,9 +31,13 @@ export const LandingProductFeaturesGrid = ({
   description?: string | React.ReactNode;
   descriptionComponent?: React.ReactNode;
   withBackground?: boolean;
+  withBackgroundGlow?: boolean;
   variant?: 'primary' | 'secondary';
+  backgroundGlowVariant?: 'primary' | 'secondary';
   containerType?: 'narrow' | 'wide' | 'ultrawide';
+  numberOfColumns?: number;
 }) => {
+  const childrenCount = Children.count(children);
   const childrenWithBackground = Children.map(children, (child) => {
     if (!child) {
       return null;
@@ -71,18 +79,28 @@ export const LandingProductFeaturesGrid = ({
         withBackground && variant === 'secondary'
           ? 'bg-secondary-100/20 dark:bg-secondary-900/10'
           : '',
+        withBackgroundGlow ? 'relative overflow-hidden' : '',
         className,
       )}
     >
+      {withBackgroundGlow ? (
+        <div className="hidden lg:flex justify-center w-full h-full absolute -bottom-1/2 pointer-events-none">
+          <GlowBg
+            className={clsx('w-full lg:w-2/3 h-auto z-0')}
+            variant={backgroundGlowVariant}
+          />
+        </div>
+      ) : null}
+
       {title || description || titleComponent || descriptionComponent ? (
         <div
           className={clsx(
-            'relative flex flex-col sm:items-center',
-            `${containerType}-container`,
+            'relative w-full flex flex-col sm:items-center',
+            `container-${containerType}`,
           )}
         >
           {title ? (
-            <h2 className="w-full text-3xl font-semibold leading-tight md:leading-tight max-w-sm sm:max-w-none md:text-4xl lg:text-5xl">
+            <h2 className="w-full text-2xl md:text-3xl lg:text-4xl font-semibold leading-tight md:leading-tight max-w-sm sm:max-w-none">
               {title}
             </h2>
           ) : (
@@ -99,8 +117,14 @@ export const LandingProductFeaturesGrid = ({
 
       <div
         className={clsx(
-          '!p-0 relative isolate grid md:grid-cols-2 gap-4',
-          `${containerType}-container`,
+          '!p-0 relative isolate grid gap-4',
+          `container-${containerType}`,
+          !numberOfColumns && childrenCount % 3 === 0
+            ? 'md:grid-cols-3'
+            : 'md:grid-cols-2',
+          numberOfColumns === 1 && 'md:grid-cols-1',
+          numberOfColumns === 2 && 'md:grid-cols-2',
+          numberOfColumns === 3 && 'md:grid-cols-3',
         )}
       >
         {childrenWithBackground}

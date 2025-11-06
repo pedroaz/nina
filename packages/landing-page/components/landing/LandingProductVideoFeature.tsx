@@ -17,12 +17,14 @@ export const LandingProductVideoFeature = ({
   titleComponent,
   description,
   descriptionComponent,
+  leadingComponent,
   textPosition = 'left',
   videoSrc,
   videoPoster,
   videoPosition = 'right',
   videoMaxWidth = 'none',
   autoPlay,
+  muted = true,
   controls = false,
   loop = false,
   zoomOnHover = false,
@@ -31,6 +33,8 @@ export const LandingProductVideoFeature = ({
   withBackgroundGlow = false,
   variant = 'primary',
   backgroundGlowVariant,
+  effectComponent,
+  effectClassName,
 }: {
   children?: React.ReactNode;
   className?: string;
@@ -39,12 +43,14 @@ export const LandingProductVideoFeature = ({
   titleComponent?: React.ReactNode;
   description?: string | React.ReactNode;
   descriptionComponent?: React.ReactNode;
+  leadingComponent?: React.ReactNode;
   textPosition?: 'center' | 'left';
   videoSrc?: string;
   videoPoster?: string;
   videoPosition?: 'left' | 'right' | 'center';
   videoMaxWidth?: string;
   autoPlay?: boolean;
+  muted?: boolean;
   controls?: boolean;
   loop?: boolean;
   zoomOnHover?: boolean;
@@ -53,11 +59,13 @@ export const LandingProductVideoFeature = ({
   withBackgroundGlow?: boolean;
   variant?: 'primary' | 'secondary';
   backgroundGlowVariant?: 'primary' | 'secondary';
+  effectComponent?: React.ReactNode;
+  effectClassName?: string;
 }) => {
   return (
     <section
       className={clsx(
-        'w-full flex flex-col justify-center items-center gap-8 py-12 lg:py-16',
+        'relative w-full flex flex-col justify-center items-center gap-8 py-12 lg:py-16',
         withBackground && variant === 'primary'
           ? 'bg-primary-100/20 dark:bg-primary-900/10'
           : '',
@@ -68,6 +76,12 @@ export const LandingProductVideoFeature = ({
         className,
       )}
     >
+      {effectComponent ? (
+        <div className={clsx('absolute inset-0', effectClassName)}>
+          {effectComponent}
+        </div>
+      ) : null}
+
       <div
         className={clsx(
           'w-full p-6 flex flex-col items-center relative',
@@ -90,8 +104,12 @@ export const LandingProductVideoFeature = ({
               : 'items-start',
           )}
         >
+          {leadingComponent}
+
           {title ? (
-            <h2 className="text-4xl font-semibold">{title}</h2>
+            <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold leading-tight">
+              {title}
+            </h2>
           ) : (
             titleComponent
           )}
@@ -126,6 +144,7 @@ export const LandingProductVideoFeature = ({
                   poster={videoPoster}
                   src={videoSrc}
                   autoPlay={autoPlay}
+                  muted={muted}
                   controls={controls}
                   maxWidth={videoMaxWidth}
                   variant={variant}
@@ -143,6 +162,7 @@ export const LandingProductVideoFeature = ({
                 poster={videoPoster}
                 src={videoSrc}
                 autoPlay={autoPlay}
+                muted={muted}
                 controls={controls}
                 maxWidth={videoMaxWidth}
                 variant={variant}

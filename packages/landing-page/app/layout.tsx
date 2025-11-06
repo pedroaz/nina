@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Syne } from 'next/font/google';
 import "./globals.css";
+import { LandingHeader } from '@/components/landing';
 
 const displayFont = Syne({
   subsets: ['latin'],
@@ -26,7 +27,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${baseFont.variable} ${displayFont.variable} scroll-smooth`}>{children}</body>
+      <body className={`${baseFont.variable} ${displayFont.variable} scroll-smooth`}>
+        <LandingHeader />
+        {children}
+      </body>
     </html>
   );
 }
