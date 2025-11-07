@@ -17,6 +17,7 @@ import {
     ContextMenuItem,
     ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { translateText } from '@/lib/translation';
 
 type LanguageKey = 'base' | 'german';
 
@@ -169,6 +170,8 @@ export function DualLanguageTextCard({
 }: DualLanguageTextCardProps) {
     const [showTranslation, setShowTranslation] = useState<boolean>(false);
     const [highlightedText, setHighlightedText] = useState<string>('');
+    const [translatedText, setTranslatedText] = useState<string>('');
+    const [isTranslating, setIsTranslating] = useState<boolean>(false);
     const entries = getEntries(content);
     const hasAnyContent = entries.some(hasContent);
 
@@ -182,8 +185,23 @@ export function DualLanguageTextCard({
         setHighlightedText(text);
     };
 
-    const handleTranslate = () => {
-        console.log('Translate sentence:', highlightedText);
+    const handleTranslate = async () => {
+        if (!highlightedText) return;
+
+        setIsTranslating(true);
+        try {
+            const result = await translateText(highlightedText, 'en-US');
+            setTranslatedText(result.text);
+        } catch (error) {
+            console.error('Translation failed:', error);
+            setTranslatedText('Translation failed. Please try again.');
+        } finally {
+            setIsTranslating(false);
+        }
+    };
+
+    const handleCloseTranslation = () => {
+        setTranslatedText('');
     };
 
     const handleAddToFlashcard = () => {
@@ -236,6 +254,52 @@ export function DualLanguageTextCard({
                     </ContextMenuContent>
                 </ContextMenu>
             </CardContent>
+
+            {/* Floating Translation Display */}
+            {(translatedText || isTranslating) && (
+                <div className="fixed right-4 top-1/2 -translate-y-1/2 max-w-sm w-80 bg-white border border-slate-200 rounded-lg shadow-lg p-4 z-50">
+                    <div className="flex justify-between items-start mb-3">
+                        <h3 className="text-sm font-semibold text-slate-900">Translation</h3>
+                        <button
+                            onClick={handleCloseTranslation}
+                            className="text-slate-400 hover:text-slate-600 transition-colors"
+                            aria-label="Close translation"
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div className="space-y-3">
+                        <div>
+                            <p className="text-xs font-medium text-slate-500 mb-1">Original</p>
+                            <p className="text-sm text-slate-700">{highlightedText}</p>
+                        </div>
+                        {isTranslating ? (
+                            <div className="flex items-center gap-2">
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-slate-600"></div>
+                                <p className="text-sm text-slate-500">Translating...</p>
+                            </div>
+                        ) : (
+                            <div>
+                                <p className="text-xs font-medium text-slate-500 mb-1">English</p>
+                                <p className="text-sm text-slate-900 font-medium">{translatedText}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </Card>
     );
 }
