@@ -163,6 +163,11 @@ function renderEntryContent(entry: DualLanguageContent, showTranslation: boolean
     }
 }
 
+type TranslationPair = {
+    original: string;
+    translated: string;
+};
+
 export function DualLanguageTextCard({
     heading,
     content,
@@ -170,7 +175,7 @@ export function DualLanguageTextCard({
 }: DualLanguageTextCardProps) {
     const [showTranslation, setShowTranslation] = useState<boolean>(false);
     const [highlightedText, setHighlightedText] = useState<string>('');
-    const [translatedText, setTranslatedText] = useState<string>('');
+    const [translations, setTranslations] = useState<TranslationPair[]>([]);
     const [isTranslating, setIsTranslating] = useState<boolean>(false);
     const entries = getEntries(content);
     const hasAnyContent = entries.some(hasContent);
@@ -188,20 +193,38 @@ export function DualLanguageTextCard({
     const handleTranslate = async () => {
         if (!highlightedText) return;
 
+        // Check if this text is already translated
+        const existingTranslation = translations.find(t => t.original === highlightedText);
+        if (existingTranslation) {
+            return; // Already translated, no need to translate again
+        }
+
         setIsTranslating(true);
         try {
             const result = await translateText(highlightedText, 'en-US');
-            setTranslatedText(result.text);
+            // Add the new translation to the list
+            setTranslations(prev => [...prev, {
+                original: highlightedText,
+                translated: result.text,
+            }]);
         } catch (error) {
             console.error('Translation failed:', error);
-            setTranslatedText('Translation failed. Please try again.');
+            // Add error message to the list
+            setTranslations(prev => [...prev, {
+                original: highlightedText,
+                translated: 'Translation failed. Please try again.',
+            }]);
         } finally {
             setIsTranslating(false);
         }
     };
 
-    const handleCloseTranslation = () => {
-        setTranslatedText('');
+    const handleRemoveTranslation = (index: number) => {
+        setTranslations(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleClearAllTranslations = () => {
+        setTranslations([]);
     };
 
     const handleAddToFlashcard = () => {
@@ -209,21 +232,22 @@ export function DualLanguageTextCard({
     };
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-lg font-semibold">{heading}</CardTitle>
-                <CardAction>
-                    <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" onClick={handleToggle}>
-                            {showTranslation ? 'Translate' : 'Translate'}
-                        </Button>
-                    </div>
-                </CardAction>
-            </CardHeader>
-            <CardContent>
-                <ContextMenu>
-                    <ContextMenuTrigger asChild>
-                        <div onContextMenu={handleContextMenu}>
+        <div className="relative">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-lg font-semibold">{heading}</CardTitle>
+                    <CardAction>
+                        <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={handleToggle}>
+                                {showTranslation ? 'Translate' : 'Translate'}
+                            </Button>
+                        </div>
+                    </CardAction>
+                </CardHeader>
+                <CardContent>
+                    <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                            <div onContextMenu={handleContextMenu}>
                             {!hasAnyContent ? (
                                 <p className="text-sm text-muted-foreground">
                                     {emptyMessage}
@@ -254,52 +278,68 @@ export function DualLanguageTextCard({
                     </ContextMenuContent>
                 </ContextMenu>
             </CardContent>
-
-            {/* Floating Translation Display */}
-            {(translatedText || isTranslating) && (
-                <div className="fixed right-4 top-1/2 -translate-y-1/2 max-w-sm w-80 bg-white border border-slate-200 rounded-lg shadow-lg p-4 z-50">
-                    <div className="flex justify-between items-start mb-3">
-                        <h3 className="text-sm font-semibold text-slate-900">Translation</h3>
-                        <button
-                            onClick={handleCloseTranslation}
-                            className="text-slate-400 hover:text-slate-600 transition-colors"
-                            aria-label="Close translation"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            >
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                        </button>
-                    </div>
-                    <div className="space-y-3">
-                        <div>
-                            <p className="text-xs font-medium text-slate-500 mb-1">Original</p>
-                            <p className="text-sm text-slate-700">{highlightedText}</p>
-                        </div>
-                        {isTranslating ? (
-                            <div className="flex items-center gap-2">
-                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-slate-600"></div>
-                                <p className="text-sm text-slate-500">Translating...</p>
-                            </div>
-                        ) : (
-                            <div>
-                                <p className="text-xs font-medium text-slate-500 mb-1">English</p>
-                                <p className="text-sm text-slate-900 font-medium">{translatedText}</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
         </Card>
+
+        {/* Translation Display - positioned next to the card */}
+        {(translations.length > 0 || isTranslating) && (
+            <div className="absolute left-full top-0 ml-4 max-w-sm w-80 bg-white border border-slate-200 rounded-lg shadow-lg p-4 z-50">
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-semibold text-slate-900">Translations</h3>
+                    <button
+                        onClick={handleClearAllTranslations}
+                        className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                        aria-label="Clear all translations"
+                    >
+                        Clear all
+                    </button>
+                </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {translations.map((pair, index) => (
+                        <div
+                            key={index}
+                            className="border border-slate-200 rounded-md p-2 hover:bg-slate-50 transition-colors group"
+                        >
+                            <div className="flex justify-between items-start gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-600 truncate">{pair.original}</p>
+                                    <p className="text-sm text-slate-900 font-medium mt-0.5">
+                                        {pair.translated}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => handleRemoveTranslation(index)}
+                                    className="text-slate-400 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                    aria-label="Remove translation"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {isTranslating && (
+                        <div className="border border-slate-200 rounded-md p-2 bg-slate-50">
+                            <div className="flex items-center gap-2">
+                                <div className="animate-spin rounded-full h-3 w-3 border-2 border-slate-300 border-t-slate-600"></div>
+                                <p className="text-xs text-slate-500">Translating...</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
+    </div>
     );
 }
