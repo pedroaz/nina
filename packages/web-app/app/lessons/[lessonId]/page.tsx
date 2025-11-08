@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { DualLanguageTextCard, type DualLanguageContent } from "@/components/dual-language-text-card";
 import { AvatarHelper } from "@/components/avatar-helper";
 import { ExtraSectionsInput } from "@/components/extra-sections-input";
+import { GenerateFlashCardsDialog } from "@/components/generate-flashcards-dialog";
 import { getLessonById, getUserByEmail } from "@core/index";
 
 type LessonPageProps = {
@@ -89,9 +90,15 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
                             <p className="text-sm text-slate-500">Vocabulary focus: {lesson.vocabulary}</p>
                         )}
                     </div>
-                    <Button variant="outline" asChild>
-                        <Link href="/lessons">Back to lessons</Link>
-                    </Button>
+                    <div className="flex gap-2">
+                        <GenerateFlashCardsDialog
+                            lessonId={lessonId}
+                            lessonTitle={lessonTitle}
+                        />
+                        <Button variant="outline" asChild>
+                            <Link href="/lessons">Back to lessons</Link>
+                        </Button>
+                    </div>
                 </header>
 
                 <article className="space-y-8">

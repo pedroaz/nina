@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FlashCardSettings } from "@/components/flash-card-settings";
+import { LevelSettings } from "@/components/level-settings";
 import { getUserByEmail } from "@core/index";
 
 export default async function Profile() {
@@ -20,7 +22,10 @@ export default async function Profile() {
     }
 
     const displayName = user.name || session.user.name || "Anonymous";
-    const displayLevel = user.level || "Not set";
+    const userLevel = user.level || "A1";
+
+    // Get flash card preference from user
+    const flashCardPreference = user.flashCardDisplayPreference || 'base-first';
 
     return (
         <section className="mx-auto flex min-h-[60vh] w-full max-w-3xl flex-col gap-8 px-4 py-10">
@@ -43,12 +48,6 @@ export default async function Profile() {
                             </dt>
                             <dd className="text-base text-slate-800">{displayName}</dd>
                         </div>
-                        <div>
-                            <dt className="text-xs font-medium uppercase text-slate-500">
-                                Level
-                            </dt>
-                            <dd className="text-base text-slate-800">{displayLevel}</dd>
-                        </div>
                         <div className="sm:col-span-2">
                             <dt className="text-xs font-medium uppercase text-slate-500">
                                 Email
@@ -58,6 +57,24 @@ export default async function Profile() {
                             </dd>
                         </div>
                     </dl>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Learning Level</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <LevelSettings initialLevel={userLevel} />
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Flash Card Preferences</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <FlashCardSettings initialPreference={flashCardPreference} />
                 </CardContent>
             </Card>
         </section>

@@ -3,8 +3,11 @@ import { z } from 'zod';
 import { createFinalPrompt } from './prompt';
 import { lessonSchemaZ, type Lesson } from '../entities/lesson';
 import { dualLanguageSchemaZ } from '../entities/base';
+import { flashCardSchemaZ } from '../entities/flashcard-deck';
+import { studentLevelSchemaZ } from '../entities/student';
 import { openAI } from '@genkit-ai/compat-oai/openai';
 import { MODEL_CATEGORIES, getModelName, getModelConfig } from './model-config';
+import { createFlashCardFromPromptInstructions, createFlashCardFromLessonInstructions } from './flashcard-prompt';
 
 /*
 gpt-4.5
@@ -240,3 +243,115 @@ Nina:`;
 
     return text;
 }
+
+// Flash Card Generation Flows
+
+// Schema for generating flash cards from prompt
+export const FlashCardFromPromptInputSchema = z.object({
+    topic: z.string().describe('Topic for the flash cards'),
+    cardCount: z.number().describe('Number of flash cards to generate'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+});
+
+export const FlashCardFromPromptOutputSchema = z.object({
+    title: z.string().describe('Deck title'),
+    cards: z.array(flashCardSchemaZ.omit({ _id: true })).describe('Array of flash cards'),
+});
+
+// Flow for generating flash cards from a topic/prompt
+export const generateFlashCardsFromPromptFlow = chatAi.defineFlow(
+    {
+        name: 'generateFlashCardsFromPromptFlow',
+        inputSchema: FlashCardFromPromptInputSchema,
+        outputSchema: FlashCardFromPromptOutputSchema,
+    },
+    async (input) => {
+        const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+        const startTime = performance.now();
+
+        console.log(`[Flash Cards] Starting flash card generation from prompt`);
+        console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
+        console.log(`[Flash Cards] Topic: "${input.topic}"`);
+        console.log(`[Flash Cards] Card count: ${input.cardCount}`);
+        console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
+
+        const prompt = createFlashCardFromPromptInstructions(
+            input.topic,
+            input.cardCount,
+            input.studentLevel
+        );
+
+        const generateStart = performance.now();
+        const { output } = await chatAi.generate({
+            prompt: prompt,
+            output: { schema: FlashCardFromPromptOutputSchema },
+        });
+        const generateEnd = performance.now();
+
+        console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+
+        if (!output) throw new Error('Failed to generate flash cards from prompt');
+
+        const totalTime = performance.now() - startTime;
+        console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
+        console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
+
+        return output;
+    },
+);
+
+// Schema for generating flash cards from lesson
+export const FlashCardFromLessonInputSchema = z.object({
+    lesson: lessonSchemaZ.describe('The lesson to extract flash cards from'),
+    cardCount: z.number().describe('Number of flash cards to generate'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+});
+
+export const FlashCardFromLessonOutputSchema = z.object({
+    cards: z.array(flashCardSchemaZ.omit({ _id: true })).describe('Array of flash cards'),
+});
+
+// Flow for generating flash cards from a lesson
+export const generateFlashCardsFromLessonFlow = chatAi.defineFlow(
+    {
+        name: 'generateFlashCardsFromLessonFlow',
+        inputSchema: FlashCardFromLessonInputSchema,
+        outputSchema: FlashCardFromLessonOutputSchema,
+    },
+    async (input) => {
+        const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+        const startTime = performance.now();
+
+        console.log(`[Flash Cards] Starting flash card generation from lesson`);
+        console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
+        console.log(`[Flash Cards] Lesson topic: "${input.lesson.topic}"`);
+        console.log(`[Flash Cards] Card count: ${input.cardCount}`);
+        console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
+
+        const prompt = createFlashCardFromLessonInstructions(
+            input.lesson.topic,
+            input.lesson.title.base,
+            input.lesson.quickSummary.base,
+            input.lesson.fullExplanation.base,
+            input.cardCount,
+            input.studentLevel
+        );
+
+        const generateStart = performance.now();
+        const { output } = await chatAi.generate({
+            prompt: prompt,
+            output: { schema: FlashCardFromLessonOutputSchema },
+        });
+        const generateEnd = performance.now();
+
+        console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+
+        if (!output) throw new Error('Failed to generate flash cards from lesson');
+
+        const totalTime = performance.now() - startTime;
+        console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
+        console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
+
+        return output;
+    },
+);

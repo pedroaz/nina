@@ -2,6 +2,10 @@ import mongoose from 'mongoose';
 import { STUDENT_LEVELS, StudentLevel, studentLevelSchemaZ } from './student';
 import { z } from 'zod';
 
+// Flash card display preference
+export const flashCardDisplayPreferenceSchemaZ = z.enum(['base-first', 'german-first']);
+
+export type FlashCardDisplayPreference = z.infer<typeof flashCardDisplayPreferenceSchemaZ>;
 
 export const userSchemaZ = z.object({
     _id: z.string(),
@@ -9,6 +13,7 @@ export const userSchemaZ = z.object({
     name: z.string(),
     email: z.string(),
     level: studentLevelSchemaZ,
+    flashCardDisplayPreference: flashCardDisplayPreferenceSchemaZ.optional(),
 });
 
 export const userSchemaM = new mongoose.Schema({
@@ -18,6 +23,12 @@ export const userSchemaM = new mongoose.Schema({
         type: String,
         enum: STUDENT_LEVELS,
         required: true
+    },
+    flashCardDisplayPreference: {
+        type: String,
+        enum: ['base-first', 'german-first'],
+        required: false,
+        default: 'base-first',
     }
 }, {
     timestamps: true
