@@ -56,7 +56,7 @@ export default async function FlashCards() {
                 <div>
                     <h1 className="text-3xl font-semibold">Flash Card Decks</h1>
                     <p className="mt-2 text-slate-600">
-                        Practice and memorize German with interactive flash cards.
+                        Practice and memorize Language with interactive flash cards.
                     </p>
                 </div>
                 <Button asChild>
@@ -68,7 +68,7 @@ export default async function FlashCards() {
                 <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center text-slate-500">
                     <p>You don&apos;t have any flash card decks yet.</p>
                     <p className="mt-2 text-sm">
-                        Create a deck to start practicing German vocabulary and phrases.
+                        Create a deck to start practicing vocabulary and phrases.
                     </p>
                 </div>
             ) : (

@@ -137,7 +137,7 @@ export const appendExtraSectionFlow = chatAi.defineFlow(
 
         const prompt = `You are Nina, a German learning assistant. A student is studying a lesson about "${input.lessonContext.topic}" ${input.lessonContext.vocabulary ? `with vocabulary: ${input.lessonContext.vocabulary}` : ''}.
 
-Lesson Title: ${input.lessonContext.title.base} / ${input.lessonContext.title.german}
+Lesson Title: ${input.lessonContext.title.base} / ${input.lessonContext.title.target}
 Summary: ${input.lessonContext.quickSummary.base}
 
 The student has requested: "${input.request}"
@@ -180,9 +180,9 @@ function formatLessonContext(lesson: Lesson): string {
     const parts = [
         `Topic: ${lesson.topic}`,
         lesson.vocabulary ? `Vocabulary: ${lesson.vocabulary}` : '',
-        `Title: ${lesson.title.base || ''} / ${lesson.title.german || ''}`,
+        `Title: ${lesson.title.base || ''} / ${lesson.title.target || ''}`,
         `Summary: ${lesson.quickSummary.base || ''}`,
-        lesson.quickExamples.length > 0 ? `Examples:\n${lesson.quickExamples.map(ex => `- ${ex.base || ''} / ${ex.german || ''}`).join('\n')}` : '',
+        lesson.quickExamples.length > 0 ? `Examples:\n${lesson.quickExamples.map(ex => `- ${ex.base || ''} / ${ex.target || ''}`).join('\n')}` : '',
         `Full Explanation: ${lesson.fullExplanation.base || ''}`,
     ];
     return parts.filter(Boolean).join('\n\n');

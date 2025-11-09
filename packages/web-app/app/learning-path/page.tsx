@@ -15,7 +15,7 @@ export default async function LearningPath() {
             <div className="flex flex-col gap-4">
                 <h1 className="text-3xl font-semibold">Learning Path</h1>
                 <p className="text-slate-600">
-                    Track your progress and follow a personalized path to German fluency.
+                    Track your progress and follow a personalized path to fluency.
                 </p>
             </div>
         </section>

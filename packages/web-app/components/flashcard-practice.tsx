@@ -8,14 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 interface SerializedFlashCard {
     _id: string;
     base: string;
-    german: string;
+    target: string;
 }
 
 interface FlashCardPracticeProps {
     deckId: string;
     deckTitle: string;
     cards: SerializedFlashCard[];
-    displayPreference: 'base-first' | 'german-first';
+    displayPreference: 'base-first' | 'target-first';
 }
 
 export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference }: FlashCardPracticeProps) {
@@ -37,8 +37,8 @@ export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference 
     }
 
     const currentCard = shuffledCards[currentIndex];
-    const frontSide = displayPreference === 'base-first' ? currentCard.base : currentCard.german;
-    const backSide = displayPreference === 'base-first' ? currentCard.german : currentCard.base;
+    const frontSide = displayPreference === 'base-first' ? currentCard.base : currentCard.target;
+    const backSide = displayPreference === 'base-first' ? currentCard.target : currentCard.base;
 
     const handleFlip = () => {
         setIsFlipped(!isFlipped);
@@ -137,7 +137,7 @@ export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference 
                 <CardContent className="flex items-center justify-center p-12">
                     <div className="text-center space-y-4">
                         <p className="text-sm text-slate-500 uppercase tracking-wide">
-                            {isFlipped ? (displayPreference === 'base-first' ? 'German' : 'English') : (displayPreference === 'base-first' ? 'English' : 'German')}
+                            {isFlipped ? (displayPreference === 'base-first' ? 'Target' : 'English') : (displayPreference === 'base-first' ? 'English' : 'Target')}
                         </p>
                         <p className="text-2xl font-medium leading-relaxed">
                             {isFlipped ? backSide : frontSide}

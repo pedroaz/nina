@@ -54,9 +54,9 @@ export function LevelSettings({ initialLevel }: LevelSettingsProps) {
 
     return (
         <div className="space-y-4">
-            <Label>German Proficiency Level</Label>
+            <Label>Target Language Proficiency Level</Label>
             <p className="text-sm text-slate-600">
-                Select your current German language proficiency level. This helps personalize your learning experience.
+                Select your current Target Language proficiency level. This helps personalize your learning experience.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
                 {LEVELS.map((levelOption) => (

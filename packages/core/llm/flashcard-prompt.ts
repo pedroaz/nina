@@ -1,36 +1,36 @@
 import { StudentLevel } from "../entities/student";
 
 function role(): string {
-    return `Your Role: You are a helpful German teacher creating flash cards for language learners. Be concise and educational. Your goal is to create effective flash cards that help learners practice and memorize German vocabulary and phrases.`;
+  return `Your Role: You are a helpful language teacher creating flash cards for language learners. Be concise and educational. Your goal is to create effective flash cards that help learners practice and memorize German vocabulary and phrases.`;
 }
 
 function cardFormat(): string {
-    return `Flash Card Format: Each card should have:
+  return `Flash Card Format: Each card should have:
 - "base": An English sentence or phrase (full sentence, not just a single word)
-- "german": The accurate German translation of that sentence
+- "target": The accurate German translation of that sentence
 
 Make sure the sentences are practical, natural, and useful for everyday communication.`;
 }
 
 function levelGuidance(studentLevel: StudentLevel): string {
-    const levelGuides: Record<StudentLevel, string> = {
-        'A1': 'Create simple, everyday sentences using basic vocabulary and present tense. Focus on greetings, numbers, family, food, and common daily activities.',
-        'A2': 'Create sentences about familiar topics using simple grammar structures. Include past tense and basic compound sentences about personal experiences.',
-        'B1': 'Create sentences about concrete and abstract topics using intermediate grammar. Include different tenses, modal verbs, and more complex sentence structures.',
-        'B2': 'Create detailed sentences on a wide range of topics. Use complex grammar structures, idiomatic expressions, and nuanced vocabulary.',
-        'C1': 'Create sophisticated sentences with advanced vocabulary and complex grammatical structures. Include idiomatic expressions and cultural nuances.',
-        'C2': 'Create native-level sentences with mastery of subtle meanings, colloquialisms, and cultural context. Use the full range of German linguistic complexity.',
-    };
+  const levelGuides: Record<StudentLevel, string> = {
+    'A1': 'Create simple, everyday sentences using basic vocabulary and present tense. Focus on greetings, numbers, family, food, and common daily activities.',
+    'A2': 'Create sentences about familiar topics using simple grammar structures. Include past tense and basic compound sentences about personal experiences.',
+    'B1': 'Create sentences about concrete and abstract topics using intermediate grammar. Include different tenses, modal verbs, and more complex sentence structures.',
+    'B2': 'Create detailed sentences on a wide range of topics. Use complex grammar structures, idiomatic expressions, and nuanced vocabulary.',
+    'C1': 'Create sophisticated sentences with advanced vocabulary and complex grammatical structures. Include idiomatic expressions and cultural nuances.',
+    'C2': 'Create native-level sentences with mastery of subtle meanings, colloquialisms, and cultural context. Use the full range of German linguistic complexity.',
+  };
 
-    return `Student Level: ${studentLevel}\n${levelGuides[studentLevel]}`;
+  return `Student Level: ${studentLevel}\n${levelGuides[studentLevel]}`;
 }
 
 export function createFlashCardFromPromptInstructions(
-    topic: string,
-    cardCount: number,
-    studentLevel: StudentLevel
+  topic: string,
+  cardCount: number,
+  studentLevel: StudentLevel
 ): string {
-    return `
+  return `
 ${role()}
 
 ${cardFormat()}
@@ -65,14 +65,14 @@ Example structure:
 }
 
 export function createFlashCardFromLessonInstructions(
-    lessonTopic: string,
-    lessonTitle: string,
-    lessonSummary: string,
-    lessonExplanation: string,
-    cardCount: number,
-    studentLevel: StudentLevel
+  lessonTopic: string,
+  lessonTitle: string,
+  lessonSummary: string,
+  lessonExplanation: string,
+  cardCount: number,
+  studentLevel: StudentLevel
 ): string {
-    return `
+  return `
 ${role()}
 
 ${cardFormat()}

@@ -100,7 +100,7 @@ export default function CustomLessonsNew() {
                         value={topic}
                         onChange={(event) => setTopic(event.target.value)}
                         className="min-h-48 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                        placeholder="Describe what you want to learn... e.g., Say hello in German; Explain the Dative Case"
+                        placeholder="Describe what you want to learn... e.g., Say hello; Explain the Dative Case"
                         disabled={isSubmitting}
                     />
                 </div>

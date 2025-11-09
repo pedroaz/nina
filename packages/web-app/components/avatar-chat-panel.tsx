@@ -103,7 +103,7 @@ export function AvatarChatPanel({ isOpen, onClose, lesson }: AvatarChatPanelProp
                         </div>
                         <div>
                             <SheetTitle>Nina</SheetTitle>
-                            <SheetDescription>Your German learning assistant</SheetDescription>
+                            <SheetDescription>Your Language learning assistant</SheetDescription>
                         </div>
                     </div>
                 </SheetHeader>
@@ -122,10 +122,10 @@ export function AvatarChatPanel({ isOpen, onClose, lesson }: AvatarChatPanelProp
                             </div>
                             <Card className="flex-1 bg-muted p-3">
                                 <p className="text-sm">
-                                    Hallo! I&apos;m Nina, your German learning assistant.
+                                    Hallo! I&apos;m Nina, your Language learning assistant.
                                     {lesson
                                         ? " I can help you understand this lesson and answer any questions you have about it."
-                                        : " How can I help you with your German learning today?"
+                                        : " How can I help you with your Language learning today?"
                                     }
                                 </p>
                             </Card>

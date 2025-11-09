@@ -4,14 +4,14 @@ import { useState } from "react";
 import { Label } from "@/components/ui/label";
 
 interface FlashCardSettingsProps {
-    initialPreference: 'base-first' | 'german-first';
+    initialPreference: 'base-first' | 'target-first';
 }
 
 export function FlashCardSettings({ initialPreference }: FlashCardSettingsProps) {
     const [preference, setPreference] = useState(initialPreference);
     const [isSaving, setIsSaving] = useState(false);
 
-    const handleChange = async (newPreference: 'base-first' | 'german-first') => {
+    const handleChange = async (newPreference: 'base-first' | 'target-first') => {
         setPreference(newPreference);
         setIsSaving(true);
 
@@ -52,7 +52,7 @@ export function FlashCardSettings({ initialPreference }: FlashCardSettingsProps)
                     <div>
                         <p className="font-medium">English First</p>
                         <p className="text-sm text-slate-600">
-                            Show English text first, flip to reveal German
+                            Show English text first, flip to reveal
                         </p>
                     </div>
                 </label>
@@ -60,16 +60,16 @@ export function FlashCardSettings({ initialPreference }: FlashCardSettingsProps)
                     <input
                         type="radio"
                         name="flashCardDisplay"
-                        value="german-first"
-                        checked={preference === 'german-first'}
-                        onChange={() => handleChange('german-first')}
+                        value="target-first"
+                        checked={preference === 'target-first'}
+                        onChange={() => handleChange('target-first')}
                         disabled={isSaving}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                        <p className="font-medium">German First</p>
+                        <p className="font-medium">Target First</p>
                         <p className="text-sm text-slate-600">
-                            Show German text first, flip to reveal English
+                            Show Target text first, flip to reveal English
                         </p>
                     </div>
                 </label>

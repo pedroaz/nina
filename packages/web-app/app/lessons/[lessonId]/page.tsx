@@ -36,19 +36,19 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         notFound();
     }
 
-    const sanitizeDualLanguage = <T extends Partial<Record<"base" | "german", unknown>>>(
+    const sanitizeDualLanguage = <T extends Partial<Record<"base" | "target", unknown>>>(
         entry: T | null | undefined,
     ): DualLanguageContent => {
         if (!entry) return {};
 
         const base = typeof entry.base === "string" ? entry.base : undefined;
-        const german = typeof entry.german === "string" ? entry.german : undefined;
+        const target = typeof entry.target === "string" ? entry.target : undefined;
 
-        return { base, german };
+        return { base, target };
     };
 
     const sanitizeDualLanguageList = (
-        entries: Array<Partial<Record<"base" | "german", unknown>>> | null | undefined,
+        entries: Array<Partial<Record<"base" | "target", unknown>>> | null | undefined,
     ): DualLanguageContent[] => {
         if (!Array.isArray(entries)) return [];
         return entries.map((entry) => sanitizeDualLanguage(entry));
@@ -77,7 +77,7 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
     }));
 
     const lessonTitleRaw =
-        sanitizedLesson.title.base || sanitizedLesson.title.german || "Untitled lesson";
+        sanitizedLesson.title.base || sanitizedLesson.title.target || "Untitled lesson";
     const lessonTitle = lessonTitleRaw.replace(/^#+\s*/, "").trimStart();
 
     return (

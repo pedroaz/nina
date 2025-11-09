@@ -3,7 +3,7 @@ import { STUDENT_LEVELS, StudentLevel, studentLevelSchemaZ } from './student';
 import { z } from 'zod';
 
 // Flash card display preference
-export const flashCardDisplayPreferenceSchemaZ = z.enum(['base-first', 'german-first']);
+export const flashCardDisplayPreferenceSchemaZ = z.enum(['base-first', 'target-first']);
 
 export type FlashCardDisplayPreference = z.infer<typeof flashCardDisplayPreferenceSchemaZ>;
 
@@ -26,7 +26,7 @@ export const userSchemaM = new mongoose.Schema({
     },
     flashCardDisplayPreference: {
         type: String,
-        enum: ['base-first', 'german-first'],
+        enum: ['base-first', 'target-first'],
         required: false,
         default: 'base-first',
     }

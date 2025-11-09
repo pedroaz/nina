@@ -40,10 +40,10 @@ export async function PATCH(req: Request) {
 
     if (
         flashCardDisplayPreference &&
-        !['base-first', 'german-first'].includes(flashCardDisplayPreference)
+        !['base-first', 'target-first'].includes(flashCardDisplayPreference)
     ) {
         return NextResponse.json(
-            { error: "Invalid flashCardDisplayPreference. Must be 'base-first' or 'german-first'" },
+            { error: "Invalid flashCardDisplayPreference. Must be 'base-first' or 'target-first'" },
             { status: 400 }
         );
     }

@@ -19,11 +19,11 @@ import {
 } from '@/components/ui/context-menu';
 import { translateText } from '@/lib/translation';
 
-type LanguageKey = 'base' | 'german';
+type LanguageKey = 'base' | 'target';
 
 export type DualLanguageContent = {
     base?: string | null;
-    german?: string | null;
+    target?: string | null;
 };
 
 type DualLanguageTextCardProps = {
@@ -67,7 +67,7 @@ function getEntries(
 }
 
 function hasContent(entry: DualLanguageContent): boolean {
-    return ['base', 'german'].some((key) => {
+    return ['base', 'target'].some((key) => {
         const value = entry?.[key as LanguageKey];
         return typeof value === 'string' && value.trim().length > 0;
     });
@@ -82,22 +82,22 @@ function splitIntoParagraphs(text: string): string[] {
 }
 
 function canSplitIntoParagraphs(entry: DualLanguageContent): boolean {
-    const germanText = entry?.german;
+    const targetText = entry?.target;
     const baseText = entry?.base;
 
     if (
-        typeof germanText !== 'string' ||
-        germanText.trim().length === 0 ||
+        typeof targetText !== 'string' ||
+        targetText.trim().length === 0 ||
         typeof baseText !== 'string' ||
         baseText.trim().length === 0
     ) {
         return false;
     }
 
-    const germanParagraphs = splitIntoParagraphs(germanText);
+    const targetParagraphs = splitIntoParagraphs(targetText);
     const baseParagraphs = splitIntoParagraphs(baseText);
 
-    return germanParagraphs.length === baseParagraphs.length && germanParagraphs.length > 0;
+    return targetParagraphs.length === baseParagraphs.length && targetParagraphs.length > 0;
 }
 
 function getEntryText(entry: DualLanguageContent, language: LanguageKey): string {
@@ -108,7 +108,7 @@ function getEntryText(entry: DualLanguageContent, language: LanguageKey): string
 
     const languageNames: Record<LanguageKey, string> = {
         base: 'English',
-        german: 'German',
+        target: 'German',
     };
 
     return `No ${languageNames[language]} content provided.`;
@@ -118,19 +118,18 @@ function renderEntryContent(entry: DualLanguageContent, showTranslation: boolean
     const canSplit = canSplitIntoParagraphs(entry);
 
     if (canSplit) {
-        // Split into paragraphs and show German with optional translation below
-        const germanText = entry.german?.trim() ?? '';
+        const targetText = entry.target?.trim() ?? '';
         const baseText = entry.base?.trim() ?? '';
-        const germanParagraphs = splitIntoParagraphs(germanText);
+        const targetParagraphs = splitIntoParagraphs(targetText);
         const baseParagraphs = splitIntoParagraphs(baseText);
 
         return (
             <div>
-                {germanParagraphs.map((germanPara, index) => (
+                {targetParagraphs.map((targetPara, index) => (
                     <div key={index} className="mb-4 last:mb-0">
                         <MarkdownPreview
                             className={markdownPreviewClassName}
-                            source={germanPara}
+                            source={targetPara}
                             style={markdownPreviewStyle}
                             wrapperElement={{ 'data-color-mode': 'light' }}
                         />
@@ -147,11 +146,11 @@ function renderEntryContent(entry: DualLanguageContent, showTranslation: boolean
             </div>
         );
     } else {
-        // Fallback: show German by default, toggle to show base if needed
+        // Fallback: show Target by default, toggle to show base if needed
         console.warn(
             'Paragraph counts do not match for entry. Falling back to toggle behavior.',
         );
-        const displayLanguage: LanguageKey = showTranslation ? 'base' : 'german';
+        const displayLanguage: LanguageKey = showTranslation ? 'base' : 'target';
         return (
             <MarkdownPreview
                 className={markdownPreviewClassName}
@@ -248,98 +247,98 @@ export function DualLanguageTextCard({
                     <ContextMenu>
                         <ContextMenuTrigger asChild>
                             <div onContextMenu={handleContextMenu}>
-                            {!hasAnyContent ? (
-                                <p className="text-sm text-muted-foreground">
-                                    {emptyMessage}
-                                </p>
-                            ) : (
-                                <div>
-                                    {entries.map((entry, index) => (
-                                        <div
-                                            key={`${heading}-${index}`}
-                                        >
-                                            {renderEntryContent(entry, showTranslation)}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                        <ContextMenuItem onSelect={handleTranslate} disabled={!highlightedText}>
-                            Translate sentence
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                            onSelect={handleAddToFlashcard}
-                            disabled={!highlightedText}
-                        >
-                            Add to flash card
-                        </ContextMenuItem>
-                    </ContextMenuContent>
-                </ContextMenu>
-            </CardContent>
-        </Card>
-
-        {/* Translation Display - positioned next to the card */}
-        {(translations.length > 0 || isTranslating) && (
-            <div className="absolute left-full top-0 ml-4 max-w-sm w-80 bg-white border border-slate-200 rounded-lg shadow-lg p-4 z-50">
-                <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Translations</h3>
-                    <button
-                        onClick={handleClearAllTranslations}
-                        className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
-                        aria-label="Clear all translations"
-                    >
-                        Clear all
-                    </button>
-                </div>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {translations.map((pair, index) => (
-                        <div
-                            key={index}
-                            className="border border-slate-200 rounded-md p-2 hover:bg-slate-50 transition-colors group"
-                        >
-                            <div className="flex justify-between items-start gap-2">
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs text-slate-600 truncate">{pair.original}</p>
-                                    <p className="text-sm text-slate-900 font-medium mt-0.5">
-                                        {pair.translated}
+                                {!hasAnyContent ? (
+                                    <p className="text-sm text-muted-foreground">
+                                        {emptyMessage}
                                     </p>
-                                </div>
-                                <button
-                                    onClick={() => handleRemoveTranslation(index)}
-                                    className="text-slate-400 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
-                                    aria-label="Remove translation"
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        width="14"
-                                        height="14"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
+                                ) : (
+                                    <div>
+                                        {entries.map((entry, index) => (
+                                            <div
+                                                key={`${heading}-${index}`}
+                                            >
+                                                {renderEntryContent(entry, showTranslation)}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                            <ContextMenuItem onSelect={handleTranslate} disabled={!highlightedText}>
+                                Translate sentence
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onSelect={handleAddToFlashcard}
+                                disabled={!highlightedText}
+                            >
+                                Add to flash card
+                            </ContextMenuItem>
+                        </ContextMenuContent>
+                    </ContextMenu>
+                </CardContent>
+            </Card>
+
+            {/* Translation Display - positioned next to the card */}
+            {(translations.length > 0 || isTranslating) && (
+                <div className="absolute left-full top-0 ml-4 max-w-sm w-80 bg-white border border-slate-200 rounded-lg shadow-lg p-4 z-50">
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-sm font-semibold text-slate-900">Translations</h3>
+                        <button
+                            onClick={handleClearAllTranslations}
+                            className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                            aria-label="Clear all translations"
+                        >
+                            Clear all
+                        </button>
+                    </div>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {translations.map((pair, index) => (
+                            <div
+                                key={index}
+                                className="border border-slate-200 rounded-md p-2 hover:bg-slate-50 transition-colors group"
+                            >
+                                <div className="flex justify-between items-start gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-slate-600 truncate">{pair.original}</p>
+                                        <p className="text-sm text-slate-900 font-medium mt-0.5">
+                                            {pair.translated}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => handleRemoveTranslation(index)}
+                                        className="text-slate-400 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                        aria-label="Remove translation"
                                     >
-                                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                                    </svg>
-                                </button>
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        >
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    ))}
-                    {isTranslating && (
-                        <div className="border border-slate-200 rounded-md p-2 bg-slate-50">
-                            <div className="flex items-center gap-2">
-                                <div className="animate-spin rounded-full h-3 w-3 border-2 border-slate-300 border-t-slate-600"></div>
-                                <p className="text-xs text-slate-500">Translating...</p>
+                        ))}
+                        {isTranslating && (
+                            <div className="border border-slate-200 rounded-md p-2 bg-slate-50">
+                                <div className="flex items-center gap-2">
+                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-slate-300 border-t-slate-600"></div>
+                                    <p className="text-xs text-slate-500">Translating...</p>
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
-            </div>
-        )}
-    </div>
+            )}
+        </div>
     );
 }

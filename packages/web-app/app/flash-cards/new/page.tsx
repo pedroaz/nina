@@ -97,7 +97,7 @@ export default function NewFlashCardDeck() {
                 <div className="flex flex-col gap-2">
                     <h1 className="text-2xl font-semibold">Create Flash Card Deck</h1>
                     <p className="text-sm text-slate-600">
-                        Generate a deck of flash cards on any topic to practice German vocabulary and phrases.
+                        Generate a deck of flash cards on any topic to practice Language vocabulary and phrases.
                     </p>
                 </div>
 
@@ -109,7 +109,7 @@ export default function NewFlashCardDeck() {
                         value={topic}
                         onChange={(event) => setTopic(event.target.value)}
                         className="min-h-32 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                        placeholder="e.g., German fruits and vegetables, Common restaurant phrases, Daily routines"
+                        placeholder="e.g., Fruits and vegetables, Common restaurant phrases, Daily routines"
                         disabled={isSubmitting}
                     />
                 </div>

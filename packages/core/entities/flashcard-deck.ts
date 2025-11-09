@@ -6,14 +6,14 @@ import { z } from 'zod';
 export const flashCardSchemaZ = z.object({
     _id: z.string(),
     base: z.string(),    // English text (full sentence)
-    german: z.string(),  // German translation (full sentence)
+    target: z.string(),  // Target translation (full sentence)
 });
 
 export type FlashCard = z.infer<typeof flashCardSchemaZ>;
 
 export const flashCardSchemaM = new mongoose.Schema({
     base: { type: String, required: true },
-    german: { type: String, required: true },
+    target: { type: String, required: true },
 }, {
     timestamps: false,
 });
