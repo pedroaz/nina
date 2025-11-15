@@ -5,6 +5,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FlashCardSettings } from "@/components/flash-card-settings";
 import { LevelSettings } from "@/components/level-settings";
+import { LanguageSettings } from "@/components/language-settings";
 import { getUserByEmail } from "@core/index";
 
 export default async function Profile() {
@@ -26,6 +27,10 @@ export default async function Profile() {
 
     // Get flash card preference from user
     const flashCardPreference = user.flashCardDisplayPreference || 'base-first';
+
+    // Get language preferences from user
+    const baseLanguage = (user.baseLanguage || 'english') as 'english' | 'portuguese';
+    const targetLanguage = (user.targetLanguage || 'german') as 'german' | 'french' | 'spanish' | 'italian';
 
     return (
         <section className="mx-auto flex min-h-[60vh] w-full max-w-3xl flex-col gap-8 px-4 py-10">
@@ -62,6 +67,18 @@ export default async function Profile() {
 
             <Card>
                 <CardHeader>
+                    <CardTitle>Language Preferences</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <LanguageSettings
+                        initialBaseLanguage={baseLanguage}
+                        initialTargetLanguage={targetLanguage}
+                    />
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
                     <CardTitle>Learning Level</CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -74,7 +91,11 @@ export default async function Profile() {
                     <CardTitle>Flash Card Preferences</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <FlashCardSettings initialPreference={flashCardPreference} />
+                    <FlashCardSettings
+                        initialPreference={flashCardPreference}
+                        baseLanguage={baseLanguage}
+                        targetLanguage={targetLanguage}
+                    />
                 </CardContent>
             </Card>
         </section>

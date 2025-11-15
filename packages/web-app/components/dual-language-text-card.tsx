@@ -107,8 +107,8 @@ function getEntryText(entry: DualLanguageContent, language: LanguageKey): string
     }
 
     const languageNames: Record<LanguageKey, string> = {
-        base: 'English',
-        target: 'German',
+        base: 'base language',
+        target: 'target language',
     };
 
     return `No ${languageNames[language]} content provided.`;

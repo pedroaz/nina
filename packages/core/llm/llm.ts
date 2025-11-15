@@ -60,8 +60,10 @@ export { MODEL_CATEGORIES, getModelConfig } from './model-config';
 
 // Define input schema
 export const LessonInputSchema = z.object({
-    topic: z.string().describe('User topic for the german lesson to be created'),
+    topic: z.string().describe('User topic for the lesson to be created'),
     vocabulary: z.string().describe('Key vocabulary words to include in the lesson'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
 });
 
 // Define output schema
@@ -86,8 +88,10 @@ export const createLessonFlow = ai.defineFlow(
         console.log(`[Lesson Creation] Using ${modelConfig.displayName}`);
         console.log(`[Lesson Creation] Topic: "${input.topic}"`);
         console.log(`[Lesson Creation] Vocabulary: "${input.vocabulary}"`);
+        console.log(`[Lesson Creation] Base language: "${input.baseLanguage}"`);
+        console.log(`[Lesson Creation] Target language: "${input.targetLanguage}"`);
 
-        const userPrompt = createFinalPrompt(input.topic, input.vocabulary);
+        const userPrompt = createFinalPrompt(input.topic, input.vocabulary, input.baseLanguage, input.targetLanguage);
 
         const generateStart = performance.now();
         const { output } = await ai.generate({
@@ -116,6 +120,8 @@ export const ExtraSectionInputSchema = z.object({
         vocabulary: z.string().optional(),
         title: dualLanguageSchemaZ,
         quickSummary: dualLanguageSchemaZ,
+        baseLanguage: z.string(),
+        targetLanguage: z.string(),
     }),
 });
 
@@ -135,7 +141,7 @@ export const appendExtraSectionFlow = chatAi.defineFlow(
         console.log(`[Extra Section] Request: "${input.request}"`);
         console.log(`[Extra Section] Topic: "${input.lessonContext.topic}"`);
 
-        const prompt = `You are Nina, a German learning assistant. A student is studying a lesson about "${input.lessonContext.topic}" ${input.lessonContext.vocabulary ? `with vocabulary: ${input.lessonContext.vocabulary}` : ''}.
+        const prompt = `You are Nina, a ${input.lessonContext.targetLanguage} learning assistant. A student is studying a lesson about "${input.lessonContext.topic}" ${input.lessonContext.vocabulary ? `with vocabulary: ${input.lessonContext.vocabulary}` : ''}.
 
 Lesson Title: ${input.lessonContext.title.base} / ${input.lessonContext.title.target}
 Summary: ${input.lessonContext.quickSummary.base}
@@ -144,12 +150,12 @@ The student has requested: "${input.request}"
 
 Generate educational content that addresses the student's request. Provide:
 
-1. A complete response in English (this will be the "base" field)
-2. The same content translated to German (this will be the "german" field)
+1. A complete response in ${input.lessonContext.baseLanguage} (this will be the "base" field)
+2. The same content translated to ${input.lessonContext.targetLanguage} (this will be the "target" field)
 
 Use markdown formatting for better readability. If they asked for examples, provide all examples in a well-formatted list. Keep it educational and engaging.
 
-Important: Return a JSON object with exactly two string fields: "base" (English content) and "german" (German content). Do not return the schema structure itself.`;
+Important: Return a JSON object with exactly two string fields: "base" (${input.lessonContext.baseLanguage} content) and "target" (${input.lessonContext.targetLanguage} content). Do not return the schema structure itself.`;
 
         const generateStart = performance.now();
         const { output } = await chatAi.generate({
@@ -191,21 +197,22 @@ function formatLessonContext(lesson: Lesson): string {
 export async function sendChatMessage(
     userMessage: string,
     history: ChatMessage[],
-    lessonContext?: Lesson
+    lessonContext?: Lesson,
+    targetLanguage: string = 'German'
 ): Promise<string> {
     const startTime = performance.now();
     console.log('[LLM] Building prompt...');
 
     const promptStart = performance.now();
     const systemPrompt = lessonContext
-        ? `You are Nina, a friendly and helpful German learning assistant. You help students understand German grammar, vocabulary, and usage.
+        ? `You are Nina, a friendly and helpful ${targetLanguage} learning assistant. You help students understand ${targetLanguage} grammar, vocabulary, and usage.
 
 The student is currently studying the following lesson:
 
 ${formatLessonContext(lessonContext)}
 
 Use this lesson context to provide relevant examples and explanations. Reference specific parts of the lesson when helpful.`
-        : `You are Nina, a friendly and helpful German learning assistant. You help students understand German grammar, vocabulary, and usage in a clear and encouraging way.`;
+        : `You are Nina, a friendly and helpful ${targetLanguage} learning assistant. You help students understand ${targetLanguage} grammar, vocabulary, and usage in a clear and encouraging way.`;
 
     // Build conversation context from history
     let conversationContext = '';
@@ -251,6 +258,8 @@ export const FlashCardFromPromptInputSchema = z.object({
     topic: z.string().describe('Topic for the flash cards'),
     cardCount: z.number().describe('Number of flash cards to generate'),
     studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
 });
 
 export const FlashCardFromPromptOutputSchema = z.object({
@@ -274,11 +283,15 @@ export const generateFlashCardsFromPromptFlow = chatAi.defineFlow(
         console.log(`[Flash Cards] Topic: "${input.topic}"`);
         console.log(`[Flash Cards] Card count: ${input.cardCount}`);
         console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
+        console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
+        console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
 
         const prompt = createFlashCardFromPromptInstructions(
             input.topic,
             input.cardCount,
-            input.studentLevel
+            input.studentLevel,
+            input.baseLanguage,
+            input.targetLanguage
         );
 
         const generateStart = performance.now();
@@ -305,6 +318,8 @@ export const FlashCardFromLessonInputSchema = z.object({
     lesson: lessonSchemaZ.describe('The lesson to extract flash cards from'),
     cardCount: z.number().describe('Number of flash cards to generate'),
     studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
 });
 
 export const FlashCardFromLessonOutputSchema = z.object({
@@ -327,6 +342,8 @@ export const generateFlashCardsFromLessonFlow = chatAi.defineFlow(
         console.log(`[Flash Cards] Lesson topic: "${input.lesson.topic}"`);
         console.log(`[Flash Cards] Card count: ${input.cardCount}`);
         console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
+        console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
+        console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
 
         const prompt = createFlashCardFromLessonInstructions(
             input.lesson.topic,
@@ -334,7 +351,9 @@ export const generateFlashCardsFromLessonFlow = chatAi.defineFlow(
             input.lesson.quickSummary.base,
             input.lesson.fullExplanation.base,
             input.cardCount,
-            input.studentLevel
+            input.studentLevel,
+            input.baseLanguage,
+            input.targetLanguage
         );
 
         const generateStart = performance.now();

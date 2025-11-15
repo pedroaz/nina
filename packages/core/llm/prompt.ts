@@ -3,12 +3,12 @@ function dontIgnore(): string {
     return `Do not ignore any instructions.`;
 }
 
-function role(): string {
-    return `Your Role: You are a helpful german teacher. Be polite and informative. Your goal is to create educational lessons that effectively teach the specified topic to learners.`;
+function role(targetLanguage: string): string {
+    return `Your Role: You are a helpful ${targetLanguage} teacher. Be polite and informative. Your goal is to create educational lessons that effectively teach the specified topic to learners.`;
 }
 
-function textLanguage(): string {
-    return `Use Markdown inside every string. Populate the "base" field with English and the "german" field with the matching German translation.`;
+function textLanguage(baseLanguage: string, targetLanguage: string): string {
+    return `Use Markdown inside every string. Populate the "base" field with ${baseLanguage} and the "target" field with the matching ${targetLanguage} translation.`;
 }
 
 function objective(topic: string): string {
@@ -23,7 +23,7 @@ function vocabularyToConsider(vocabulary: string): string {
 }
 
 function titleInstruction(): string {
-    return `Create a concise, engaging title. Start both "base" and "german" values with "# " to form a Markdown heading.`;
+    return `Create a concise, engaging title. Start both "base" and "target" values with "# " to form a Markdown heading.`;
 }
 
 function quickSummaryInstruction(): string {
@@ -31,7 +31,7 @@ function quickSummaryInstruction(): string {
 }
 
 function quickExamplesInstruction(): string {
-    return `Provide exactly 3 quick examples that illustrate the topic. Begin each "base" and "german" string with "- " so the examples render as Markdown bullet points.`;
+    return `Provide exactly 3 quick examples that illustrate the topic. Begin each "base" and "target" string with "- " so the examples render as Markdown bullet points.`;
 }
 
 function fullExplanationInstruction(): string {
@@ -48,16 +48,21 @@ function formattingInstruction(): string {
     - Respond only with valid JSON that matches the expected schema fields (title, quickSummary, quickExamples, fullExplanation).
     - Each string must contain Markdown that follows the instructions above.
     - Do not add extra commentary, code fences, or additional keys.
-    - Maintain consistent tone and level across English and German variants.
+    - Maintain consistent tone and level across both language variants.
     `;
 }
 
 
-export function createFinalPrompt(topic: string, vocabulary: string): string {
+export function createFinalPrompt(
+    topic: string,
+    vocabulary: string,
+    baseLanguage: string,
+    targetLanguage: string
+): string {
     const final = `
     ${dontIgnore()}\n
-    ${role()}\n
-    ${textLanguage()}\n
+    ${role(targetLanguage)}\n
+    ${textLanguage(baseLanguage, targetLanguage)}\n
     ${objective(topic)}\n
     ${vocabularyToConsider(vocabulary)}\n
     ${titleInstruction()}\n

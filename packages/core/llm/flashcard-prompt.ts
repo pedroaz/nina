@@ -1,13 +1,13 @@
 import { StudentLevel } from "../entities/student";
 
-function role(): string {
-  return `Your Role: You are a helpful language teacher creating flash cards for language learners. Be concise and educational. Your goal is to create effective flash cards that help learners practice and memorize German vocabulary and phrases.`;
+function role(targetLanguage: string): string {
+  return `Your Role: You are a helpful language teacher creating flash cards for language learners. Be concise and educational. Your goal is to create effective flash cards that help learners practice and memorize ${targetLanguage} vocabulary and phrases.`;
 }
 
-function cardFormat(): string {
+function cardFormat(baseLanguage: string, targetLanguage: string): string {
   return `Flash Card Format: Each card should have:
-- "base": An English sentence or phrase (full sentence, not just a single word)
-- "target": The accurate German translation of that sentence
+- "base": A ${baseLanguage} sentence or phrase (full sentence, not just a single word)
+- "target": The accurate ${targetLanguage} translation of that sentence
 
 Make sure the sentences are practical, natural, and useful for everyday communication.`;
 }
@@ -28,12 +28,14 @@ function levelGuidance(studentLevel: StudentLevel): string {
 export function createFlashCardFromPromptInstructions(
   topic: string,
   cardCount: number,
-  studentLevel: StudentLevel
+  studentLevel: StudentLevel,
+  baseLanguage: string,
+  targetLanguage: string
 ): string {
   return `
-${role()}
+${role(targetLanguage)}
 
-${cardFormat()}
+${cardFormat(baseLanguage, targetLanguage)}
 
 ${levelGuidance(studentLevel)}
 
@@ -46,18 +48,18 @@ Requirements:
 4. Cards should cover different aspects of the topic
 5. Ensure variety - use different sentence structures and contexts
 6. Match the student's level (${studentLevel}) in complexity and vocabulary
-7. Both English and German sentences should sound natural to native speakers
+7. Both ${baseLanguage} and ${targetLanguage} sentences should sound natural to native speakers
 
 Output Format:
 Return a JSON object with:
 - "title": A short, descriptive deck title (string)
-- "cards": An array of flash card objects, each with "base" (English) and "german" (German translation)
+- "cards": An array of flash card objects, each with "base" (${baseLanguage}) and "target" (${targetLanguage} translation)
 
 Example structure:
 {
-  "title": "German Greetings",
+  "title": "${targetLanguage} Greetings",
   "cards": [
-    { "base": "Good morning, how are you today?", "german": "Guten Morgen, wie geht es dir heute?" },
+    { "base": "Good morning, how are you today?", "target": "Guten Morgen, wie geht es dir heute?" },
     ...
   ]
 }
@@ -70,16 +72,18 @@ export function createFlashCardFromLessonInstructions(
   lessonSummary: string,
   lessonExplanation: string,
   cardCount: number,
-  studentLevel: StudentLevel
+  studentLevel: StudentLevel,
+  baseLanguage: string,
+  targetLanguage: string
 ): string {
   return `
-${role()}
+${role(targetLanguage)}
 
-${cardFormat()}
+${cardFormat(baseLanguage, targetLanguage)}
 
 ${levelGuidance(studentLevel)}
 
-Your Task: Create ${cardCount} flash cards based on the following German lesson.
+Your Task: Create ${cardCount} flash cards based on the following ${targetLanguage} lesson.
 
 Lesson Information:
 Topic: ${lessonTopic}
@@ -94,16 +98,16 @@ Requirements:
 4. Cards should reinforce the main concepts taught in the lesson
 5. Include practical examples that demonstrate the lesson's grammar or vocabulary
 6. Match the student's level (${studentLevel}) in complexity
-7. Both English and German sentences should sound natural
+7. Both ${baseLanguage} and ${targetLanguage} sentences should sound natural
 
 Output Format:
 Return a JSON object with:
-- "cards": An array of flash card objects, each with "base" (English) and "german" (German translation)
+- "cards": An array of flash card objects, each with "base" (${baseLanguage}) and "target" (${targetLanguage} translation)
 
 Example structure:
 {
   "cards": [
-    { "base": "I am learning German at school.", "german": "Ich lerne Deutsch in der Schule." },
+    { "base": "I am learning ${targetLanguage} at school.", "target": "Ich lerne Deutsch in der Schule." },
     ...
   ]
 }

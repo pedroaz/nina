@@ -22,7 +22,7 @@ export async function createLessonCommand(
         studentData: {
             userId: user._id,
             userName: user.name,
-            preferredLanguage: "english",
+            preferredLanguage: user.baseLanguage,
             studentLevel: user.level,
         },
     });
@@ -30,6 +30,8 @@ export async function createLessonCommand(
     var llmResult = await createLessonFlow({
         topic: data.topic,
         vocabulary: data.vocabulary,
+        baseLanguage: user.baseLanguage,
+        targetLanguage: user.targetLanguage,
     });
 
     if (!llmResult) throw new Error('Failed to generate lesson');
@@ -71,6 +73,9 @@ export async function appendExtraSectionCommand(
     const lesson = await LessonModel.findById(data.lessonId);
     if (!lesson) throw new Error('Lesson not found');
 
+    const user = await getUserById(lesson.studentData.userId);
+    if (!user) throw new Error('User not found');
+
     const extraSection = await appendExtraSectionFlow({
         request: data.request,
         lessonContext: {
@@ -78,6 +83,8 @@ export async function appendExtraSectionCommand(
             vocabulary: lesson.vocabulary,
             title: lesson.title,
             quickSummary: lesson.quickSummary,
+            baseLanguage: user.baseLanguage,
+            targetLanguage: user.targetLanguage,
         },
     });
 

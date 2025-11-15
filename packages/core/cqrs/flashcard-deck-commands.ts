@@ -24,7 +24,7 @@ export async function createFlashCardDeckCommand(
         studentData: {
             userId: user._id,
             userName: user.name,
-            preferredLanguage: "english",
+            preferredLanguage: user.baseLanguage,
             studentLevel: user.level,
         },
         cards: data.cards,
@@ -54,6 +54,8 @@ export async function generateFlashCardDeckFromPromptCommand(
         topic: data.topic,
         cardCount: data.cardCount,
         studentLevel: user.level,
+        baseLanguage: user.baseLanguage,
+        targetLanguage: user.targetLanguage,
     });
 
     if (!llmResult || !llmResult.cards || llmResult.cards.length === 0) {
@@ -66,7 +68,7 @@ export async function generateFlashCardDeckFromPromptCommand(
         studentData: {
             userId: user._id,
             userName: user.name,
-            preferredLanguage: "english",
+            preferredLanguage: user.baseLanguage,
             studentLevel: user.level,
         },
         cards: llmResult.cards,
@@ -117,6 +119,8 @@ export async function generateFlashCardDeckFromLessonCommand(
         lesson: serializedLesson,
         cardCount: data.cardCount,
         studentLevel: user.level,
+        baseLanguage: user.baseLanguage,
+        targetLanguage: user.targetLanguage,
     });
 
     if (!llmResult || !llmResult.cards || llmResult.cards.length === 0) {
@@ -129,7 +133,7 @@ export async function generateFlashCardDeckFromLessonCommand(
         studentData: {
             userId: user._id,
             userName: user.name,
-            preferredLanguage: "english",
+            preferredLanguage: user.baseLanguage,
             studentLevel: user.level,
         },
         cards: llmResult.cards,

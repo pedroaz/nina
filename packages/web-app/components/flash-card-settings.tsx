@@ -5,9 +5,14 @@ import { Label } from "@/components/ui/label";
 
 interface FlashCardSettingsProps {
     initialPreference: 'base-first' | 'target-first';
+    baseLanguage?: string;
+    targetLanguage?: string;
 }
 
-export function FlashCardSettings({ initialPreference }: FlashCardSettingsProps) {
+export function FlashCardSettings({ initialPreference, baseLanguage = 'Base', targetLanguage = 'Target' }: FlashCardSettingsProps) {
+    // Capitalize first letter for display
+    const baseLanguageDisplay = baseLanguage.charAt(0).toUpperCase() + baseLanguage.slice(1);
+    const targetLanguageDisplay = targetLanguage.charAt(0).toUpperCase() + targetLanguage.slice(1);
     const [preference, setPreference] = useState(initialPreference);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -50,9 +55,9 @@ export function FlashCardSettings({ initialPreference }: FlashCardSettingsProps)
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                        <p className="font-medium">English First</p>
+                        <p className="font-medium">{baseLanguageDisplay} First</p>
                         <p className="text-sm text-slate-600">
-                            Show English text first, flip to reveal
+                            Show {baseLanguageDisplay} text first, flip to reveal {targetLanguageDisplay}
                         </p>
                     </div>
                 </label>
@@ -67,9 +72,9 @@ export function FlashCardSettings({ initialPreference }: FlashCardSettingsProps)
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                        <p className="font-medium">Target First</p>
+                        <p className="font-medium">{targetLanguageDisplay} First</p>
                         <p className="text-sm text-slate-600">
-                            Show Target text first, flip to reveal English
+                            Show {targetLanguageDisplay} text first, flip to reveal {baseLanguageDisplay}
                         </p>
                     </div>
                 </label>
