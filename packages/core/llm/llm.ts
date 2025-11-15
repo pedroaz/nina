@@ -64,6 +64,7 @@ export const LessonInputSchema = z.object({
     vocabulary: z.string().describe('Key vocabulary words to include in the lesson'),
     baseLanguage: z.string().describe('Base language (user native language)'),
     targetLanguage: z.string().describe('Target language (language being learned)'),
+    modelType: z.enum(['fast', 'detailed']).optional().describe('Model type to use (defaults to detailed)'),
 });
 
 // Define output schema
@@ -71,46 +72,69 @@ export const LessonSchemaLLM = lessonSchemaZ.omit({
     topic: true,
     vocabulary: true,
     studentData: true,
+    modelUsed: true,
+    creationPromptMetadataId: true,
 })
 
-// Define a lesson creation flow
-export const createLessonFlow = ai.defineFlow(
-    {
-        name: 'createLessonFlow',
-        inputSchema: LessonInputSchema,
-        outputSchema: LessonSchemaLLM,
-    },
-    async (input) => {
-        const modelConfig = getModelConfig(MODEL_CATEGORIES.DETAILED);
-        const startTime = performance.now();
+// Usage metadata type
+export interface UsageMetadata {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    modelUsed: string;
+    executionTimeMs: number;
+    finishReason?: string;
+}
 
-        console.log(`[Lesson Creation] Starting lesson generation`);
-        console.log(`[Lesson Creation] Using ${modelConfig.displayName}`);
-        console.log(`[Lesson Creation] Topic: "${input.topic}"`);
-        console.log(`[Lesson Creation] Vocabulary: "${input.vocabulary}"`);
-        console.log(`[Lesson Creation] Base language: "${input.baseLanguage}"`);
-        console.log(`[Lesson Creation] Target language: "${input.targetLanguage}"`);
+// Define a lesson creation flow - returns both lesson and usage metadata
+export const createLessonFlow = async (
+    input: z.infer<typeof LessonInputSchema>
+): Promise<{ lesson: z.infer<typeof LessonSchemaLLM>; usage: UsageMetadata }> => {
+    const modelCategory = input.modelType || MODEL_CATEGORIES.DETAILED;
+    const modelConfig = getModelConfig(modelCategory as any);
+    const aiInstance = modelCategory === MODEL_CATEGORIES.FAST ? chatAi : ai;
+    const startTime = performance.now();
 
-        const userPrompt = createFinalPrompt(input.topic, input.vocabulary, input.baseLanguage, input.targetLanguage);
+    console.log(`[Lesson Creation] Starting lesson generation`);
+    console.log(`[Lesson Creation] Using ${modelConfig.displayName}`);
+    console.log(`[Lesson Creation] Topic: "${input.topic}"`);
+    console.log(`[Lesson Creation] Vocabulary: "${input.vocabulary}"`);
+    console.log(`[Lesson Creation] Base language: "${input.baseLanguage}"`);
+    console.log(`[Lesson Creation] Target language: "${input.targetLanguage}"`);
 
-        const generateStart = performance.now();
-        const { output } = await ai.generate({
-            prompt: userPrompt,
-            output: { schema: LessonSchemaLLM },
-        });
-        const generateEnd = performance.now();
+    const userPrompt = createFinalPrompt(input.topic, input.vocabulary, input.baseLanguage, input.targetLanguage);
 
-        console.log(`[Lesson Creation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    const generateStart = performance.now();
+    const response = await aiInstance.generate({
+        prompt: userPrompt,
+        output: { schema: LessonSchemaLLM },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
 
-        if (!output) throw new Error('Failed to generate lesson');
+    console.log(`[Lesson Creation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Lesson Creation] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Lesson Creation] Output tokens: ${usage?.outputTokens || 0}`);
+    console.log(`[Lesson Creation] Total tokens: ${usage?.totalTokens || 0}`);
 
-        const totalTime = performance.now() - startTime;
-        console.log(`[Lesson Creation] Total time: ${totalTime.toFixed(2)}ms`);
-        console.log(`[Lesson Creation] Lesson created successfully`);
+    if (!output) throw new Error('Failed to generate lesson');
 
-        return output;
-    },
-);
+    const totalTime = performance.now() - startTime;
+    console.log(`[Lesson Creation] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Lesson Creation] Lesson created successfully`);
+
+    return {
+        lesson: output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
 
 // Define input schema for extra sections
 export const ExtraSectionInputSchema = z.object({
@@ -125,23 +149,19 @@ export const ExtraSectionInputSchema = z.object({
     }),
 });
 
-// Define a flow for appending extra sections
-export const appendExtraSectionFlow = chatAi.defineFlow(
-    {
-        name: 'appendExtraSectionFlow',
-        inputSchema: ExtraSectionInputSchema,
-        outputSchema: dualLanguageSchemaZ,
-    },
-    async (input) => {
-        const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
-        const startTime = performance.now();
+// Define a flow for appending extra sections - returns both section and usage metadata
+export const appendExtraSectionFlow = async (
+    input: z.infer<typeof ExtraSectionInputSchema>
+): Promise<{ section: z.infer<typeof dualLanguageSchemaZ>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
 
-        console.log(`[Extra Section] Starting extra section generation`);
-        console.log(`[Extra Section] Using ${modelConfig.displayName}`);
-        console.log(`[Extra Section] Request: "${input.request}"`);
-        console.log(`[Extra Section] Topic: "${input.lessonContext.topic}"`);
+    console.log(`[Extra Section] Starting extra section generation`);
+    console.log(`[Extra Section] Using ${modelConfig.displayName}`);
+    console.log(`[Extra Section] Request: "${input.request}"`);
+    console.log(`[Extra Section] Topic: "${input.lessonContext.topic}"`);
 
-        const prompt = `You are Nina, a ${input.lessonContext.targetLanguage} learning assistant. A student is studying a lesson about "${input.lessonContext.topic}" ${input.lessonContext.vocabulary ? `with vocabulary: ${input.lessonContext.vocabulary}` : ''}.
+    const prompt = `You are Nina, a ${input.lessonContext.targetLanguage} learning assistant. A student is studying a lesson about "${input.lessonContext.topic}" ${input.lessonContext.vocabulary ? `with vocabulary: ${input.lessonContext.vocabulary}` : ''}.
 
 Lesson Title: ${input.lessonContext.title.base} / ${input.lessonContext.title.target}
 Summary: ${input.lessonContext.quickSummary.base}
@@ -157,24 +177,36 @@ Use markdown formatting for better readability. If they asked for examples, prov
 
 Important: Return a JSON object with exactly two string fields: "base" (${input.lessonContext.baseLanguage} content) and "target" (${input.lessonContext.targetLanguage} content). Do not return the schema structure itself.`;
 
-        const generateStart = performance.now();
-        const { output } = await chatAi.generate({
-            prompt: prompt,
-            output: { schema: dualLanguageSchemaZ },
-        });
-        const generateEnd = performance.now();
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: dualLanguageSchemaZ },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
 
-        console.log(`[Extra Section] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Extra Section] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Extra Section] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Extra Section] Output tokens: ${usage?.outputTokens || 0}`);
 
-        if (!output) throw new Error('Failed to generate extra section');
+    if (!output) throw new Error('Failed to generate extra section');
 
-        const totalTime = performance.now() - startTime;
-        console.log(`[Extra Section] Total time: ${totalTime.toFixed(2)}ms`);
-        console.log(`[Extra Section] Extra section created successfully`);
+    const totalTime = performance.now() - startTime;
+    console.log(`[Extra Section] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Extra Section] Extra section created successfully`);
 
-        return output;
-    },
-);
+    return {
+        section: output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
 
 // Chat functionality for Nina assistant
 export interface ChatMessage {
@@ -199,8 +231,9 @@ export async function sendChatMessage(
     history: ChatMessage[],
     lessonContext?: Lesson,
     targetLanguage: string = 'German'
-): Promise<string> {
+): Promise<{ message: string; usage: UsageMetadata }> {
     const startTime = performance.now();
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     console.log('[LLM] Building prompt...');
 
     const promptStart = performance.now();
@@ -239,16 +272,29 @@ Nina:`;
     // Generate response in a single call using fast chat model
     console.log('[LLM] Calling AI model (gpt-4o-mini)...');
     const generateStart = performance.now();
-    const { text } = await chatAi.generate({
+    const response = await chatAi.generate({
         prompt: fullPrompt,
     });
+    const { text, usage, finishReason } = response;
     const generateEnd = performance.now();
     console.log(`[LLM] AI generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[LLM] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[LLM] Output tokens: ${usage?.outputTokens || 0}`);
 
     const totalTime = performance.now() - startTime;
     console.log(`[LLM] Total LLM function time: ${totalTime.toFixed(2)}ms`);
 
-    return text;
+    return {
+        message: text,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
 }
 
 // Flash Card Generation Flows
@@ -267,51 +313,59 @@ export const FlashCardFromPromptOutputSchema = z.object({
     cards: z.array(flashCardSchemaZ.omit({ _id: true })).describe('Array of flash cards'),
 });
 
-// Flow for generating flash cards from a topic/prompt
-export const generateFlashCardsFromPromptFlow = chatAi.defineFlow(
-    {
-        name: 'generateFlashCardsFromPromptFlow',
-        inputSchema: FlashCardFromPromptInputSchema,
-        outputSchema: FlashCardFromPromptOutputSchema,
-    },
-    async (input) => {
-        const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
-        const startTime = performance.now();
+// Flow for generating flash cards from a topic/prompt - returns cards and usage metadata
+export const generateFlashCardsFromPromptFlow = async (
+    input: z.infer<typeof FlashCardFromPromptInputSchema>
+): Promise<{ output: z.infer<typeof FlashCardFromPromptOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
 
-        console.log(`[Flash Cards] Starting flash card generation from prompt`);
-        console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
-        console.log(`[Flash Cards] Topic: "${input.topic}"`);
-        console.log(`[Flash Cards] Card count: ${input.cardCount}`);
-        console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
-        console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
-        console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
+    console.log(`[Flash Cards] Starting flash card generation from prompt`);
+    console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
+    console.log(`[Flash Cards] Topic: "${input.topic}"`);
+    console.log(`[Flash Cards] Card count: ${input.cardCount}`);
+    console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
+    console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
+    console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
 
-        const prompt = createFlashCardFromPromptInstructions(
-            input.topic,
-            input.cardCount,
-            input.studentLevel,
-            input.baseLanguage,
-            input.targetLanguage
-        );
+    const prompt = createFlashCardFromPromptInstructions(
+        input.topic,
+        input.cardCount,
+        input.studentLevel,
+        input.baseLanguage,
+        input.targetLanguage
+    );
 
-        const generateStart = performance.now();
-        const { output } = await chatAi.generate({
-            prompt: prompt,
-            output: { schema: FlashCardFromPromptOutputSchema },
-        });
-        const generateEnd = performance.now();
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: FlashCardFromPromptOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
 
-        console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Flash Cards] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Flash Cards] Output tokens: ${usage?.outputTokens || 0}`);
 
-        if (!output) throw new Error('Failed to generate flash cards from prompt');
+    if (!output) throw new Error('Failed to generate flash cards from prompt');
 
-        const totalTime = performance.now() - startTime;
-        console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
-        console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
+    const totalTime = performance.now() - startTime;
+    console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
 
-        return output;
-    },
-);
+    return {
+        output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
 
 // Schema for generating flash cards from lesson
 export const FlashCardFromLessonInputSchema = z.object({
@@ -326,51 +380,59 @@ export const FlashCardFromLessonOutputSchema = z.object({
     cards: z.array(flashCardSchemaZ.omit({ _id: true })).describe('Array of flash cards'),
 });
 
-// Flow for generating flash cards from a lesson
-export const generateFlashCardsFromLessonFlow = chatAi.defineFlow(
-    {
-        name: 'generateFlashCardsFromLessonFlow',
-        inputSchema: FlashCardFromLessonInputSchema,
-        outputSchema: FlashCardFromLessonOutputSchema,
-    },
-    async (input) => {
-        const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
-        const startTime = performance.now();
+// Flow for generating flash cards from a lesson - returns cards and usage metadata
+export const generateFlashCardsFromLessonFlow = async (
+    input: z.infer<typeof FlashCardFromLessonInputSchema>
+): Promise<{ output: z.infer<typeof FlashCardFromLessonOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
 
-        console.log(`[Flash Cards] Starting flash card generation from lesson`);
-        console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
-        console.log(`[Flash Cards] Lesson topic: "${input.lesson.topic}"`);
-        console.log(`[Flash Cards] Card count: ${input.cardCount}`);
-        console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
-        console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
-        console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
+    console.log(`[Flash Cards] Starting flash card generation from lesson`);
+    console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
+    console.log(`[Flash Cards] Lesson topic: "${input.lesson.topic}"`);
+    console.log(`[Flash Cards] Card count: ${input.cardCount}`);
+    console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
+    console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
+    console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
 
-        const prompt = createFlashCardFromLessonInstructions(
-            input.lesson.topic,
-            input.lesson.title.base,
-            input.lesson.quickSummary.base,
-            input.lesson.fullExplanation.base,
-            input.cardCount,
-            input.studentLevel,
-            input.baseLanguage,
-            input.targetLanguage
-        );
+    const prompt = createFlashCardFromLessonInstructions(
+        input.lesson.topic,
+        input.lesson.title.base,
+        input.lesson.quickSummary.base,
+        input.lesson.fullExplanation.base,
+        input.cardCount,
+        input.studentLevel,
+        input.baseLanguage,
+        input.targetLanguage
+    );
 
-        const generateStart = performance.now();
-        const { output } = await chatAi.generate({
-            prompt: prompt,
-            output: { schema: FlashCardFromLessonOutputSchema },
-        });
-        const generateEnd = performance.now();
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: FlashCardFromLessonOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
 
-        console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Flash Cards] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Flash Cards] Output tokens: ${usage?.outputTokens || 0}`);
 
-        if (!output) throw new Error('Failed to generate flash cards from lesson');
+    if (!output) throw new Error('Failed to generate flash cards from lesson');
 
-        const totalTime = performance.now() - startTime;
-        console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
-        console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
+    const totalTime = performance.now() - startTime;
+    console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
 
-        return output;
-    },
-);
+    return {
+        output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};

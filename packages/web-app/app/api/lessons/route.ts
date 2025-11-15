@@ -19,6 +19,9 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const topic = typeof body?.topic === "string" ? body.topic.trim() : "";
     const vocabulary = typeof body?.vocabulary === "string" ? body.vocabulary.trim() : "";
+    const modelType = body?.modelType === "fast" || body?.modelType === "detailed"
+        ? body.modelType
+        : "detailed";
 
     if (!topic) {
         return NextResponse.json({ error: "Lesson topic is required" }, { status: 400 });
@@ -30,7 +33,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const modelConfig = getModelConfig(MODEL_CATEGORIES.DETAILED);
+    const modelCategory = modelType === "fast" ? MODEL_CATEGORIES.FAST : MODEL_CATEGORIES.DETAILED;
+    const modelConfig = getModelConfig(modelCategory);
     const startTime = performance.now();
 
     console.log(`[Lesson API] Creating lesson for user: ${user.email}`);
@@ -40,7 +44,8 @@ export async function POST(req: Request) {
     const created = await createLessonCommand({
         userId: user._id,
         topic,
-        vocabulary
+        vocabulary,
+        modelType,
     });
 
     const totalTime = performance.now() - startTime;

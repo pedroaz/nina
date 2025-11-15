@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
-import { sendChatMessage, type ChatMessage } from '@core/llm/llm';
+import { sendChatMessage, type ChatMessage, getUserByEmail, savePromptMetadataCommand } from '@core/index';
 import type { Lesson } from '@core/entities/lesson';
 
 export async function POST(request: NextRequest) {
@@ -17,6 +17,11 @@ export async function POST(request: NextRequest) {
 
         if (!session?.user?.email) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const user = await getUserByEmail(session.user.email);
+        if (!user) {
+            return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
         // Parse request body
@@ -45,10 +50,23 @@ export async function POST(request: NextRequest) {
         // Send chat message
         console.log('[Chat API] Sending message to LLM...');
         const llmStart = performance.now();
-        const response = await sendChatMessage(message, history, lessonContext);
+        const { message: response, usage } = await sendChatMessage(message, history, lessonContext);
         const llmEnd = performance.now();
         console.log(`[Chat API] LLM response time: ${(llmEnd - llmStart).toFixed(2)}ms`);
         console.log(`[Chat API] Response length: ${response.length} chars`);
+
+        // Save prompt metadata for chat
+        await savePromptMetadataCommand({
+            lessonId: lessonContext?._id,
+            operation: 'chat',
+            modelUsed: usage.modelUsed as 'gpt-5-nano' | 'gpt-4o-mini',
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            totalTokens: usage.totalTokens,
+            userId: user._id.toString(),
+            executionTimeMs: usage.executionTimeMs,
+            finishReason: usage.finishReason,
+        });
 
         const totalTime = performance.now() - startTime;
         console.log(`[Chat API] Total request time: ${totalTime.toFixed(2)}ms`);

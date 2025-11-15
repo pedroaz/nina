@@ -10,9 +10,33 @@ export default function CustomLessonsNew() {
     const router = useRouter();
     const [topic, setTopic] = useState("");
     const [vocabulary, setVocabulary] = useState("");
+    const [modelType, setModelType] = useState<'fast' | 'detailed'>('detailed');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [userLanguages, setUserLanguages] = useState<{
+        baseLanguage: string;
+        targetLanguage: string;
+    } | null>(null);
+
+    // Fetch user language settings
+    useEffect(() => {
+        const fetchUserLanguages = async () => {
+            try {
+                const response = await fetch('/api/user/me');
+                if (response.ok) {
+                    const userData = await response.json();
+                    setUserLanguages({
+                        baseLanguage: userData.baseLanguage || 'English',
+                        targetLanguage: userData.targetLanguage || 'German',
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch user languages:', err);
+            }
+        };
+        fetchUserLanguages();
+    }, []);
 
     useEffect(() => {
         let interval: NodeJS.Timeout | null = null;
@@ -33,6 +57,10 @@ export default function CustomLessonsNew() {
         };
     }, [isSubmitting]);
 
+    const capitalizeLanguage = (lang: string) => {
+        return lang.charAt(0).toUpperCase() + lang.slice(1).toLowerCase();
+    };
+
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
@@ -51,6 +79,7 @@ export default function CustomLessonsNew() {
             const requestBody: CreateLessonRequestData = {
                 topic: sanitizedTopic,
                 vocabulary: sanitizedVocabulary,
+                modelType,
             };
             const response = await fetch("/api/lessons", {
                 method: "POST",
@@ -92,6 +121,22 @@ export default function CustomLessonsNew() {
                 onSubmit={handleSubmit}
                 className="flex w-full max-w-2xl flex-col gap-6 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
             >
+                {userLanguages && (
+                    <div className="rounded-lg bg-slate-50 p-4 border border-slate-200">
+                        <h3 className="font-semibold text-sm mb-2">Language Settings</h3>
+                        <div className="flex gap-6 text-sm">
+                            <div>
+                                <span className="text-slate-600">Base Language:</span>{' '}
+                                <span className="font-medium">{capitalizeLanguage(userLanguages.baseLanguage)}</span>
+                            </div>
+                            <div>
+                                <span className="text-slate-600">Target Language:</span>{' '}
+                                <span className="font-medium">{capitalizeLanguage(userLanguages.targetLanguage)}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex flex-col gap-2">
                     <Label htmlFor="topic">Lesson topic</Label>
                     <textarea
@@ -118,6 +163,61 @@ export default function CustomLessonsNew() {
                     />
                 </div>
 
+                <div className="flex flex-col gap-3">
+                    <Label>Model Selection</Label>
+                    <div className="flex flex-col gap-2">
+                        <label className={`flex items-start gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+                            modelType === 'detailed'
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}>
+                            <input
+                                type="radio"
+                                name="modelType"
+                                value="detailed"
+                                checked={modelType === 'detailed'}
+                                onChange={(e) => setModelType(e.target.value as 'detailed')}
+                                disabled={isSubmitting}
+                                className="mt-0.5"
+                            />
+                            <div className="flex-1">
+                                <div className="font-semibold text-sm">Detailed Model (GPT-5 Nano)</div>
+                                <div className="text-xs text-slate-600 mt-1">
+                                    More thorough and comprehensive responses. Best for complex topics.
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                    Cost: $0.05/1M input tokens, $0.40/1M output tokens
+                                </div>
+                            </div>
+                        </label>
+
+                        <label className={`flex items-start gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+                            modelType === 'fast'
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}>
+                            <input
+                                type="radio"
+                                name="modelType"
+                                value="fast"
+                                checked={modelType === 'fast'}
+                                onChange={(e) => setModelType(e.target.value as 'fast')}
+                                disabled={isSubmitting}
+                                className="mt-0.5"
+                            />
+                            <div className="flex-1">
+                                <div className="font-semibold text-sm">Fast Model (GPT-4o Mini)</div>
+                                <div className="text-xs text-slate-600 mt-1">
+                                    Quick and efficient responses. Good for simple topics and faster generation.
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                    Cost: $0.15/1M input tokens, $0.60/1M output tokens
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 {error ? (
                     <p className="text-sm text-red-600" role="alert">
                         {error}
@@ -127,17 +227,21 @@ export default function CustomLessonsNew() {
                 {isSubmitting && (
                     <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
                         <p className="text-sm text-blue-800">
-                            Creating lesson with <span className="font-semibold">Detailed Model (GPT-5 Nano)</span>...
+                            Creating lesson with <span className="font-semibold">
+                                {modelType === 'detailed' ? 'Detailed Model (GPT-5 Nano)' : 'Fast Model (GPT-4o Mini)'}
+                            </span>...
                         </p>
                         <p className="text-xs text-blue-600 mt-1">
-                            This may take a moment as we generate comprehensive content for you.
+                            {modelType === 'detailed'
+                                ? 'This may take a moment as we generate comprehensive content for you.'
+                                : 'Generating your lesson quickly...'}
                         </p>
                         <div className="mt-3 pt-3 border-t border-blue-200">
                             <p className="text-sm text-blue-800">
                                 Time elapsed: <span className="font-semibold">{elapsedSeconds}s</span>
                             </p>
                             <p className="text-xs text-blue-600 mt-1">
-                                Average generation time: ~1 minute
+                                Average generation time: ~{modelType === 'detailed' ? '1 minute' : '30 seconds'}
                             </p>
                         </div>
                     </div>

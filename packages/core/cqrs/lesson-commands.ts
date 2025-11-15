@@ -2,11 +2,13 @@ import { connectDatabase } from "../database/database";
 import { Lesson, LessonModel } from "../entities/lesson";
 import { createLessonFlow, appendExtraSectionFlow } from "../llm/llm";
 import { getUserById } from "./user-queries";
+import { savePromptMetadataCommand } from "./prompt-metadata-commands";
 
 export interface CreateLessonRequestData {
     userId?: string;
     topic: string;
     vocabulary: string;
+    modelType?: 'fast' | 'detailed';
 }
 
 export async function createLessonCommand(
@@ -16,6 +18,19 @@ export async function createLessonCommand(
     const user = await getUserById(data.userId!); // ensure user exists
 
     if (!user) throw new Error('User not found');
+
+    // Call LLM with model type and get usage metadata
+    const { lesson: llmResult, usage } = await createLessonFlow({
+        topic: data.topic,
+        vocabulary: data.vocabulary,
+        baseLanguage: user.baseLanguage,
+        targetLanguage: user.targetLanguage,
+        modelType: data.modelType,
+    });
+
+    if (!llmResult) throw new Error('Failed to generate lesson');
+
+    // Create lesson object
     const lessonObject = new LessonModel({
         topic: data.topic,
         vocabulary: data.vocabulary,
@@ -25,24 +40,32 @@ export async function createLessonCommand(
             preferredLanguage: user.baseLanguage,
             studentLevel: user.level,
         },
+        title: llmResult.title,
+        quickSummary: llmResult.quickSummary,
+        quickExamples: llmResult.quickExamples,
+        fullExplanation: llmResult.fullExplanation,
+        modelUsed: usage.modelUsed as 'gpt-5-nano' | 'gpt-4o-mini',
     });
 
-    var llmResult = await createLessonFlow({
-        topic: data.topic,
-        vocabulary: data.vocabulary,
-        baseLanguage: user.baseLanguage,
-        targetLanguage: user.targetLanguage,
-    });
-
-    if (!llmResult) throw new Error('Failed to generate lesson');
-
-    lessonObject.title = llmResult.title;
-    lessonObject.quickSummary = llmResult.quickSummary;
-    lessonObject.quickExamples = llmResult.quickExamples;
-    lessonObject.fullExplanation = llmResult.fullExplanation;
-
+    // Save lesson first to get the ID
     await lessonObject.save();
 
+    // Save prompt metadata
+    const promptMetadata = await savePromptMetadataCommand({
+        lessonId: lessonObject._id.toString(),
+        operation: 'lesson_creation',
+        modelUsed: usage.modelUsed as 'gpt-5-nano' | 'gpt-4o-mini',
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        userId: user._id.toString(),
+        executionTimeMs: usage.executionTimeMs,
+        finishReason: usage.finishReason,
+    });
+
+    // Update lesson with prompt metadata reference
+    lessonObject.creationPromptMetadataId = promptMetadata._id.toString();
+    await lessonObject.save();
 
     return lessonObject;
 }
@@ -76,7 +99,7 @@ export async function appendExtraSectionCommand(
     const user = await getUserById(lesson.studentData.userId);
     if (!user) throw new Error('User not found');
 
-    const extraSection = await appendExtraSectionFlow({
+    const { section: extraSection, usage } = await appendExtraSectionFlow({
         request: data.request,
         lessonContext: {
             topic: lesson.topic,
@@ -96,6 +119,19 @@ export async function appendExtraSectionCommand(
 
     lesson.extraSections.push(extraSection);
     await lesson.save();
+
+    // Save prompt metadata for extra section generation
+    await savePromptMetadataCommand({
+        lessonId: lesson._id.toString(),
+        operation: 'extra_section',
+        modelUsed: usage.modelUsed as 'gpt-5-nano' | 'gpt-4o-mini',
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        userId: user._id.toString(),
+        executionTimeMs: usage.executionTimeMs,
+        finishReason: usage.finishReason,
+    });
 
     return lesson;
 }

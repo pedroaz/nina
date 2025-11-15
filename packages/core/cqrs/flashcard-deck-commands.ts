@@ -3,6 +3,7 @@ import { FlashCardDeck, FlashCardDeckModel, FlashCard } from "../entities/flashc
 import { getUserById } from "./user-queries";
 import { getLessonById } from "./lesson-queries";
 import { generateFlashCardsFromPromptFlow, generateFlashCardsFromLessonFlow } from "../llm/llm";
+import { savePromptMetadataCommand } from "./prompt-metadata-commands";
 
 export interface CreateFlashCardDeckRequestData {
     userId: string;
@@ -50,7 +51,7 @@ export async function generateFlashCardDeckFromPromptCommand(
     if (!user) throw new Error('User not found');
 
     // Generate cards using LLM
-    const llmResult = await generateFlashCardsFromPromptFlow({
+    const { output: llmResult, usage } = await generateFlashCardsFromPromptFlow({
         topic: data.topic,
         cardCount: data.cardCount,
         studentLevel: user.level,
@@ -75,6 +76,19 @@ export async function generateFlashCardDeckFromPromptCommand(
     });
 
     await deckObject.save();
+
+    // Save prompt metadata
+    await savePromptMetadataCommand({
+        operation: 'flashcard_generation',
+        modelUsed: usage.modelUsed as 'gpt-5-nano' | 'gpt-4o-mini',
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        userId: user._id.toString(),
+        executionTimeMs: usage.executionTimeMs,
+        finishReason: usage.finishReason,
+    });
+
     return deckObject;
 }
 
@@ -115,7 +129,7 @@ export async function generateFlashCardDeckFromLessonCommand(
     };
 
     // Generate cards using LLM based on lesson content
-    const llmResult = await generateFlashCardsFromLessonFlow({
+    const { output: llmResult, usage } = await generateFlashCardsFromLessonFlow({
         lesson: serializedLesson,
         cardCount: data.cardCount,
         studentLevel: user.level,
@@ -141,6 +155,20 @@ export async function generateFlashCardDeckFromLessonCommand(
     });
 
     await deckObject.save();
+
+    // Save prompt metadata
+    await savePromptMetadataCommand({
+        lessonId: data.lessonId,
+        operation: 'flashcard_generation',
+        modelUsed: usage.modelUsed as 'gpt-5-nano' | 'gpt-4o-mini',
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        userId: user._id.toString(),
+        executionTimeMs: usage.executionTimeMs,
+        finishReason: usage.finishReason,
+    });
+
     return deckObject;
 }
 

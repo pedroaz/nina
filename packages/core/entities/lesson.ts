@@ -16,6 +16,8 @@ export const lessonSchemaZ = z.object({
     quickExamples: z.array(dualLanguageSchemaZ),
     fullExplanation: dualLanguageSchemaZ,
     extraSections: z.array(dualLanguageSchemaZ).optional(),
+    modelUsed: z.enum(['gpt-5-nano', 'gpt-4o-mini']).optional(),
+    creationPromptMetadataId: z.string().optional(),
 });
 
 export type Lesson = z.infer<typeof lessonSchemaZ>;
@@ -29,6 +31,8 @@ export const lessonSchema = new mongoose.Schema<Lesson>({
     quickExamples: [dualLanguageSchemaM],
     fullExplanation: dualLanguageSchemaM,
     extraSections: [dualLanguageSchemaM],
+    modelUsed: { type: String, required: false, enum: ['gpt-5-nano', 'gpt-4o-mini'] },
+    creationPromptMetadataId: { type: String, required: false },
 });
 
 export const LessonModel =

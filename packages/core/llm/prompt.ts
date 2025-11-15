@@ -31,7 +31,12 @@ function quickSummaryInstruction(): string {
 }
 
 function quickExamplesInstruction(): string {
-    return `Provide exactly 3 quick examples that illustrate the topic. Begin each "base" and "target" string with "- " so the examples render as Markdown bullet points.`;
+    return `Provide exactly 3 quick examples that illustrate the topic.
+    IMPORTANT: Each example must be a SEPARATE object with its own "base" and "target" fields.
+    - The "base" field contains ONLY the example in the base language
+    - The "target" field contains ONLY the translation in the target language
+    - Begin each string with "- " so the examples render as Markdown bullet points
+    - Do NOT put both languages in the same field`;
 }
 
 function fullExplanationInstruction(): string {
@@ -46,9 +51,42 @@ function formattingInstruction(): string {
     return `
     Output formatting rules:
     - Respond only with valid JSON that matches the expected schema fields (title, quickSummary, quickExamples, fullExplanation).
+    - Each field (title, quickSummary, fullExplanation) must be an object with BOTH "base" and "target" properties.
+    - quickExamples must be an array of objects, where each object has BOTH "base" and "target" properties.
     - Each string must contain Markdown that follows the instructions above.
-    - Do not add extra commentary, code fences, or additional keys.
+    - Do not add extra commentary, code fences, or additional keys outside of these fields.
+    - Do not create a separate "target" field at the root level - the target language content belongs inside each field's "target" property.
     - Maintain consistent tone and level across both language variants.
+
+    Example structure:
+    {
+      "title": {
+        "base": "# Title in base language",
+        "target": "# Title in target language"
+      },
+      "quickSummary": {
+        "base": "Summary in base language",
+        "target": "Summary in target language"
+      },
+      "quickExamples": [
+        {
+          "base": "- First example in base language ONLY",
+          "target": "- First example in target language ONLY"
+        },
+        {
+          "base": "- Second example in base language ONLY",
+          "target": "- Second example in target language ONLY"
+        },
+        {
+          "base": "- Third example in base language ONLY",
+          "target": "- Third example in target language ONLY"
+        }
+      ],
+      "fullExplanation": {
+        "base": "Full explanation in base language",
+        "target": "Full explanation in target language"
+      }
+    }
     `;
 }
 
