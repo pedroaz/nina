@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AuthButton } from "./auth-button";
 
 // This is sample data.
@@ -49,11 +50,19 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   return (
     <Sidebar {...props}>
-      <SidebarHeader>{session && session.user?.email}</SidebarHeader>
+      <SidebarHeader>
+        <div className="min-h-4">
+          {status === "loading" ? (
+            <Skeleton className="h-4 w-48" />
+          ) : (
+            session?.user?.email || ""
+          )}
+        </div>
+      </SidebarHeader>
       <SidebarContent>
         {data.navMain.map((item) => (
           <SidebarGroup key={item.title}>

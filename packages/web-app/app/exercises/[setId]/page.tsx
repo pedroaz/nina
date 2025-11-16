@@ -89,8 +89,12 @@ export default function ExercisePracticePage() {
         if (selectedOption === null || !exerciseSet) return;
 
         const exercise = exerciseSet.exercises[currentIndex] as MultipleChoiceExercise;
+
+        // Use _id if available, otherwise use index (for backward compatibility)
+        const exerciseId = exercise._id || `index_${currentIndex}`;
+
         console.log('Submitting exercise:', exercise);
-        console.log('Exercise ID:', exercise._id);
+        console.log('Exercise ID:', exerciseId);
         console.log('Selected option:', selectedOption);
 
         try {
@@ -98,7 +102,7 @@ export default function ExercisePracticePage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    exerciseId: exercise._id,
+                    exerciseId: exerciseId,
                     userAnswer: String(selectedOption),
                 }),
             });
@@ -122,6 +126,8 @@ export default function ExercisePracticePage() {
         if (!userSentence.trim() || !exerciseSet) return;
 
         const exercise = exerciseSet.exercises[currentIndex] as SentenceCreationExercise;
+        // Use _id if available, otherwise use index (for backward compatibility)
+        const exerciseId = exercise._id || `index_${currentIndex}`;
         setScSubmitting(true);
 
         try {
@@ -129,7 +135,7 @@ export default function ExercisePracticePage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    exerciseId: exercise._id,
+                    exerciseId: exerciseId,
                     userAnswer: userSentence,
                 }),
             });
@@ -335,11 +341,10 @@ export default function ExercisePracticePage() {
                                 <p className="text-base">{userSentence}</p>
                             </div>
 
-                            <div className={`rounded-lg border p-4 ${
-                                (scResult.score || 0) >= 80 ? 'border-green-200 bg-green-50' :
-                                (scResult.score || 0) >= 60 ? 'border-yellow-200 bg-yellow-50' :
-                                'border-red-200 bg-red-50'
-                            }`}>
+                            <div className={`rounded-lg border p-4 ${(scResult.score || 0) >= 80 ? 'border-green-200 bg-green-50' :
+                                    (scResult.score || 0) >= 60 ? 'border-yellow-200 bg-yellow-50' :
+                                        'border-red-200 bg-red-50'
+                                }`}>
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-sm font-medium">Score</span>
                                     <span className="text-2xl font-bold">{scResult.score}/100</span>

@@ -364,7 +364,19 @@ export async function submitExerciseAnswerCommand(
     if (!exerciseSet) throw new Error('Exercise set not found');
 
     // Find the specific exercise
-    const exercise = exerciseSet.exercises.find((ex: any) => ex._id.toString() === data.exerciseId);
+    let exercise: any;
+    let exerciseIndex: number;
+
+    // Check if using index-based ID (for backward compatibility with old data)
+    if (data.exerciseId.startsWith('index_')) {
+        exerciseIndex = parseInt(data.exerciseId.replace('index_', ''), 10);
+        exercise = exerciseSet.exercises[exerciseIndex];
+    } else {
+        // Find by _id
+        exerciseIndex = exerciseSet.exercises.findIndex((ex: any) => ex._id && ex._id.toString() === data.exerciseId);
+        exercise = exerciseIndex >= 0 ? exerciseSet.exercises[exerciseIndex] : null;
+    }
+
     if (!exercise) throw new Error('Exercise not found');
 
     let score: number;
