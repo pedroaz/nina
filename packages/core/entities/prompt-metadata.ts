@@ -11,6 +11,9 @@ export const promptOperationTypeZ = z.enum([
     'extra_section',
     'chat',
     'flashcard_generation',
+    'exercise_generation_mc',
+    'exercise_generation_sc',
+    'exercise_sentence_judging',
 ]);
 
 export type PromptOperationType = z.infer<typeof promptOperationTypeZ>;
@@ -44,7 +47,7 @@ export const promptMetadataSchema = new mongoose.Schema<PromptMetadata>({
     operation: {
         type: String,
         required: true,
-        enum: ['lesson_creation', 'extra_section', 'chat', 'flashcard_generation']
+        enum: ['lesson_creation', 'extra_section', 'chat', 'flashcard_generation', 'exercise_generation_mc', 'exercise_generation_sc', 'exercise_sentence_judging']
     },
     modelUsed: {
         type: String,

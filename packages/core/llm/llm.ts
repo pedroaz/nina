@@ -5,9 +5,17 @@ import { lessonSchemaZ, type Lesson } from '../entities/lesson';
 import { dualLanguageSchemaZ } from '../entities/base';
 import { flashCardSchemaZ } from '../entities/flashcard-deck';
 import { studentLevelSchemaZ } from '../entities/student';
+import { multipleChoiceExerciseSchemaZ, sentenceCreationExerciseSchemaZ } from '../entities/exercise-set';
 import { openAI } from '@genkit-ai/compat-oai/openai';
 import { MODEL_CATEGORIES, getModelName, getModelConfig } from './model-config';
 import { createFlashCardFromPromptInstructions, createFlashCardFromLessonInstructions } from './flashcard-prompt';
+import {
+    createMultipleChoiceFromPromptInstructions,
+    createMultipleChoiceFromLessonInstructions,
+    createSentenceCreationFromPromptInstructions,
+    createSentenceCreationFromLessonInstructions,
+    judgeSentenceInstructions,
+} from './exercise-prompt';
 
 /*
 gpt-4.5
@@ -423,6 +431,346 @@ export const generateFlashCardsFromLessonFlow = async (
     const totalTime = performance.now() - startTime;
     console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
     console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
+
+    return {
+        output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
+
+// Exercise Generation Flows
+
+// Schema for generating multiple choice exercises from prompt
+export const MultipleChoiceFromPromptInputSchema = z.object({
+    topic: z.string().describe('Topic for the exercises'),
+    exerciseCount: z.number().describe('Number of exercises to generate'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
+});
+
+export const MultipleChoiceFromPromptOutputSchema = z.object({
+    title: z.string().describe('Exercise set title'),
+    exercises: z.array(multipleChoiceExerciseSchemaZ.omit({ _id: true })).describe('Array of multiple choice exercises'),
+});
+
+// Flow for generating multiple choice exercises from a topic/prompt
+export const generateMultipleChoiceFromPromptFlow = async (
+    input: z.infer<typeof MultipleChoiceFromPromptInputSchema>
+): Promise<{ output: z.infer<typeof MultipleChoiceFromPromptOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
+
+    console.log(`[Exercises MC] Starting multiple choice generation from prompt`);
+    console.log(`[Exercises MC] Using ${modelConfig.displayName}`);
+    console.log(`[Exercises MC] Topic: "${input.topic}"`);
+    console.log(`[Exercises MC] Exercise count: ${input.exerciseCount}`);
+    console.log(`[Exercises MC] Student level: ${input.studentLevel}`);
+
+    const prompt = createMultipleChoiceFromPromptInstructions(
+        input.topic,
+        input.exerciseCount,
+        input.studentLevel,
+        input.baseLanguage,
+        input.targetLanguage
+    );
+
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: MultipleChoiceFromPromptOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
+
+    console.log(`[Exercises MC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Exercises MC] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Exercises MC] Output tokens: ${usage?.outputTokens || 0}`);
+
+    if (!output) throw new Error('Failed to generate multiple choice exercises from prompt');
+
+    const totalTime = performance.now() - startTime;
+    console.log(`[Exercises MC] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Exercises MC] Generated ${output.exercises.length} exercises`);
+
+    return {
+        output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
+
+// Schema for generating multiple choice exercises from lesson
+export const MultipleChoiceFromLessonInputSchema = z.object({
+    lesson: lessonSchemaZ.describe('The lesson to create exercises from'),
+    exerciseCount: z.number().describe('Number of exercises to generate'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
+});
+
+export const MultipleChoiceFromLessonOutputSchema = z.object({
+    exercises: z.array(multipleChoiceExerciseSchemaZ.omit({ _id: true })).describe('Array of multiple choice exercises'),
+});
+
+// Flow for generating multiple choice exercises from a lesson
+export const generateMultipleChoiceFromLessonFlow = async (
+    input: z.infer<typeof MultipleChoiceFromLessonInputSchema>
+): Promise<{ output: z.infer<typeof MultipleChoiceFromLessonOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
+
+    console.log(`[Exercises MC] Starting multiple choice generation from lesson`);
+    console.log(`[Exercises MC] Using ${modelConfig.displayName}`);
+    console.log(`[Exercises MC] Lesson topic: "${input.lesson.topic}"`);
+    console.log(`[Exercises MC] Exercise count: ${input.exerciseCount}`);
+
+    const prompt = createMultipleChoiceFromLessonInstructions(
+        input.lesson.topic,
+        input.lesson.title.base,
+        input.lesson.quickSummary.base,
+        input.lesson.fullExplanation.base,
+        input.exerciseCount,
+        input.studentLevel,
+        input.baseLanguage,
+        input.targetLanguage
+    );
+
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: MultipleChoiceFromLessonOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
+
+    console.log(`[Exercises MC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Exercises MC] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Exercises MC] Output tokens: ${usage?.outputTokens || 0}`);
+
+    if (!output) throw new Error('Failed to generate multiple choice exercises from lesson');
+
+    const totalTime = performance.now() - startTime;
+    console.log(`[Exercises MC] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Exercises MC] Generated ${output.exercises.length} exercises`);
+
+    return {
+        output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
+
+// Schema for generating sentence creation exercises from prompt
+export const SentenceCreationFromPromptInputSchema = z.object({
+    topic: z.string().describe('Topic for the exercises'),
+    exerciseCount: z.number().describe('Number of exercises to generate'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
+});
+
+export const SentenceCreationFromPromptOutputSchema = z.object({
+    title: z.string().describe('Exercise set title'),
+    exercises: z.array(sentenceCreationExerciseSchemaZ.omit({ _id: true })).describe('Array of sentence creation exercises'),
+});
+
+// Flow for generating sentence creation exercises from a topic/prompt
+export const generateSentenceCreationFromPromptFlow = async (
+    input: z.infer<typeof SentenceCreationFromPromptInputSchema>
+): Promise<{ output: z.infer<typeof SentenceCreationFromPromptOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
+
+    console.log(`[Exercises SC] Starting sentence creation generation from prompt`);
+    console.log(`[Exercises SC] Using ${modelConfig.displayName}`);
+    console.log(`[Exercises SC] Topic: "${input.topic}"`);
+    console.log(`[Exercises SC] Exercise count: ${input.exerciseCount}`);
+    console.log(`[Exercises SC] Student level: ${input.studentLevel}`);
+
+    const prompt = createSentenceCreationFromPromptInstructions(
+        input.topic,
+        input.exerciseCount,
+        input.studentLevel,
+        input.baseLanguage,
+        input.targetLanguage
+    );
+
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: SentenceCreationFromPromptOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
+
+    console.log(`[Exercises SC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Exercises SC] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Exercises SC] Output tokens: ${usage?.outputTokens || 0}`);
+
+    if (!output) throw new Error('Failed to generate sentence creation exercises from prompt');
+
+    const totalTime = performance.now() - startTime;
+    console.log(`[Exercises SC] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Exercises SC] Generated ${output.exercises.length} exercises`);
+
+    return {
+        output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
+
+// Schema for generating sentence creation exercises from lesson
+export const SentenceCreationFromLessonInputSchema = z.object({
+    lesson: lessonSchemaZ.describe('The lesson to create exercises from'),
+    exerciseCount: z.number().describe('Number of exercises to generate'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
+});
+
+export const SentenceCreationFromLessonOutputSchema = z.object({
+    exercises: z.array(sentenceCreationExerciseSchemaZ.omit({ _id: true })).describe('Array of sentence creation exercises'),
+});
+
+// Flow for generating sentence creation exercises from a lesson
+export const generateSentenceCreationFromLessonFlow = async (
+    input: z.infer<typeof SentenceCreationFromLessonInputSchema>
+): Promise<{ output: z.infer<typeof SentenceCreationFromLessonOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
+
+    console.log(`[Exercises SC] Starting sentence creation generation from lesson`);
+    console.log(`[Exercises SC] Using ${modelConfig.displayName}`);
+    console.log(`[Exercises SC] Lesson topic: "${input.lesson.topic}"`);
+    console.log(`[Exercises SC] Exercise count: ${input.exerciseCount}`);
+
+    const prompt = createSentenceCreationFromLessonInstructions(
+        input.lesson.topic,
+        input.lesson.title.base,
+        input.lesson.quickSummary.base,
+        input.lesson.fullExplanation.base,
+        input.exerciseCount,
+        input.studentLevel,
+        input.baseLanguage,
+        input.targetLanguage
+    );
+
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: SentenceCreationFromLessonOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
+
+    console.log(`[Exercises SC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Exercises SC] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Exercises SC] Output tokens: ${usage?.outputTokens || 0}`);
+
+    if (!output) throw new Error('Failed to generate sentence creation exercises from lesson');
+
+    const totalTime = performance.now() - startTime;
+    console.log(`[Exercises SC] Total time: ${totalTime.toFixed(2)}ms`);
+    console.log(`[Exercises SC] Generated ${output.exercises.length} exercises`);
+
+    return {
+        output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
+
+// Sentence Judging Flow
+
+export const JudgeSentenceInputSchema = z.object({
+    prompt: z.string().describe('The exercise prompt in target language'),
+    promptBase: z.string().describe('The exercise prompt in base language'),
+    referenceAnswer: z.string().describe('Reference answer for the exercise'),
+    context: z.string().optional().describe('Additional context or constraints'),
+    userAnswer: z.string().describe('The student\'s answer to judge'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+    baseLanguage: z.string().describe('Base language (user native language)'),
+    targetLanguage: z.string().describe('Target language (language being learned)'),
+});
+
+export const JudgeSentenceOutputSchema = z.object({
+    score: z.number().min(0).max(100).describe('Score from 0-100'),
+    feedback: z.string().describe('Detailed feedback in base language'),
+});
+
+// Flow for judging a student's sentence
+export const judgeSentenceFlow = async (
+    input: z.infer<typeof JudgeSentenceInputSchema>
+): Promise<{ output: z.infer<typeof JudgeSentenceOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
+    const startTime = performance.now();
+
+    console.log(`[Judge Sentence] Starting sentence evaluation`);
+    console.log(`[Judge Sentence] Using ${modelConfig.displayName}`);
+    console.log(`[Judge Sentence] Student level: ${input.studentLevel}`);
+    console.log(`[Judge Sentence] User answer: "${input.userAnswer}"`);
+
+    const prompt = judgeSentenceInstructions(
+        input.prompt,
+        input.promptBase,
+        input.referenceAnswer,
+        input.context,
+        input.userAnswer,
+        input.studentLevel,
+        input.baseLanguage,
+        input.targetLanguage
+    );
+
+    const generateStart = performance.now();
+    const response = await chatAi.generate({
+        prompt: prompt,
+        output: { schema: JudgeSentenceOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
+
+    console.log(`[Judge Sentence] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    console.log(`[Judge Sentence] Input tokens: ${usage?.inputTokens || 0}`);
+    console.log(`[Judge Sentence] Output tokens: ${usage?.outputTokens || 0}`);
+    console.log(`[Judge Sentence] Score: ${output?.score || 0}`);
+
+    if (!output) throw new Error('Failed to judge sentence');
+
+    const totalTime = performance.now() - startTime;
+    console.log(`[Judge Sentence] Total time: ${totalTime.toFixed(2)}ms`);
 
     return {
         output,

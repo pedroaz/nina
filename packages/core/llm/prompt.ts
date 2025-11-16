@@ -44,22 +44,41 @@ function fullExplanationInstruction(): string {
     Provide a comprehensive explanation of the topic with 2 or 3 paragraphs separated by blank lines.
     After the first paragraph include a Markdown bullet list of 3 key takeaways (each line starting with "- ").
     Ensure the explanation is clear, concise, and easy to follow for learners at various levels.
+
+    CRITICAL: fullExplanation MUST be an object with BOTH "base" and "target" properties, just like title and quickSummary.
     `;
 }
 
 function formattingInstruction(): string {
     return `
-    Output formatting rules:
-    - Respond only with valid JSON that matches the expected schema fields (title, quickSummary, quickExamples, fullExplanation).
-    - Each field (title, quickSummary, fullExplanation) must be an object with BOTH "base" and "target" properties.
-    - quickExamples must be an array of objects, where each object has BOTH "base" and "target" properties.
-    - Each string must contain Markdown that follows the instructions above.
-    - Do not add extra commentary, code fences, or additional keys outside of these fields.
-    - Do not create a separate "target" field at the root level - the target language content belongs inside each field's "target" property.
-    - Maintain consistent tone and level across both language variants.
+    CRITICAL OUTPUT FORMATTING RULES - READ CAREFULLY:
 
-    Example structure:
+    1. STRUCTURE: The JSON must contain EXACTLY these root-level fields: _id, __v, title, quickSummary, quickExamples, fullExplanation
+       - Set _id to "1" and __v to 0
+
+    2. OBJECT FIELDS: title, quickSummary, and fullExplanation are ALL objects with the SAME structure:
+       {
+         "base": "content in base language",
+         "target": "content in target language"
+       }
+
+    3. ARRAY FIELD: quickExamples is an array of 3 objects, each with:
+       {
+         "base": "- example in base language ONLY",
+         "target": "- example in target language ONLY"
+       }
+
+    4. FORBIDDEN: Do NOT create:
+       - A separate "target" field at the root level
+       - Any field that is just an object with only "base" or only "target"
+       - Any extra fields beyond the required ones
+
+    5. REQUIRED: Every object field (title, quickSummary, fullExplanation) MUST have BOTH "base" AND "target" properties
+
+    CORRECT Example:
     {
+      "_id": "1",
+      "__v": 0,
       "title": {
         "base": "# Title in base language",
         "target": "# Title in target language"
@@ -83,8 +102,18 @@ function formattingInstruction(): string {
         }
       ],
       "fullExplanation": {
-        "base": "Full explanation in base language",
-        "target": "Full explanation in target language"
+        "base": "Full explanation in base language with paragraphs and bullet points",
+        "target": "Full explanation in target language with paragraphs and bullet points"
+      }
+    }
+
+    INCORRECT Example (DO NOT DO THIS):
+    {
+      "fullExplanation": {
+        "base": "..."
+      },
+      "target": {  ← WRONG! This should not exist at root level
+        "base": "..."
       }
     }
     `;

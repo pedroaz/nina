@@ -41,6 +41,10 @@ const data = {
       title: "Flash Cards",
       url: "/flash-cards",
     },
+    {
+      title: "Exercises",
+      url: "/exercises",
+    },
   ],
 };
 

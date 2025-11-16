@@ -7,6 +7,7 @@ import { DualLanguageTextCard, type DualLanguageContent } from "@/components/dua
 import { AvatarHelper } from "@/components/avatar-helper";
 import { ExtraSectionsInput } from "@/components/extra-sections-input";
 import { GenerateFlashCardsDialog } from "@/components/generate-flashcards-dialog";
+import { GenerateExercisesDialog } from "@/components/generate-exercises-dialog";
 import { LessonMetadataDialog } from "@/components/lesson-metadata-dialog";
 import { getLessonById, getUserByEmail } from "@core/index";
 
@@ -94,6 +95,10 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
                     <div className="flex gap-2">
                         <LessonMetadataDialog lessonId={lessonId} />
                         <GenerateFlashCardsDialog
+                            lessonId={lessonId}
+                            lessonTitle={lessonTitle}
+                        />
+                        <GenerateExercisesDialog
                             lessonId={lessonId}
                             lessonTitle={lessonTitle}
                         />
