@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(pnpm build:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pnpm install:*)"
     ],
     "deny": [],
     "ask": []

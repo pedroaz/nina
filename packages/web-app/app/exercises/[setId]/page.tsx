@@ -26,13 +26,21 @@ type SentenceCreationExercise = {
     context?: string;
 };
 
+type Submission = {
+    userId: string;
+    exerciseId: string;
+    answer: string | string[];
+    isCorrect: boolean;
+    submittedAt: Date;
+};
+
 type ExerciseSet = {
     _id: string;
     title: string;
     topic: string;
     type: 'multiple_choice' | 'sentence_creation';
     exercises: (MultipleChoiceExercise | SentenceCreationExercise)[];
-    submissions?: any[];
+    submissions?: Submission[];
 };
 
 type SubmissionResult = {
@@ -90,11 +98,8 @@ export default function ExercisePracticePage() {
 
         const exercise = exerciseSet.exercises[currentIndex] as MultipleChoiceExercise;
 
-        // Use _id if available, otherwise use index (for backward compatibility)
-        const exerciseId = exercise._id || `index_${currentIndex}`;
-
         console.log('Submitting exercise:', exercise);
-        console.log('Exercise ID:', exerciseId);
+        console.log('Exercise ID:', exercise._id);
         console.log('Selected option:', selectedOption);
 
         try {
@@ -102,7 +107,7 @@ export default function ExercisePracticePage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    exerciseId: exerciseId,
+                    exerciseId: exercise._id,
                     userAnswer: String(selectedOption),
                 }),
             });
@@ -126,8 +131,6 @@ export default function ExercisePracticePage() {
         if (!userSentence.trim() || !exerciseSet) return;
 
         const exercise = exerciseSet.exercises[currentIndex] as SentenceCreationExercise;
-        // Use _id if available, otherwise use index (for backward compatibility)
-        const exerciseId = exercise._id || `index_${currentIndex}`;
         setScSubmitting(true);
 
         try {
@@ -135,7 +138,7 @@ export default function ExercisePracticePage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    exerciseId: exerciseId,
+                    exerciseId: exercise._id,
                     userAnswer: userSentence,
                 }),
             });

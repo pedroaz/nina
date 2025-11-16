@@ -44,7 +44,7 @@ export default async function FlashCardDeckPage({ params }: { params: Promise<{ 
     const serializedCards = deck.cards.map(card => ({
         _id: card._id.toString(),
         base: card.base,
-        german: card.target,
+        target: card.target,
     }));
 
     return (

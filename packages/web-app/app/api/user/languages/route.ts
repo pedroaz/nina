@@ -52,7 +52,7 @@ export async function PATCH(req: Request) {
     }
 
     // Build update object with only provided fields
-    const updateFields: any = {};
+    const updateFields: Record<string, string> = {};
     if (baseLanguage) updateFields.baseLanguage = baseLanguage;
     if (targetLanguage) updateFields.targetLanguage = targetLanguage;
 
