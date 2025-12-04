@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { CreateLessonRequestData } from "@core/cqrs/lesson-commands";
+import { FlashCardMiniGame } from "@/components/flashcard-mini-game";
+import { BookText, GraduationCap, Image as ImageIcon, Sparkles, Zap } from "lucide-react";
 
 export default function CustomLessonsNew() {
     const router = useRouter();
     const [topic, setTopic] = useState("");
-    const [vocabulary, setVocabulary] = useState("");
+    const [image, setImage] = useState<string | null>(null);
     const [modelType, setModelType] = useState<'fast' | 'detailed'>('detailed');
+    const [focus, setFocus] = useState<'vocabulary' | 'grammar' | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -61,11 +64,21 @@ export default function CustomLessonsNew() {
         return lang.charAt(0).toUpperCase() + lang.slice(1).toLowerCase();
     };
 
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImage(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
         const sanitizedTopic = topic.trim();
-        const sanitizedVocabulary = vocabulary.trim();
 
         if (!sanitizedTopic) {
             setError("Please provide a topic for your lesson request.");
@@ -78,8 +91,10 @@ export default function CustomLessonsNew() {
         try {
             const requestBody: CreateLessonRequestData = {
                 topic: sanitizedTopic,
-                vocabulary: sanitizedVocabulary,
+                vocabulary: "", // No longer separate
                 modelType,
+                focus: focus || undefined,
+                image: image || undefined,
             };
             const response = await fetch("/api/lessons", {
                 method: "POST",
@@ -104,7 +119,6 @@ export default function CustomLessonsNew() {
             }
 
             setTopic("");
-            setVocabulary("");
             router.push("/lessons");
             router.refresh();
         } catch (err) {
@@ -138,84 +152,111 @@ export default function CustomLessonsNew() {
                 )}
 
                 <div className="flex flex-col gap-2">
-                    <Label htmlFor="topic">Lesson topic</Label>
+                    <Label htmlFor="topic">What do you want to learn?</Label>
                     <textarea
                         id="topic"
                         name="topic"
                         value={topic}
                         onChange={(event) => setTopic(event.target.value)}
-                        className="min-h-48 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                        placeholder="Describe what you want to learn... e.g., Say hello; Explain the Dative Case"
+                        className="min-h-32 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        placeholder="e.g., How to order food at a restaurant&#10;&#10;💡 Tip: You can focus on specific vocabulary by mentioning it (e.g., 'restaurant vocabulary')"
                         disabled={isSubmitting}
                     />
                 </div>
 
-                <div className="flex flex-col gap-2">
-                    <Label htmlFor="vocabulary">Vocabulary focus</Label>
-                    <textarea
-                        id="vocabulary"
-                        name="vocabulary"
-                        value={vocabulary}
-                        onChange={(event) => setVocabulary(event.target.value)}
-                        className="min-h-24 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                        placeholder="Animals, Furniture"
+                <div className="flex flex-wrap gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setFocus(focus === 'vocabulary' ? null : 'vocabulary')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${focus === 'vocabulary'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
+                            }`}
                         disabled={isSubmitting}
-                    />
+                    >
+                        <BookText className="h-4 w-4" />
+                        <span className="text-sm font-medium">Vocabulary Focus</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setFocus(focus === 'grammar' ? null : 'grammar')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${focus === 'grammar'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
+                            }`}
+                        disabled={isSubmitting}
+                    >
+                        <GraduationCap className="h-4 w-4" />
+                        <span className="text-sm font-medium">Grammar Focus</span>
+                    </button>
+
+                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${image
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}>
+                        <ImageIcon className="h-4 w-4" />
+                        <span className="text-sm font-medium">
+                            {image ? 'Image Added' : 'Add Image'}
+                        </span>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                            disabled={isSubmitting}
+                        />
+                    </label>
+
+                    {image && (
+                        <button
+                            type="button"
+                            onClick={() => setImage(null)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-all"
+                        >
+                            <span className="text-sm font-medium">Remove Image</span>
+                        </button>
+                    )}
                 </div>
 
-                <div className="flex flex-col gap-3">
-                    <Label>Model Selection</Label>
-                    <div className="flex flex-col gap-2">
-                        <label className={`flex items-start gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
-                            modelType === 'detailed'
-                                ? 'border-blue-500 bg-blue-50'
-                                : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}>
-                            <input
-                                type="radio"
-                                name="modelType"
-                                value="detailed"
-                                checked={modelType === 'detailed'}
-                                onChange={(e) => setModelType(e.target.value as 'detailed')}
-                                disabled={isSubmitting}
-                                className="mt-0.5"
-                            />
-                            <div className="flex-1">
-                                <div className="font-semibold text-sm">Detailed Model (GPT-5 Nano)</div>
-                                <div className="text-xs text-slate-600 mt-1">
-                                    More thorough and comprehensive responses. Best for complex topics.
-                                </div>
-                                <div className="text-xs text-slate-500 mt-1">
-                                    Cost: $0.05/1M input tokens, $0.40/1M output tokens
-                                </div>
-                            </div>
-                        </label>
-
-                        <label className={`flex items-start gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
-                            modelType === 'fast'
-                                ? 'border-blue-500 bg-blue-50'
-                                : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}>
-                            <input
-                                type="radio"
-                                name="modelType"
-                                value="fast"
-                                checked={modelType === 'fast'}
-                                onChange={(e) => setModelType(e.target.value as 'fast')}
-                                disabled={isSubmitting}
-                                className="mt-0.5"
-                            />
-                            <div className="flex-1">
-                                <div className="font-semibold text-sm">Fast Model (GPT-4o Mini)</div>
-                                <div className="text-xs text-slate-600 mt-1">
-                                    Quick and efficient responses. Good for simple topics and faster generation.
-                                </div>
-                                <div className="text-xs text-slate-500 mt-1">
-                                    Cost: $0.15/1M input tokens, $0.60/1M output tokens
-                                </div>
-                            </div>
-                        </label>
+                {image && (
+                    <div className="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200">
+                        <img src={image} alt="Preview" className="object-cover w-full h-full" />
                     </div>
+                )}
+
+                <div className="flex gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setModelType('detailed')}
+                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all ${modelType === 'detailed'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
+                            }`}
+                        disabled={isSubmitting}
+                    >
+                        <Sparkles className="h-4 w-4" />
+                        <div className="text-left">
+                            <div className="text-sm font-semibold">Detailed</div>
+                            <div className="text-xs opacity-75">Comprehensive</div>
+                        </div>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setModelType('fast')}
+                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all ${modelType === 'fast'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
+                            }`}
+                        disabled={isSubmitting}
+                    >
+                        <Zap className="h-4 w-4" />
+                        <div className="text-left">
+                            <div className="text-sm font-semibold">Fast</div>
+                            <div className="text-xs opacity-75">Quick & Efficient</div>
+                        </div>
+                    </button>
                 </div>
 
                 {error ? (
@@ -228,21 +269,17 @@ export default function CustomLessonsNew() {
                     <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
                         <p className="text-sm text-blue-800">
                             Creating lesson with <span className="font-semibold">
-                                {modelType === 'detailed' ? 'Detailed Model (GPT-5 Nano)' : 'Fast Model (GPT-4o Mini)'}
+                                {modelType === 'detailed' ? 'Detailed Model' : 'Fast Model'}
                             </span>...
                         </p>
                         <p className="text-xs text-blue-600 mt-1">
-                            {modelType === 'detailed'
-                                ? 'This may take a moment as we generate comprehensive content for you.'
-                                : 'Generating your lesson quickly...'}
+                            Time elapsed: <span className="font-semibold">{elapsedSeconds}s</span>
                         </p>
-                        <div className="mt-3 pt-3 border-t border-blue-200">
-                            <p className="text-sm text-blue-800">
-                                Time elapsed: <span className="font-semibold">{elapsedSeconds}s</span>
+                        <div className="mt-4 pt-4 border-t border-blue-200">
+                            <p className="text-sm text-blue-800 mb-3">
+                                Practice flashcards while you wait:
                             </p>
-                            <p className="text-xs text-blue-600 mt-1">
-                                Average generation time: ~{modelType === 'detailed' ? '1 minute' : '30 seconds'}
-                            </p>
+                            <FlashCardMiniGame className="bg-white rounded-lg p-4" />
                         </div>
                     </div>
                 )}
@@ -257,7 +294,7 @@ export default function CustomLessonsNew() {
                         Cancel
                     </Button>
                     <Button type="submit" disabled={isSubmitting}>
-                        {isSubmitting ? "Creating lesson..." : "Submit request"}
+                        {isSubmitting ? "Creating lesson..." : "Create Lesson"}
                     </Button>
                 </div>
             </form>

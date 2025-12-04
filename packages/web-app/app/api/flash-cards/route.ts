@@ -133,5 +133,5 @@ export async function GET() {
         })
     );
 
-    return NextResponse.json({ data: decksWithProgress });
+    return NextResponse.json(decksWithProgress);
 }

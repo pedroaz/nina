@@ -9,6 +9,8 @@ export interface CreateLessonRequestData {
     topic: string;
     vocabulary: string;
     modelType?: 'fast' | 'detailed';
+    focus?: 'vocabulary' | 'grammar';
+    image?: string;
 }
 
 export async function createLessonCommand(
@@ -26,6 +28,8 @@ export async function createLessonCommand(
         baseLanguage: user.baseLanguage,
         targetLanguage: user.targetLanguage,
         modelType: data.modelType,
+        focus: data.focus,
+        image: data.image,
     });
 
     if (!llmResult) throw new Error('Failed to generate lesson');

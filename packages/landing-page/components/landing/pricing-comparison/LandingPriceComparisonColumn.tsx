@@ -37,7 +37,7 @@ export const LandingPriceComparisonColumn = ({
   onClick?: () => void;
   variant?: 'primary' | 'secondary';
 }) => {
-  const childrenWithProps = Children.map(children, (child, index) => {
+  const childrenWithProps = Children.map(children, (child) => {
     if (!child) {
       return null;
     }

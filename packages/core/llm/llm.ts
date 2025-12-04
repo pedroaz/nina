@@ -73,6 +73,8 @@ export const LessonInputSchema = z.object({
     baseLanguage: z.string().describe('Base language (user native language)'),
     targetLanguage: z.string().describe('Target language (language being learned)'),
     modelType: z.enum(['fast', 'detailed']).optional().describe('Model type to use (defaults to detailed)'),
+    focus: z.enum(['vocabulary', 'grammar']).optional().describe('Focus of the lesson (vocabulary or grammar)'),
+    image: z.string().optional().describe('Base64 encoded image to generate lesson from'),
 });
 
 // Define output schema
@@ -109,12 +111,22 @@ export const createLessonFlow = async (
     console.log(`[Lesson Creation] Vocabulary: "${input.vocabulary}"`);
     console.log(`[Lesson Creation] Base language: "${input.baseLanguage}"`);
     console.log(`[Lesson Creation] Target language: "${input.targetLanguage}"`);
+    console.log(`[Lesson Creation] Focus: "${input.focus || 'general'}"`);
 
-    const userPrompt = createFinalPrompt(input.topic, input.vocabulary, input.baseLanguage, input.targetLanguage);
+    const userPrompt = createFinalPrompt(input.topic, input.vocabulary, input.baseLanguage, input.targetLanguage, input.focus);
+
+    let promptInput: any = userPrompt;
+    if (input.image) {
+        console.log(`[Lesson Creation] Image provided, using vision capabilities`);
+        promptInput = [
+            { text: userPrompt },
+            { media: { url: input.image } }
+        ];
+    }
 
     const generateStart = performance.now();
     const response = await aiInstance.generate({
-        prompt: userPrompt,
+        prompt: promptInput,
         output: { schema: LessonSchemaLLM },
     });
     const { output, usage, finishReason } = response;

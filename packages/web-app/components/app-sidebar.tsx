@@ -46,6 +46,10 @@ const data = {
       title: "Exercises",
       url: "/exercises",
     },
+    {
+      title: "Missions",
+      url: "/missions",
+    },
   ],
 };
 

@@ -75,7 +75,7 @@ export default function BlogPostPage({
           {/* Tags */}
           {post.tags && post.tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {post.tags.map((tag, index) => {
+              {post.tags.map((tag) => {
                 const tagText = typeof tag === 'string' ? tag : tag.text;
                 return (
                   <span

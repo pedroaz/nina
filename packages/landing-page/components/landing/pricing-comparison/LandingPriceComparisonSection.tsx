@@ -37,7 +37,7 @@ export const LandingPriceComparisonSection = ({
 }) => {
   const columnNumber = React.Children.count(children);
 
-  const childrenWithProps = Children.map(children, (child, index) => {
+  const childrenWithProps = Children.map(children, (child) => {
     if (!child) {
       return null;
     }

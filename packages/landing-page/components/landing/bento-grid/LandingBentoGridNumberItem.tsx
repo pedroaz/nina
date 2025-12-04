@@ -1,7 +1,7 @@
 import React from 'react';
 import clsx from 'clsx';
 import { LandingBentoGridItem, ItemVariant } from './LandingBentoGridItem';
-import { ColorVariant } from './LandingBentoGridIconItem';
+
 
 /**
  * A specialized bento grid item with optional top text, center large number, and bottom text.
@@ -43,7 +43,7 @@ export function LandingBentoGridNumberItem({
             'flex items-start justify-center text-sm text-center',
             variant === 'primary' && 'text-primary-500 dark:text-primary-400',
             variant === 'secondary' &&
-              'text-secondary-500 dark:text-secondary-400',
+            'text-secondary-500 dark:text-secondary-400',
             variant === 'default' && 'text-foreground',
           )}
         >
@@ -57,7 +57,7 @@ export function LandingBentoGridNumberItem({
             'text-3xl xl:text-5xl font-bold flex items-center justify-center',
             variant === 'primary' && 'text-primary-500 dark:text-primary-400',
             variant === 'secondary' &&
-              'text-secondary-500 dark:text-secondary-400',
+            'text-secondary-500 dark:text-secondary-400',
             variant === 'default' && 'text-foreground',
           )}
         >
@@ -71,7 +71,7 @@ export function LandingBentoGridNumberItem({
             'flex items-end justify-center text-sm text-center',
             variant === 'primary' && 'text-primary-500 dark:text-primary-400',
             variant === 'secondary' &&
-              'text-secondary-500 dark:text-secondary-400',
+            'text-secondary-500 dark:text-secondary-400',
             variant === 'default' && 'text-muted-foreground',
           )}
         >

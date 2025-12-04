@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 // Serialized flash card type (plain objects only)
-interface SerializedFlashCard {
+export interface SerializedFlashCard {
     _id: string;
     base: string;
     target: string;
@@ -16,9 +17,20 @@ interface FlashCardPracticeProps {
     deckTitle: string;
     cards: SerializedFlashCard[];
     displayPreference: 'base-first' | 'target-first';
+    onComplete?: () => void;
+    className?: string;
+    mode?: 'full' | 'mini';
 }
 
-export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference }: FlashCardPracticeProps) {
+export function FlashCardPractice({
+    deckId,
+    deckTitle,
+    cards,
+    displayPreference,
+    onComplete,
+    className,
+    mode = 'full'
+}: FlashCardPracticeProps) {
     const [shuffledCards, setShuffledCards] = useState<SerializedFlashCard[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isFlipped, setIsFlipped] = useState(false);
@@ -72,6 +84,9 @@ export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference 
             setIsFlipped(false);
         } else {
             setSessionComplete(true);
+            if (onComplete) {
+                onComplete();
+            }
         }
     };
 
@@ -86,8 +101,23 @@ export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference 
     };
 
     if (sessionComplete) {
+        if (mode === 'mini') {
+            return (
+                <div className={cn("flex flex-col items-center justify-center gap-4 p-4", className)}>
+                    <h3 className="text-lg font-semibold">Session Complete!</h3>
+                    <div className="flex gap-4 text-sm">
+                        <span className="text-green-600 font-medium">Known: {knownCount}</span>
+                        <span className="text-red-600 font-medium">Review: {unknownCount}</span>
+                    </div>
+                    <Button onClick={handlePracticeAgain} size="sm">
+                        Practice Again
+                    </Button>
+                </div>
+            );
+        }
+
         return (
-            <div className="mx-auto flex min-h-[60vh] w-full max-w-2xl flex-col items-center justify-center gap-6 px-4 py-10">
+            <div className={cn("mx-auto flex min-h-[60vh] w-full max-w-2xl flex-col items-center justify-center gap-6 px-4 py-10", className)}>
                 <Card className="w-full">
                     <CardHeader>
                         <CardTitle className="text-center text-2xl">Session Complete!</CardTitle>
@@ -124,26 +154,31 @@ export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference 
         );
     }
 
+    const isMini = mode === 'mini';
+
     return (
-        <div className="mx-auto flex min-h-[60vh] w-full max-w-2xl flex-col gap-6 px-4 py-10">
+        <div className={cn("mx-auto flex w-full flex-col gap-6", !isMini && "min-h-[60vh] max-w-2xl px-4 py-10", className)}>
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-semibold">{deckTitle}</h1>
-                <p className="text-slate-600">
-                    Card {currentIndex + 1} of {shuffledCards.length}
+                <h1 className={cn("font-semibold", isMini ? "text-lg" : "text-2xl")}>{deckTitle}</h1>
+                <p className="text-slate-600 text-sm">
+                    {currentIndex + 1} / {shuffledCards.length}
                 </p>
             </div>
 
-            <Card className="min-h-[300px] cursor-pointer" onClick={handleFlip}>
-                <CardContent className="flex items-center justify-center p-12">
+            <Card
+                className={cn("cursor-pointer transition-all", isMini ? "min-h-[200px]" : "min-h-[300px]")}
+                onClick={handleFlip}
+            >
+                <CardContent className={cn("flex items-center justify-center", isMini ? "p-6" : "p-12")}>
                     <div className="text-center space-y-4">
-                        <p className="text-sm text-slate-500 uppercase tracking-wide">
+                        <p className="text-xs text-slate-500 uppercase tracking-wide">
                             {isFlipped ? (displayPreference === 'base-first' ? 'Target' : 'English') : (displayPreference === 'base-first' ? 'English' : 'Target')}
                         </p>
-                        <p className="text-2xl font-medium leading-relaxed">
+                        <p className={cn("font-medium leading-relaxed", isMini ? "text-xl" : "text-2xl")}>
                             {isFlipped ? backSide : frontSide}
                         </p>
                         {!isFlipped && (
-                            <p className="text-sm text-slate-500 mt-8">
+                            <p className="text-xs text-slate-500 mt-4">
                                 Click to flip
                             </p>
                         )}
@@ -152,36 +187,36 @@ export function FlashCardPractice({ deckId, deckTitle, cards, displayPreference 
             </Card>
 
             <div className="flex gap-4 justify-center">
-                <Button
-                    variant="outline"
-                    size="lg"
-                    className="w-40"
-                    onClick={handleFlip}
-                >
-                    Flip Card
-                </Button>
+                {!isFlipped ? (
+                    <Button
+                        variant="outline"
+                        size={isMini ? "sm" : "lg"}
+                        className={isMini ? "w-32" : "w-40"}
+                        onClick={handleFlip}
+                    >
+                        Flip Card
+                    </Button>
+                ) : (
+                    <>
+                        <Button
+                            variant="destructive"
+                            size={isMini ? "sm" : "lg"}
+                            className={isMini ? "w-32" : "w-40"}
+                            onClick={() => handleAnswer('dontKnow')}
+                        >
+                            I Don&apos;t Know
+                        </Button>
+                        <Button
+                            variant="default"
+                            size={isMini ? "sm" : "lg"}
+                            className={cn("bg-green-600 hover:bg-green-700", isMini ? "w-32" : "w-40")}
+                            onClick={() => handleAnswer('know')}
+                        >
+                            I Know
+                        </Button>
+                    </>
+                )}
             </div>
-
-            {isFlipped && (
-                <div className="flex gap-4 justify-center">
-                    <Button
-                        variant="destructive"
-                        size="lg"
-                        className="w-40"
-                        onClick={() => handleAnswer('dontKnow')}
-                    >
-                        I Don&apos;t Know
-                    </Button>
-                    <Button
-                        variant="default"
-                        size="lg"
-                        className="w-40 bg-green-600 hover:bg-green-700"
-                        onClick={() => handleAnswer('know')}
-                    >
-                        I Know
-                    </Button>
-                </div>
-            )}
         </div>
     );
 }

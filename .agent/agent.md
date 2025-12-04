@@ -18,3 +18,4 @@ Before starting any task, consult the relevant documentation files in this direc
 1.  **Update Documentation**: If you make changes that affect the architecture, stack, or features, you **MUST** update the corresponding documentation file.
 2.  **Follow the Role**: Adhere strictly to the principles defined in `role.md`.
 3.  **Check the Stack**: Always verify versions in `stack.md` before suggesting code or installing packages.
+4. **Verify Build, Lint, and Tests**: Before submitting any changes, always ensure the build is working, there are no linting errors, and all Playwright tests are passing. See **[verify.md](./verify.md)** for the verification workflow.

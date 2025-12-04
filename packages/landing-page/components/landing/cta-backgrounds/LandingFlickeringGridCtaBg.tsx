@@ -30,11 +30,7 @@ export const LandingFlickeringGridCtaBg = ({
   ]);
   const [isInView, setIsInView] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-  const [colors, setColors] = useState({
-    color1: 'rgb(177, 177, 177)',
-    color2: 'rgb(34, 34, 34)',
-    color3: 'rgb(100, 100, 100)',
-  });
+
 
   const generateNewColors = useCallback(() => {
     if (!domRef.current) return;
@@ -113,7 +109,7 @@ export const LandingFlickeringGridCtaBg = ({
         break;
       }
     }
-    setColors(newColors);
+
 
     // Update the ref with converted colors
     const toRGBA = (color: string) => {
