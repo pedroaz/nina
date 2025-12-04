@@ -24,9 +24,14 @@ export const authOptions: NextAuthOptions = {
                     email: user.email,
                     level: 'A1',
                 }
-                createUserCommand(userData).catch((err) => {
+
+                try {
+                    await createUserCommand(userData);
+                } catch (err) {
                     console.error('Error creating user:', err);
-                })
+                    // Block sign in if user creation fails to prevent orphaned auth sessions
+                    return false;
+                }
             }
 
             return true;
