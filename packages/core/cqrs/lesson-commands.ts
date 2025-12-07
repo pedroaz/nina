@@ -8,7 +8,7 @@ import { ValidationError, NotFoundError, DatabaseError, ExternalServiceError } f
 export interface CreateLessonRequestData {
     userId: string;
     topic: string;
-    vocabulary: string;
+    vocabulary?: string;
     modelType?: 'fast' | 'detailed';
     focus?: 'vocabulary' | 'grammar';
     image?: string;
@@ -23,9 +23,6 @@ export async function createLessonCommand(
     if (!data.topic?.trim()) {
         throw new ValidationError('Topic is required');
     }
-    if (!data.vocabulary?.trim()) {
-        throw new ValidationError('Vocabulary is required');
-    }
 
     try {
         await connectDatabase();
@@ -38,7 +35,7 @@ export async function createLessonCommand(
         // Call LLM with model type and get usage metadata
         const { lesson: llmResult, usage } = await createLessonFlow({
             topic: data.topic,
-            vocabulary: data.vocabulary,
+            vocabulary: data.vocabulary || '',
             baseLanguage: user.baseLanguage,
             targetLanguage: user.targetLanguage,
             modelType: data.modelType,
@@ -53,7 +50,7 @@ export async function createLessonCommand(
         // Create lesson object
         const lessonObject = new LessonModel({
             topic: data.topic,
-            vocabulary: data.vocabulary,
+            vocabulary: data.vocabulary || '',
             studentData: {
                 userId: user._id,
                 userName: user.name,
