@@ -248,4 +248,9 @@
   .badge-playful {
     @apply rounded-xl border-[2px] border-neutral-900 px-3 py-1 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,0.15)];
   }
+
+  /* Sidebar enhancements */
+  [data-sidebar="sidebar"] {
+    @apply border-r-[3px] border-neutral-900;
+  }
 }
