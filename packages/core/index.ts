@@ -21,3 +21,4 @@ export * from './entities/student';
 export * from './entities/base';
 export * from './llm/llm';
 export * from './llm/model-config';
+export * from './cqrs/admin-commands';

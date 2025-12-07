@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm --filter web-app build:*)"
+      "Bash(pnpm --filter web-app build:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []
