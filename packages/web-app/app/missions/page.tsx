@@ -51,7 +51,7 @@ export default function MissionsPage() {
     if (loading) {
         return (
             <div className="flex min-h-screen items-center justify-center">
-                <p className="text-slate-600">Loading missions...</p>
+                <p className="text-neutral-600">Loading missions...</p>
             </div>
         );
     }
@@ -60,7 +60,7 @@ export default function MissionsPage() {
         <div className="container mx-auto px-4 py-10">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold mb-2">Language Missions</h1>
-                <p className="text-slate-600">
+                <p className="text-neutral-600">
                     Practice real-world scenarios and improve your conversation skills.
                 </p>
             </div>
@@ -71,7 +71,7 @@ export default function MissionsPage() {
                         <CardHeader>
                             <div className="flex items-center justify-between mb-2">
                                 <CardTitle className="text-xl">{mission.title}</CardTitle>
-                                <span className="px-2 py-1 text-xs font-semibold rounded bg-blue-100 text-blue-700">
+                                <span className="px-2 py-1 text-xs font-semibold rounded bg-teal-100 text-teal-700">
                                     {mission.difficulty}
                                 </span>
                             </div>
@@ -80,7 +80,7 @@ export default function MissionsPage() {
                         <CardContent>
                             <div className="mb-4">
                                 <h4 className="text-sm font-semibold mb-2">Objectives:</h4>
-                                <ul className="text-sm text-slate-600 space-y-1">
+                                <ul className="text-sm text-neutral-600 space-y-1">
                                     {mission.objectives.map((obj, idx) => (
                                         <li key={idx} className="flex items-start">
                                             <span className="mr-2">•</span>

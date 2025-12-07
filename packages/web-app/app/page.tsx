@@ -22,7 +22,7 @@ export default async function Home() {
     <div className="container mx-auto px-4 py-10">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-slate-600">
+        <p className="text-neutral-600">
           Welcome back, {user.name}! Here's your learning progress.
         </p>
       </div>

@@ -63,7 +63,7 @@ export function FlashCardMiniGame({ className }: FlashCardMiniGameProps) {
     if (loading) {
         return (
             <div className={className}>
-                <p className="text-center text-slate-600">Loading flashcards...</p>
+                <p className="text-center text-neutral-600">Loading flashcards...</p>
             </div>
         );
     }
@@ -71,7 +71,7 @@ export function FlashCardMiniGame({ className }: FlashCardMiniGameProps) {
     if (!deck || deck.cards.length === 0) {
         return (
             <div className={className}>
-                <p className="text-center text-slate-600">No flashcards available. Create some first!</p>
+                <p className="text-center text-neutral-600">No flashcards available. Create some first!</p>
             </div>
         );
     }

@@ -32,7 +32,7 @@ export default async function ExercisesPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-3xl font-semibold">Exercises</h1>
-                    <p className="mt-2 text-slate-600">
+                    <p className="mt-2 text-neutral-600">
                         Practice your language skills with interactive exercises.
                     </p>
                 </div>
@@ -42,7 +42,7 @@ export default async function ExercisesPage() {
             </div>
 
             {exerciseSets.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center text-slate-500">
+                <div className="rounded-xl border border-dashed border-neutral-200 p-12 text-center text-neutral-500">
                     <p>You don&apos;t have any exercise sets yet.</p>
                     <p className="mt-2 text-sm">
                         Create an exercise set to start practicing your language skills.
@@ -60,7 +60,7 @@ export default async function ExercisesPage() {
                             <div className="grid gap-4 md:grid-cols-2">
                                 {multipleChoiceSets.map((set) => (
                                     <Link key={set._id} href={`/exercises/${set._id}`}>
-                                        <Card className="hover:bg-slate-50 transition-colors cursor-pointer">
+                                        <Card className="hover:bg-neutral-50 transition-colors cursor-pointer">
                                             <CardHeader>
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1">
@@ -73,7 +73,7 @@ export default async function ExercisesPage() {
                                                 </div>
                                             </CardHeader>
                                             <CardContent>
-                                                <p className="text-sm text-slate-600">
+                                                <p className="text-sm text-neutral-600">
                                                     {set.exercises.length} {set.exercises.length === 1 ? 'exercise' : 'exercises'}
                                                 </p>
                                                 {set.sourceLesson && (
@@ -99,7 +99,7 @@ export default async function ExercisesPage() {
                             <div className="grid gap-4 md:grid-cols-2">
                                 {sentenceCreationSets.map((set) => (
                                     <Link key={set._id} href={`/exercises/${set._id}`}>
-                                        <Card className="hover:bg-slate-50 transition-colors cursor-pointer">
+                                        <Card className="hover:bg-neutral-50 transition-colors cursor-pointer">
                                             <CardHeader>
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1">
@@ -112,7 +112,7 @@ export default async function ExercisesPage() {
                                                 </div>
                                             </CardHeader>
                                             <CardContent>
-                                                <p className="text-sm text-slate-600">
+                                                <p className="text-sm text-neutral-600">
                                                     {set.exercises.length} {set.exercises.length === 1 ? 'exercise' : 'exercises'}
                                                 </p>
                                                 {set.sourceLesson && (

@@ -36,7 +36,7 @@ export default async function Profile() {
         <section className="mx-auto flex min-h-[60vh] w-full max-w-3xl flex-col gap-8 px-4 py-10">
             <header>
                 <h1 className="text-3xl font-semibold">Your profile</h1>
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-2 text-sm text-neutral-500">
                     Keep track of your learning details in one place.
                 </p>
             </header>
@@ -48,16 +48,16 @@ export default async function Profile() {
                 <CardContent>
                     <dl className="grid gap-4 sm:grid-cols-2">
                         <div>
-                            <dt className="text-xs font-medium uppercase text-slate-500">
+                            <dt className="text-xs font-medium uppercase text-neutral-500">
                                 Name
                             </dt>
-                            <dd className="text-base text-slate-800">{displayName}</dd>
+                            <dd className="text-base text-neutral-900">{displayName}</dd>
                         </div>
                         <div className="sm:col-span-2">
-                            <dt className="text-xs font-medium uppercase text-slate-500">
+                            <dt className="text-xs font-medium uppercase text-neutral-500">
                                 Email
                             </dt>
-                            <dd className="text-base text-slate-800">
+                            <dd className="text-base text-neutral-900">
                                 {session.user.email}
                             </dd>
                         </div>

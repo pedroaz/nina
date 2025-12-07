@@ -63,7 +63,7 @@ export default async function CustomLessons() {
             </div>
 
             {lessonItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center text-slate-500">
+                <div className="rounded-xl border border-dashed border-neutral-200 p-12 text-center text-neutral-500">
                     <p>You have not submitted any lesson requests yet.</p>
                     <p className="mt-2 text-sm">
                         Share what you want to learn and we will create a lesson for you.
@@ -85,7 +85,7 @@ export default async function CustomLessons() {
                                     </Button>
                                 </form>
                             </CardHeader>
-                            <CardContent className="flex flex-col gap-2 text-sm text-slate-600">
+                            <CardContent className="flex flex-col gap-2 text-sm text-neutral-600">
                                 <p className="whitespace-pre-wrap leading-relaxed">
                                     {lesson.topic}
                                 </p>

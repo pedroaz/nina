@@ -55,14 +55,14 @@ export function LevelSettings({ initialLevel }: LevelSettingsProps) {
     return (
         <div className="space-y-4">
             <Label>Target Language Proficiency Level</Label>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-neutral-600">
                 Select your current Target Language proficiency level. This helps personalize your learning experience.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
                 {LEVELS.map((levelOption) => (
                     <label
                         key={levelOption.value}
-                        className="flex items-center gap-3 rounded-lg border border-slate-200 p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                        className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
                     >
                         <input
                             type="radio"
@@ -71,11 +71,11 @@ export function LevelSettings({ initialLevel }: LevelSettingsProps) {
                             checked={level === levelOption.value}
                             onChange={() => handleChange(levelOption.value)}
                             disabled={isSaving}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                            className="h-4 w-4 text-teal-600 focus:ring-teal-500"
                         />
                         <div>
                             <p className="font-medium">{levelOption.label}</p>
-                            <p className="text-sm text-slate-600">
+                            <p className="text-sm text-neutral-600">
                                 {levelOption.description}
                             </p>
                         </div>
@@ -83,7 +83,7 @@ export function LevelSettings({ initialLevel }: LevelSettingsProps) {
                 ))}
             </div>
             {isSaving && (
-                <p className="text-sm text-blue-600">Saving...</p>
+                <p className="text-sm text-teal-600">Saving...</p>
             )}
         </div>
     );

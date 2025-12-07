@@ -100,7 +100,7 @@ export function GenerateFlashCardsDialog({ lessonId, lessonTitle }: GenerateFlas
                             id="cardCount"
                             value={cardCount}
                             onChange={(e) => setCardCount(parseInt(e.target.value))}
-                            className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                            className="w-full rounded-md border border-neutral-200 bg-white p-2 text-sm shadow-sm focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-200"
                             disabled={isGenerating}
                         >
                             <option value={5}>5 cards</option>
@@ -110,13 +110,13 @@ export function GenerateFlashCardsDialog({ lessonId, lessonTitle }: GenerateFlas
                         </select>
                     </div>
                     {error && (
-                        <p className="text-sm text-red-600" role="alert">
+                        <p className="text-sm text-error-text" role="alert">
                             {error}
                         </p>
                     )}
                     {isGenerating && (
-                        <div className="rounded-lg bg-blue-50 p-3 border border-blue-200">
-                            <p className="text-sm text-blue-800">
+                        <div className="rounded-lg bg-teal-50 p-3 border border-teal-200">
+                            <p className="text-sm text-teal-900">
                                 Generating flash cards...
                             </p>
                         </div>

@@ -67,7 +67,7 @@ export function ExtraSectionsInput({ lessonId, initialExtraSections = [] }: Extr
                 </div>
             )}
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-6">
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-6">
                 <h3 className="mb-4 text-lg font-medium">Request Additional Content</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <Input
@@ -89,7 +89,7 @@ export function ExtraSectionsInput({ lessonId, initialExtraSections = [] }: Extr
                                 "Generate"
                             )}
                         </Button>
-                        {error && <p className="text-sm text-red-500">{error}</p>}
+                        {error && <p className="text-sm text-error-text">{error}</p>}
                     </div>
                 </form>
             </div>

@@ -104,7 +104,7 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
     if (!mission) {
         return (
             <div className="flex min-h-screen items-center justify-center">
-                <p className="text-slate-600">Loading mission...</p>
+                <p className="text-neutral-600">Loading mission...</p>
             </div>
         );
     }
@@ -118,12 +118,12 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <div className="text-center">
-                            <div className="text-6xl font-bold text-blue-600 mb-2">{score}</div>
-                            <p className="text-slate-600">out of 100</p>
+                            <div className="text-6xl font-bold text-teal-600 mb-2">{score}</div>
+                            <p className="text-neutral-600">out of 100</p>
                         </div>
-                        <div className="bg-slate-50 p-4 rounded-lg">
+                        <div className="bg-neutral-50 p-4 rounded-lg">
                             <h3 className="font-semibold mb-2">Feedback:</h3>
-                            <p className="text-slate-700">{feedback}</p>
+                            <p className="text-neutral-700">{feedback}</p>
                         </div>
                         <div className="flex gap-4">
                             <Button onClick={() => router.push('/missions')} className="flex-1">
@@ -143,8 +143,8 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
         <div className="container mx-auto px-4 py-10 max-w-4xl">
             <div className="mb-6">
                 <h1 className="text-2xl font-bold mb-2">{mission.title}</h1>
-                <p className="text-slate-600 mb-4">{mission.scenario}</p>
-                <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-neutral-600 mb-4">{mission.scenario}</p>
+                <div className="bg-teal-50 p-4 rounded-lg">
                     <h3 className="font-semibold text-sm mb-2">Objectives:</h3>
                     <ul className="text-sm space-y-1">
                         {mission.objectives.map((obj, idx) => (
@@ -167,8 +167,8 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
                             >
                                 <div
                                     className={`max-w-[70%] rounded-lg p-3 ${msg.role === 'user'
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-slate-100 text-slate-900'
+                                            ? 'bg-teal-600 text-white'
+                                            : 'bg-neutral-100 text-neutral-900'
                                         }`}
                                 >
                                     {msg.content}
@@ -177,8 +177,8 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
                         ))}
                         {loading && (
                             <div className="flex justify-start">
-                                <div className="bg-slate-100 rounded-lg p-3">
-                                    <span className="text-slate-600">Typing...</span>
+                                <div className="bg-neutral-100 rounded-lg p-3">
+                                    <span className="text-neutral-600">Typing...</span>
                                 </div>
                             </div>
                         )}
@@ -191,7 +191,7 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
                             onChange={(e) => setInput(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
                             placeholder="Type your message..."
-                            className="flex-1 rounded-md border border-slate-200 p-2 text-sm"
+                            className="flex-1 rounded-md border border-neutral-200 p-2 text-sm"
                             disabled={loading}
                         />
                         <Button onClick={handleSend} disabled={loading || !input.trim()}>

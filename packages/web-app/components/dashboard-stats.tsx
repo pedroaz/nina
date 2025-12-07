@@ -43,7 +43,7 @@ export function DashboardStats({ userId }: DashboardStatsProps) {
                 {[...Array(4)].map((_, i) => (
                     <Card key={i}>
                         <CardContent className="p-6">
-                            <div className="h-20 animate-pulse bg-slate-100 rounded"></div>
+                            <div className="h-20 animate-pulse bg-neutral-100 rounded"></div>
                         </CardContent>
                     </Card>
                 ))}
@@ -56,50 +56,50 @@ export function DashboardStats({ userId }: DashboardStatsProps) {
             title: "Lessons",
             value: stats?.lessonsCount || 0,
             icon: BookOpen,
-            color: "text-blue-600",
-            bgColor: "bg-blue-50",
+            color: "text-orange-600",
+            bgColor: "bg-orange-50",
         },
         {
             title: "Exercise Sets",
             value: stats?.exerciseSetsCount || 0,
             icon: Dumbbell,
-            color: "text-green-600",
-            bgColor: "bg-green-50",
+            color: "text-teal-600",
+            bgColor: "bg-teal-50",
         },
         {
             title: "Flashcard Decks",
             value: stats?.flashCardDecksCount || 0,
             icon: CreditCard,
-            color: "text-purple-600",
-            bgColor: "bg-purple-50",
+            color: "text-orange-700",
+            bgColor: "bg-orange-100",
         },
         {
             title: "Missions Completed",
             value: stats?.missionsCompleted || 0,
             icon: Target,
-            color: "text-orange-600",
-            bgColor: "bg-orange-50",
+            color: "text-teal-700",
+            bgColor: "bg-teal-100",
         },
     ];
 
     return (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {statCards.map((stat) => {
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {statCards.map((stat, index) => {
                 const Icon = stat.icon;
+                const isOrange = index % 2 === 0;
+                const cardClass = isOrange ? 'stat-card-orange' : 'stat-card-teal';
                 return (
-                    <Card key={stat.title}>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-sm font-medium text-slate-600">
+                    <div key={stat.title} className={`card-playful ${cardClass} p-6`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wide">
                                 {stat.title}
-                            </CardTitle>
-                            <div className={`p-2 rounded-lg ${stat.bgColor}`}>
-                                <Icon className={`h-4 w-4 ${stat.color}`} />
+                            </h3>
+                            <div className={`icon-bubble ${stat.bgColor === 'bg-orange-50' || stat.bgColor === 'bg-orange-100' ? 'bg-orange-200' : 'bg-teal-200'}`}>
+                                <Icon className={`h-5 w-5 ${stat.color}`} />
                             </div>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-3xl font-bold">{stat.value}</div>
-                        </CardContent>
-                    </Card>
+                        </div>
+                        <div className="text-4xl font-extrabold text-neutral-900">{stat.value}</div>
+                    </div>
                 );
             })}
         </div>

@@ -4,7 +4,6 @@ import { FormEvent, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { CreateLessonRequestData } from "@core/cqrs/lesson-commands";
 import { FlashCardMiniGame } from "@/components/flashcard-mini-game";
 import { BookText, GraduationCap, Image as ImageIcon, Sparkles, Zap } from "lucide-react";
 
@@ -89,7 +88,7 @@ export default function CustomLessonsNew() {
         setError(null);
 
         try {
-            const requestBody: CreateLessonRequestData = {
+            const requestBody = {
                 topic: sanitizedTopic,
                 vocabulary: "", // No longer separate
                 modelType,
@@ -133,18 +132,18 @@ export default function CustomLessonsNew() {
         <section className="flex min-h-[60vh] items-center justify-center px-4 py-10">
             <form
                 onSubmit={handleSubmit}
-                className="flex w-full max-w-2xl flex-col gap-6 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
+                className="flex w-full max-w-2xl flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-sm"
             >
                 {userLanguages && (
-                    <div className="rounded-lg bg-slate-50 p-4 border border-slate-200">
+                    <div className="rounded-lg bg-neutral-50 p-4 border border-neutral-200">
                         <h3 className="font-semibold text-sm mb-2">Language Settings</h3>
                         <div className="flex gap-6 text-sm">
                             <div>
-                                <span className="text-slate-600">Base Language:</span>{' '}
+                                <span className="text-neutral-600">Base Language:</span>{' '}
                                 <span className="font-medium">{capitalizeLanguage(userLanguages.baseLanguage)}</span>
                             </div>
                             <div>
-                                <span className="text-slate-600">Target Language:</span>{' '}
+                                <span className="text-neutral-600">Target Language:</span>{' '}
                                 <span className="font-medium">{capitalizeLanguage(userLanguages.targetLanguage)}</span>
                             </div>
                         </div>
@@ -158,7 +157,7 @@ export default function CustomLessonsNew() {
                         name="topic"
                         value={topic}
                         onChange={(event) => setTopic(event.target.value)}
-                        className="min-h-32 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        className="min-h-32 w-full rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-200"
                         placeholder="e.g., How to order food at a restaurant&#10;&#10;💡 Tip: You can focus on specific vocabulary by mentioning it (e.g., 'restaurant vocabulary')"
                         disabled={isSubmitting}
                     />
@@ -169,8 +168,8 @@ export default function CustomLessonsNew() {
                         type="button"
                         onClick={() => setFocus(focus === 'vocabulary' ? null : 'vocabulary')}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${focus === 'vocabulary'
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : 'border-slate-200 bg-white hover:border-slate-300'
+                                ? 'border-orange-500 bg-orange-50 text-orange-700'
+                                : 'border-neutral-200 bg-white hover:border-neutral-300'
                             }`}
                         disabled={isSubmitting}
                     >
@@ -182,8 +181,8 @@ export default function CustomLessonsNew() {
                         type="button"
                         onClick={() => setFocus(focus === 'grammar' ? null : 'grammar')}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${focus === 'grammar'
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : 'border-slate-200 bg-white hover:border-slate-300'
+                                ? 'border-orange-500 bg-orange-50 text-orange-700'
+                                : 'border-neutral-200 bg-white hover:border-neutral-300'
                             }`}
                         disabled={isSubmitting}
                     >
@@ -192,8 +191,8 @@ export default function CustomLessonsNew() {
                     </button>
 
                     <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${image
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-neutral-200 bg-white hover:border-neutral-300'
                         }`}>
                         <ImageIcon className="h-4 w-4" />
                         <span className="text-sm font-medium">
@@ -212,7 +211,7 @@ export default function CustomLessonsNew() {
                         <button
                             type="button"
                             onClick={() => setImage(null)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-all"
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-error-border bg-error-bg text-error-text hover:bg-error-bg transition-all"
                         >
                             <span className="text-sm font-medium">Remove Image</span>
                         </button>
@@ -220,7 +219,7 @@ export default function CustomLessonsNew() {
                 </div>
 
                 {image && (
-                    <div className="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200">
+                    <div className="relative w-full h-48 rounded-lg overflow-hidden border border-neutral-200">
                         <img src={image} alt="Preview" className="object-cover w-full h-full" />
                     </div>
                 )}
@@ -230,8 +229,8 @@ export default function CustomLessonsNew() {
                         type="button"
                         onClick={() => setModelType('detailed')}
                         className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all ${modelType === 'detailed'
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : 'border-slate-200 bg-white hover:border-slate-300'
+                                ? 'border-orange-500 bg-orange-50 text-orange-700'
+                                : 'border-neutral-200 bg-white hover:border-neutral-300'
                             }`}
                         disabled={isSubmitting}
                     >
@@ -246,8 +245,8 @@ export default function CustomLessonsNew() {
                         type="button"
                         onClick={() => setModelType('fast')}
                         className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all ${modelType === 'fast'
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : 'border-slate-200 bg-white hover:border-slate-300'
+                                ? 'border-orange-500 bg-orange-50 text-orange-700'
+                                : 'border-neutral-200 bg-white hover:border-neutral-300'
                             }`}
                         disabled={isSubmitting}
                     >
@@ -260,23 +259,23 @@ export default function CustomLessonsNew() {
                 </div>
 
                 {error ? (
-                    <p className="text-sm text-red-600" role="alert">
+                    <p className="text-sm text-error-text" role="alert">
                         {error}
                     </p>
                 ) : null}
 
                 {isSubmitting && (
-                    <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
-                        <p className="text-sm text-blue-800">
+                    <div className="rounded-lg bg-teal-50 p-4 border border-teal-200">
+                        <p className="text-sm text-teal-900">
                             Creating lesson with <span className="font-semibold">
                                 {modelType === 'detailed' ? 'Detailed Model' : 'Fast Model'}
                             </span>...
                         </p>
-                        <p className="text-xs text-blue-600 mt-1">
+                        <p className="text-xs text-teal-600 mt-1">
                             Time elapsed: <span className="font-semibold">{elapsedSeconds}s</span>
                         </p>
-                        <div className="mt-4 pt-4 border-t border-blue-200">
-                            <p className="text-sm text-blue-800 mb-3">
+                        <div className="mt-4 pt-4 border-t border-teal-200">
+                            <p className="text-sm text-teal-900 mb-3">
                                 Practice flashcards while you wait:
                             </p>
                             <FlashCardMiniGame className="bg-white rounded-lg p-4" />

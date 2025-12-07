@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Nunito, Geist_Mono } from "next/font/google";
 import "@uiw/react-markdown-preview/markdown.css";
 import "./globals.css";
 import Link from "next/link";
@@ -13,9 +13,10 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AuthButton } from "@/components/auth-button";
 import { Providers } from "./providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const nunito = Nunito({
+  variable: "--font-nunito",
   subsets: ["latin"],
+  weight: ["400", "600", "700", "800"],
 });
 
 const geistMono = Geist_Mono({
@@ -36,13 +37,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${nunito.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>
           <SidebarProvider>
             <AppSidebar />
             <SidebarInset>
-              <header className="flex h-16 shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-4">
+              <header className="flex h-16 shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4">
                 <SidebarTrigger className="-ml-1" />
               </header>
               <main className="flex-1">{children}</main>

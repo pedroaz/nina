@@ -44,14 +44,14 @@ const markdownPreviewStyle = {
 const translationPreviewStyle = {
     backgroundColor: 'transparent',
     padding: 0,
-    color: '#c2410c', // orange-700
+    color: 'var(--orange-700)',
     fontFamily: 'inherit',
     '--color-canvas-default': 'transparent',
     '--color-canvas-subtle': 'transparent',
 } as CSSProperties;
 
 const markdownPreviewClassName =
-    'text-sm leading-6 text-slate-700 whitespace-pre-wrap [&>*]:m-0 [&>*:not(:last-child)]:mb-2';
+    'text-sm leading-6 text-neutral-700 whitespace-pre-wrap [&>*]:m-0 [&>*:not(:last-child)]:mb-2';
 
 const translationPreviewClassName =
     'text-xs leading-5 whitespace-pre-wrap [&>*]:m-0 [&>*:not(:last-child)]:mb-2 mt-2';
@@ -281,12 +281,12 @@ export function DualLanguageTextCard({
 
             {/* Translation Display - positioned next to the card */}
             {(translations.length > 0 || isTranslating) && (
-                <div className="absolute left-full top-0 ml-4 max-w-sm w-80 bg-white border border-slate-200 rounded-lg shadow-lg p-4 z-50">
+                <div className="absolute left-full top-0 ml-4 max-w-sm w-80 bg-white border border-neutral-200 rounded-lg shadow-lg p-4 z-50">
                     <div className="flex justify-between items-center mb-3">
-                        <h3 className="text-sm font-semibold text-slate-900">Translations</h3>
+                        <h3 className="text-sm font-semibold text-neutral-900">Translations</h3>
                         <button
                             onClick={handleClearAllTranslations}
-                            className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                            className="text-xs text-neutral-500 hover:text-neutral-700 transition-colors"
                             aria-label="Clear all translations"
                         >
                             Clear all
@@ -296,18 +296,18 @@ export function DualLanguageTextCard({
                         {translations.map((pair, index) => (
                             <div
                                 key={index}
-                                className="border border-slate-200 rounded-md p-2 hover:bg-slate-50 transition-colors group"
+                                className="border border-neutral-200 rounded-md p-2 hover:bg-neutral-50 transition-colors group"
                             >
                                 <div className="flex justify-between items-start gap-2">
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-xs text-slate-600 truncate">{pair.original}</p>
-                                        <p className="text-sm text-slate-900 font-medium mt-0.5">
+                                        <p className="text-xs text-neutral-600 truncate">{pair.original}</p>
+                                        <p className="text-sm text-neutral-900 font-medium mt-0.5">
                                             {pair.translated}
                                         </p>
                                     </div>
                                     <button
                                         onClick={() => handleRemoveTranslation(index)}
-                                        className="text-slate-400 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                        className="text-neutral-400 hover:text-neutral-600 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
                                         aria-label="Remove translation"
                                     >
                                         <svg
@@ -329,10 +329,10 @@ export function DualLanguageTextCard({
                             </div>
                         ))}
                         {isTranslating && (
-                            <div className="border border-slate-200 rounded-md p-2 bg-slate-50">
+                            <div className="border border-neutral-200 rounded-md p-2 bg-neutral-50">
                                 <div className="flex items-center gap-2">
-                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-slate-300 border-t-slate-600"></div>
-                                    <p className="text-xs text-slate-500">Translating...</p>
+                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-neutral-300 border-t-neutral-600"></div>
+                                    <p className="text-xs text-neutral-500">Translating...</p>
                                 </div>
                             </div>
                         )}

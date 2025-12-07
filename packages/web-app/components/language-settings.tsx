@@ -91,14 +91,14 @@ export function LanguageSettings({ initialBaseLanguage, initialTargetLanguage }:
             {/* Base Language */}
             <div className="space-y-4">
                 <Label>Base Language (Your Native Language)</Label>
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-neutral-600">
                     This is the language used for explanations and translations. It should be your most comfortable language.
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                     {BASE_LANGUAGES.map((langOption) => (
                         <label
                             key={langOption.value}
-                            className="flex items-center gap-3 rounded-lg border border-slate-200 p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                            className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
                         >
                             <input
                                 type="radio"
@@ -107,7 +107,7 @@ export function LanguageSettings({ initialBaseLanguage, initialTargetLanguage }:
                                 checked={baseLanguage === langOption.value}
                                 onChange={() => handleBaseLanguageChange(langOption.value)}
                                 disabled={isSaving}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                                className="h-4 w-4 text-teal-600 focus:ring-teal-500"
                             />
                             <div>
                                 <p className="font-medium">{langOption.label}</p>
@@ -120,14 +120,14 @@ export function LanguageSettings({ initialBaseLanguage, initialTargetLanguage }:
             {/* Target Language */}
             <div className="space-y-4">
                 <Label>Target Language (Language You're Learning)</Label>
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-neutral-600">
                     This is the language you want to learn. All lessons and exercises will focus on this language.
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                     {TARGET_LANGUAGES.map((langOption) => (
                         <label
                             key={langOption.value}
-                            className="flex items-center gap-3 rounded-lg border border-slate-200 p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                            className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
                         >
                             <input
                                 type="radio"
@@ -136,7 +136,7 @@ export function LanguageSettings({ initialBaseLanguage, initialTargetLanguage }:
                                 checked={targetLanguage === langOption.value}
                                 onChange={() => handleTargetLanguageChange(langOption.value)}
                                 disabled={isSaving}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                                className="h-4 w-4 text-teal-600 focus:ring-teal-500"
                             />
                             <div>
                                 <p className="font-medium">{langOption.label}</p>
@@ -147,7 +147,7 @@ export function LanguageSettings({ initialBaseLanguage, initialTargetLanguage }:
             </div>
 
             {isSaving && (
-                <p className="text-sm text-blue-600">Saving...</p>
+                <p className="text-sm text-teal-600">Saving...</p>
             )}
         </div>
     );

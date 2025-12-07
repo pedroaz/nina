@@ -55,7 +55,7 @@ export default async function FlashCards() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-3xl font-semibold">Flash Card Decks</h1>
-                    <p className="mt-2 text-slate-600">
+                    <p className="mt-2 text-neutral-600">
                         Practice and memorize Language with interactive flash cards.
                     </p>
                 </div>
@@ -65,7 +65,7 @@ export default async function FlashCards() {
             </div>
 
             {deckItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center text-slate-500">
+                <div className="rounded-xl border border-dashed border-neutral-200 p-12 text-center text-neutral-500">
                     <p>You don&apos;t have any flash card decks yet.</p>
                     <p className="mt-2 text-sm">
                         Create a deck to start practicing vocabulary and phrases.

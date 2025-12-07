@@ -89,7 +89,7 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
                     <div className="space-y-2">
                         <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
                         {lesson.vocabulary && (
-                            <p className="text-sm text-slate-500">Vocabulary focus: {lesson.vocabulary}</p>
+                            <p className="text-sm text-neutral-500">Vocabulary focus: {lesson.vocabulary}</p>
                         )}
                     </div>
                     <div className="flex gap-2">

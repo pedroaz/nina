@@ -110,13 +110,13 @@ export function LessonMetadataDialog({ lessonId }: LessonMetadataDialogProps) {
 
                 {isLoading && (
                     <div className="flex items-center justify-center py-8">
-                        <p className="text-sm text-slate-600">Loading metadata...</p>
+                        <p className="text-sm text-neutral-600">Loading metadata...</p>
                     </div>
                 )}
 
                 {error && (
-                    <div className="rounded-lg bg-red-50 p-4 border border-red-200">
-                        <p className="text-sm text-red-800">{error}</p>
+                    <div className="rounded-lg bg-error-bg p-4 border border-error-border">
+                        <p className="text-sm text-error-text">{error}</p>
                     </div>
                 )}
 
@@ -132,19 +132,19 @@ export function LessonMetadataDialog({ lessonId }: LessonMetadataDialogProps) {
                                     {metadata.operations.map((op, index) => (
                                         <div
                                             key={index}
-                                            className="rounded-lg border border-slate-200 p-4 space-y-3"
+                                            className="rounded-lg border border-neutral-200 p-4 space-y-3"
                                         >
                                             <div className="flex items-center justify-between">
                                                 <p className="font-semibold text-sm">
                                                     {formatOperation(op.operation)}
                                                 </p>
-                                                <p className="text-xs text-slate-600">
+                                                <p className="text-xs text-neutral-600">
                                                     {formatDate(op.timestamp)}
                                                 </p>
                                             </div>
                                             <div className="grid grid-cols-2 gap-3 text-xs">
                                                 <div>
-                                                    <p className="text-slate-600">Model</p>
+                                                    <p className="text-neutral-600">Model</p>
                                                     <p className="font-medium">
                                                         {op.modelUsed === 'gpt-5-nano'
                                                             ? 'GPT-5 Nano'
@@ -152,32 +152,32 @@ export function LessonMetadataDialog({ lessonId }: LessonMetadataDialogProps) {
                                                     </p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-slate-600">Time</p>
+                                                    <p className="text-neutral-600">Time</p>
                                                     <p className="font-medium">
                                                         {(op.executionTimeMs / 1000).toFixed(2)}s
                                                     </p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-slate-600">Input Tokens</p>
+                                                    <p className="text-neutral-600">Input Tokens</p>
                                                     <p className="font-medium">
                                                         {op.inputTokens.toLocaleString()}
                                                     </p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-slate-600">Output Tokens</p>
+                                                    <p className="text-neutral-600">Output Tokens</p>
                                                     <p className="font-medium">
                                                         {op.outputTokens.toLocaleString()}
                                                     </p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-slate-600">Total Tokens</p>
+                                                    <p className="text-neutral-600">Total Tokens</p>
                                                     <p className="font-medium">
                                                         {op.totalTokens.toLocaleString()}
                                                     </p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-slate-600">Total Cost</p>
-                                                    <p className="font-medium text-blue-600">
+                                                    <p className="text-neutral-600">Total Cost</p>
+                                                    <p className="font-medium text-teal-600">
                                                         {formatCost(op.totalCost)}
                                                     </p>
                                                 </div>
@@ -190,18 +190,18 @@ export function LessonMetadataDialog({ lessonId }: LessonMetadataDialogProps) {
 
                         {/* Total Summary */}
                         {metadata.operations && metadata.operations.length > 0 && metadata.totals && (
-                            <div className="rounded-lg bg-slate-50 p-4 border border-slate-200">
+                            <div className="rounded-lg bg-neutral-50 p-4 border border-neutral-200">
                                 <h3 className="font-semibold text-sm mb-3">Total Usage</h3>
                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                     <div>
-                                        <p className="text-slate-600">Total Tokens</p>
+                                        <p className="text-neutral-600">Total Tokens</p>
                                         <p className="font-semibold text-lg">
                                             {metadata.totals.totalTokens.toLocaleString()}
                                         </p>
                                     </div>
                                     <div>
-                                        <p className="text-slate-600">Total Cost</p>
-                                        <p className="font-semibold text-lg text-blue-600">
+                                        <p className="text-neutral-600">Total Cost</p>
+                                        <p className="font-semibold text-lg text-teal-600">
                                             {formatCost(metadata.totals.totalCost)}
                                         </p>
                                     </div>
@@ -210,7 +210,7 @@ export function LessonMetadataDialog({ lessonId }: LessonMetadataDialogProps) {
                         )}
 
                         {(!metadata.operations || metadata.operations.length === 0) && (
-                            <div className="text-center py-8 text-slate-500">
+                            <div className="text-center py-8 text-neutral-500">
                                 No usage data available for this lesson.
                             </div>
                         )}

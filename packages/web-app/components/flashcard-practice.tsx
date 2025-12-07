@@ -106,8 +106,8 @@ export function FlashCardPractice({
                 <div className={cn("flex flex-col items-center justify-center gap-4 p-4", className)}>
                     <h3 className="text-lg font-semibold">Session Complete!</h3>
                     <div className="flex gap-4 text-sm">
-                        <span className="text-green-600 font-medium">Known: {knownCount}</span>
-                        <span className="text-red-600 font-medium">Review: {unknownCount}</span>
+                        <span className="text-success-text font-medium">Known: {knownCount}</span>
+                        <span className="text-error-text font-medium">Review: {unknownCount}</span>
                     </div>
                     <Button onClick={handlePracticeAgain} size="sm">
                         Practice Again
@@ -118,38 +118,36 @@ export function FlashCardPractice({
 
         return (
             <div className={cn("mx-auto flex min-h-[60vh] w-full max-w-2xl flex-col items-center justify-center gap-6 px-4 py-10", className)}>
-                <Card className="w-full">
-                    <CardHeader>
-                        <CardTitle className="text-center text-2xl">Session Complete!</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
+                <div className="w-full card-playful bg-white p-8">
+                    <h2 className="text-center text-3xl font-extrabold mb-6 text-neutral-900">🎉 Session Complete!</h2>
+                    <div className="space-y-6">
                         <div className="text-center space-y-4">
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="rounded-lg bg-green-50 p-4 border border-green-200">
-                                    <p className="text-sm text-green-600 font-medium">Known</p>
-                                    <p className="text-3xl font-bold text-green-700">{knownCount}</p>
+                                <div className="card-playful bg-success-bg p-6 border-success-text">
+                                    <p className="text-sm text-success-text font-bold uppercase">Known</p>
+                                    <p className="text-4xl font-extrabold text-success-text mt-2">{knownCount}</p>
                                 </div>
-                                <div className="rounded-lg bg-red-50 p-4 border border-red-200">
-                                    <p className="text-sm text-red-600 font-medium">Don&apos;t Know</p>
-                                    <p className="text-3xl font-bold text-red-700">{unknownCount}</p>
+                                <div className="card-playful bg-error-bg p-6 border-error-text">
+                                    <p className="text-sm text-error-text font-bold uppercase">Don&apos;t Know</p>
+                                    <p className="text-4xl font-extrabold text-error-text mt-2">{unknownCount}</p>
                                 </div>
                             </div>
                             <div className="pt-4">
-                                <p className="text-slate-600">
+                                <p className="text-neutral-600">
                                     You practiced {shuffledCards.length} cards from <span className="font-medium">{deckTitle}</span>
                                 </p>
                             </div>
                         </div>
                         <div className="flex gap-4 justify-center">
-                            <Button onClick={handlePracticeAgain} size="lg">
-                                Practice Again
-                            </Button>
-                            <Button variant="outline" size="lg" onClick={() => window.location.href = '/flash-cards'}>
-                                Back to Decks
-                            </Button>
+                            <button onClick={handlePracticeAgain} className="btn-playful btn-primary-playful px-8 py-3 text-lg">
+                                🔄 Practice Again
+                            </button>
+                            <button onClick={() => window.location.href = '/flash-cards'} className="btn-playful bg-white border-neutral-900 text-neutral-900 hover:bg-neutral-100 px-8 py-3 text-lg">
+                                ← Back to Decks
+                            </button>
                         </div>
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -159,61 +157,55 @@ export function FlashCardPractice({
     return (
         <div className={cn("mx-auto flex w-full flex-col gap-6", !isMini && "min-h-[60vh] max-w-2xl px-4 py-10", className)}>
             <div className="flex items-center justify-between">
-                <h1 className={cn("font-semibold", isMini ? "text-lg" : "text-2xl")}>{deckTitle}</h1>
-                <p className="text-slate-600 text-sm">
+                <h1 className={cn("font-extrabold", isMini ? "text-xl" : "text-3xl")}>{deckTitle}</h1>
+                <div className="badge-playful bg-neutral-100">
                     {currentIndex + 1} / {shuffledCards.length}
-                </p>
+                </div>
             </div>
 
-            <Card
-                className={cn("cursor-pointer transition-all", isMini ? "min-h-[200px]" : "min-h-[300px]")}
+            <div
+                className={cn("flashcard-playful bg-white cursor-pointer", isMini ? "min-h-[200px]" : "min-h-[320px]")}
                 onClick={handleFlip}
             >
-                <CardContent className={cn("flex items-center justify-center", isMini ? "p-6" : "p-12")}>
+                <div className={cn("flex items-center justify-center h-full", isMini ? "p-6" : "p-12")}>
                     <div className="text-center space-y-4">
-                        <p className="text-xs text-slate-500 uppercase tracking-wide">
-                            {isFlipped ? (displayPreference === 'base-first' ? 'Target' : 'English') : (displayPreference === 'base-first' ? 'English' : 'Target')}
+                        <p className="text-xs text-neutral-600 font-bold uppercase tracking-widest">
+                            {isFlipped ? (displayPreference === 'base-first' ? '🎯 Target' : '🇬🇧 English') : (displayPreference === 'base-first' ? '🇬🇧 English' : '🎯 Target')}
                         </p>
-                        <p className={cn("font-medium leading-relaxed", isMini ? "text-xl" : "text-2xl")}>
+                        <p className={cn("font-bold leading-relaxed text-neutral-900", isMini ? "text-2xl" : "text-3xl")}>
                             {isFlipped ? backSide : frontSide}
                         </p>
                         {!isFlipped && (
-                            <p className="text-xs text-slate-500 mt-4">
-                                Click to flip
+                            <p className="text-sm text-neutral-500 mt-4 font-semibold">
+                                👆 Click to flip
                             </p>
                         )}
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </div>
 
             <div className="flex gap-4 justify-center">
                 {!isFlipped ? (
-                    <Button
-                        variant="outline"
-                        size={isMini ? "sm" : "lg"}
-                        className={isMini ? "w-32" : "w-40"}
+                    <button
+                        className="btn-playful btn-secondary-playful px-8 py-3 text-lg"
                         onClick={handleFlip}
                     >
-                        Flip Card
-                    </Button>
+                        🔄 Flip Card
+                    </button>
                 ) : (
                     <>
-                        <Button
-                            variant="destructive"
-                            size={isMini ? "sm" : "lg"}
-                            className={isMini ? "w-32" : "w-40"}
+                        <button
+                            className="btn-playful bg-error-bg border-error-text text-error-text hover:bg-error/10 px-6 py-3 text-lg"
                             onClick={() => handleAnswer('dontKnow')}
                         >
-                            I Don&apos;t Know
-                        </Button>
-                        <Button
-                            variant="default"
-                            size={isMini ? "sm" : "lg"}
-                            className={cn("bg-green-600 hover:bg-green-700", isMini ? "w-32" : "w-40")}
+                            ❌ Don&apos;t Know
+                        </button>
+                        <button
+                            className="btn-playful btn-success-playful px-6 py-3 text-lg"
                             onClick={() => handleAnswer('know')}
                         >
-                            I Know
-                        </Button>
+                            ✅ I Know
+                        </button>
                     </>
                 )}
             </div>

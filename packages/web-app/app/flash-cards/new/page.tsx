@@ -92,11 +92,11 @@ export default function NewFlashCardDeck() {
         <section className="flex min-h-[60vh] items-center justify-center px-4 py-10">
             <form
                 onSubmit={handleSubmit}
-                className="flex w-full max-w-2xl flex-col gap-6 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
+                className="flex w-full max-w-2xl flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-sm"
             >
                 <div className="flex flex-col gap-2">
                     <h1 className="text-2xl font-semibold">Create Flash Card Deck</h1>
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-neutral-600">
                         Generate a deck of flash cards on any topic to practice Language vocabulary and phrases.
                     </p>
                 </div>
@@ -108,7 +108,7 @@ export default function NewFlashCardDeck() {
                         name="topic"
                         value={topic}
                         onChange={(event) => setTopic(event.target.value)}
-                        className="min-h-32 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        className="min-h-32 w-full rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-200"
                         placeholder="e.g., Fruits and vegetables, Common restaurant phrases, Daily routines"
                         disabled={isSubmitting}
                     />
@@ -121,7 +121,7 @@ export default function NewFlashCardDeck() {
                         name="cardCount"
                         value={cardCount}
                         onChange={(event) => setCardCount(parseInt(event.target.value))}
-                        className="w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        className="w-full rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-200"
                         disabled={isSubmitting}
                     >
                         <option value={5}>5 cards</option>
@@ -132,24 +132,24 @@ export default function NewFlashCardDeck() {
                 </div>
 
                 {error ? (
-                    <p className="text-sm text-red-600" role="alert">
+                    <p className="text-sm text-error-text" role="alert">
                         {error}
                     </p>
                 ) : null}
 
                 {isSubmitting && (
-                    <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
-                        <p className="text-sm text-blue-800">
+                    <div className="rounded-lg bg-teal-50 p-4 border border-teal-200">
+                        <p className="text-sm text-teal-900">
                             Creating flash card deck with <span className="font-semibold">Fast Model (GPT-4o Mini)</span>...
                         </p>
-                        <p className="text-xs text-blue-600 mt-1">
+                        <p className="text-xs text-teal-600 mt-1">
                             Generating {cardCount} flash cards for you.
                         </p>
-                        <div className="mt-3 pt-3 border-t border-blue-200">
-                            <p className="text-sm text-blue-800">
+                        <div className="mt-3 pt-3 border-t border-teal-200">
+                            <p className="text-sm text-teal-900">
                                 Time elapsed: <span className="font-semibold">{elapsedSeconds}s</span>
                             </p>
-                            <p className="text-xs text-blue-600 mt-1">
+                            <p className="text-xs text-teal-600 mt-1">
                                 Average generation time: ~15-30 seconds
                             </p>
                         </div>

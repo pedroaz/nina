@@ -57,7 +57,7 @@ export function UsageStats() {
         return (
             <Card>
                 <CardContent className="p-6">
-                    <p className="text-center text-slate-600">Loading usage data...</p>
+                    <p className="text-center text-neutral-600">Loading usage data...</p>
                 </CardContent>
             </Card>
         );
@@ -67,7 +67,7 @@ export function UsageStats() {
         return (
             <Card>
                 <CardContent className="p-6">
-                    <p className="text-center text-slate-600">No usage data available.</p>
+                    <p className="text-center text-neutral-600">No usage data available.</p>
                 </CardContent>
             </Card>
         );
@@ -82,27 +82,27 @@ export function UsageStats() {
                 </CardHeader>
                 <CardContent>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                        <div className="bg-slate-50 p-4 rounded-lg">
-                            <p className="text-sm text-slate-600 mb-1">Total Operations</p>
-                            <p className="text-2xl font-bold">{summary.operationCount.toLocaleString()}</p>
+                        <div className="card-playful bg-neutral-50 p-4">
+                            <p className="text-xs text-neutral-700 font-bold uppercase mb-2">Total Operations</p>
+                            <p className="text-3xl font-extrabold text-neutral-900">{summary.operationCount.toLocaleString()}</p>
                         </div>
-                        <div className="bg-slate-50 p-4 rounded-lg">
-                            <p className="text-sm text-slate-600 mb-1">Total Tokens</p>
-                            <p className="text-2xl font-bold">{summary.totalTokens.toLocaleString()}</p>
-                            <p className="text-xs text-slate-500 mt-1">
+                        <div className="card-playful bg-neutral-50 p-4">
+                            <p className="text-xs text-neutral-700 font-bold uppercase mb-2">Total Tokens</p>
+                            <p className="text-3xl font-extrabold text-neutral-900">{summary.totalTokens.toLocaleString()}</p>
+                            <p className="text-xs text-neutral-600 font-semibold mt-1">
                                 {summary.totalInputTokens.toLocaleString()} in / {summary.totalOutputTokens.toLocaleString()} out
                             </p>
                         </div>
-                        <div className="bg-slate-50 p-4 rounded-lg">
-                            <p className="text-sm text-slate-600 mb-1">Total Cost</p>
-                            <p className="text-2xl font-bold">${summary.totalCost.toFixed(4)}</p>
-                            <p className="text-xs text-slate-500 mt-1">
+                        <div className="card-playful bg-neutral-50 p-4">
+                            <p className="text-xs text-neutral-700 font-bold uppercase mb-2">Total Cost</p>
+                            <p className="text-3xl font-extrabold text-neutral-900">${summary.totalCost.toFixed(4)}</p>
+                            <p className="text-xs text-neutral-600 font-semibold mt-1">
                                 ${summary.totalInputCost.toFixed(4)} in / ${summary.totalOutputCost.toFixed(4)} out
                             </p>
                         </div>
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                            <p className="text-sm text-blue-600 mb-1">Avg Cost/Operation</p>
-                            <p className="text-2xl font-bold text-blue-700">
+                        <div className="card-playful stat-card-teal p-4">
+                            <p className="text-xs text-teal-900 font-bold uppercase mb-2">💰 Avg Cost/Operation</p>
+                            <p className="text-3xl font-extrabold text-teal-900">
                                 ${(summary.totalCost / summary.operationCount).toFixed(4)}
                             </p>
                         </div>
@@ -118,10 +118,10 @@ export function UsageStats() {
                     <CardContent>
                         <div className="space-y-3">
                             {operationBreakdown.map((op) => (
-                                <div key={op._id} className="flex items-center justify-between p-3 bg-slate-50 rounded">
+                                <div key={op._id} className="flex items-center justify-between p-3 bg-neutral-50 rounded">
                                     <div>
                                         <p className="font-medium text-sm">{op._id.replace(/_/g, ' ')}</p>
-                                        <p className="text-xs text-slate-600">
+                                        <p className="text-xs text-neutral-600">
                                             {op.count} operations • {op.totalTokens.toLocaleString()} tokens
                                         </p>
                                     </div>
@@ -139,10 +139,10 @@ export function UsageStats() {
                     <CardContent>
                         <div className="space-y-3">
                             {modelBreakdown.map((model) => (
-                                <div key={model._id} className="flex items-center justify-between p-3 bg-slate-50 rounded">
+                                <div key={model._id} className="flex items-center justify-between p-3 bg-neutral-50 rounded">
                                     <div>
                                         <p className="font-medium text-sm">{model._id}</p>
-                                        <p className="text-xs text-slate-600">
+                                        <p className="text-xs text-neutral-600">
                                             {model.count} operations • {model.totalTokens.toLocaleString()} tokens
                                         </p>
                                     </div>

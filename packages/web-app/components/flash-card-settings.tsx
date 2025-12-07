@@ -40,11 +40,11 @@ export function FlashCardSettings({ initialPreference, baseLanguage = 'Base', ta
     return (
         <div className="space-y-4">
             <Label>Flash Card Display</Label>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-neutral-600">
                 Choose which language to show first when practicing flash cards.
             </p>
             <div className="space-y-2">
-                <label className="flex items-center gap-3 rounded-lg border border-slate-200 p-4 cursor-pointer hover:bg-slate-50 transition-colors">
+                <label className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors">
                     <input
                         type="radio"
                         name="flashCardDisplay"
@@ -52,16 +52,16 @@ export function FlashCardSettings({ initialPreference, baseLanguage = 'Base', ta
                         checked={preference === 'base-first'}
                         onChange={() => handleChange('base-first')}
                         disabled={isSaving}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        className="h-4 w-4 text-teal-600 focus:ring-teal-500"
                     />
                     <div>
                         <p className="font-medium">{baseLanguageDisplay} First</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="text-sm text-neutral-600">
                             Show {baseLanguageDisplay} text first, flip to reveal {targetLanguageDisplay}
                         </p>
                     </div>
                 </label>
-                <label className="flex items-center gap-3 rounded-lg border border-slate-200 p-4 cursor-pointer hover:bg-slate-50 transition-colors">
+                <label className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors">
                     <input
                         type="radio"
                         name="flashCardDisplay"
@@ -69,18 +69,18 @@ export function FlashCardSettings({ initialPreference, baseLanguage = 'Base', ta
                         checked={preference === 'target-first'}
                         onChange={() => handleChange('target-first')}
                         disabled={isSaving}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        className="h-4 w-4 text-teal-600 focus:ring-teal-500"
                     />
                     <div>
                         <p className="font-medium">{targetLanguageDisplay} First</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="text-sm text-neutral-600">
                             Show {targetLanguageDisplay} text first, flip to reveal {baseLanguageDisplay}
                         </p>
                     </div>
                 </label>
             </div>
             {isSaving && (
-                <p className="text-sm text-blue-600">Saving...</p>
+                <p className="text-sm text-teal-600">Saving...</p>
             )}
         </div>
     );

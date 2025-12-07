@@ -51,51 +51,50 @@ export function DeckCard({ id, title, cardCount, knownCards, totalCards, sourceL
     };
 
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4">
-                <div className="space-y-2">
-                    <CardTitle className="text-base font-medium">
+        <div className="card-playful bg-white p-5">
+            <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="space-y-2 flex-1">
+                    <h3 className="text-lg font-extrabold text-neutral-900">
                         {title}
-                    </CardTitle>
+                    </h3>
                     <div className="flex gap-2">
-                        <Badge variant="secondary">
-                            {cardCount} cards
-                        </Badge>
+                        <span className="badge-playful bg-teal-100 text-teal-700">
+                            📚 {cardCount} cards
+                        </span>
                         {sourceLesson && (
-                            <Badge variant="outline">From lesson</Badge>
+                            <span className="badge-playful bg-orange-100 text-orange-700">📖 From lesson</span>
                         )}
                     </div>
                 </div>
-                <Button
-                    variant="destructive"
-                    size="sm"
+                <button
+                    className="btn-playful bg-error-bg border-error-text text-error-text hover:bg-error/10 px-3 py-1.5 text-sm"
                     onClick={handleDelete}
                     disabled={isDeleting}
                 >
-                    {isDeleting ? 'Deleting...' : 'Delete'}
-                </Button>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm text-slate-600">
-                <div className="flex items-center justify-between">
+                    {isDeleting ? '⏳' : '🗑️'}
+                </button>
+            </div>
+            <div className="flex flex-col gap-2 text-sm text-neutral-700 mb-4">
+                <div className="flex items-center justify-between font-bold">
                     <span>Progress:</span>
-                    <span className="font-medium">
+                    <span>
                         {knownCards} / {totalCards} known
                     </span>
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                <div className="progress-playful bg-neutral-100">
                     <div
-                        className="h-full bg-green-500 transition-all"
+                        className="progress-fill-playful bg-success"
                         style={{
                             width: `${totalCards > 0 ? (knownCards / totalCards) * 100 : 0}%`,
                         }}
                     />
                 </div>
-            </CardContent>
-            <CardFooter className="flex justify-end">
-                <Button asChild size="sm">
-                    <Link href={`/flash-cards/${id}`}>Practice</Link>
-                </Button>
-            </CardFooter>
-        </Card>
+            </div>
+            <Link href={`/flash-cards/${id}`} className="block">
+                <button className="btn-playful btn-primary-playful w-full py-2.5 text-base">
+                    🎯 Practice Now
+                </button>
+            </Link>
+        </div>
     );
 }

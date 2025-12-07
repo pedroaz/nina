@@ -209,12 +209,12 @@ export default function ExercisePracticePage() {
                         {exerciseSet.type === 'multiple_choice' ? 'Multiple Choice' : 'Sentence Creation'}
                     </Badge>
                 </div>
-                <p className="text-slate-600">{exerciseSet.topic}</p>
+                <p className="text-neutral-600">{exerciseSet.topic}</p>
             </div>
 
             {/* Progress */}
             <div className="space-y-2">
-                <div className="flex justify-between text-sm text-slate-600">
+                <div className="flex justify-between text-sm text-neutral-600">
                     <span>Exercise {currentIndex + 1} of {exerciseSet.exercises.length}</span>
                     <span>{Math.round(progress)}% complete</span>
                 </div>
@@ -246,7 +246,7 @@ export default function ExercisePracticePage() {
                                     {(currentExercise as MultipleChoiceExercise).question.target}
                                 </p>
                                 {showTranslation && (
-                                    <p className="text-sm text-slate-600">
+                                    <p className="text-sm text-neutral-600">
                                         {(currentExercise as MultipleChoiceExercise).question.base}
                                     </p>
                                 )}
@@ -257,12 +257,12 @@ export default function ExercisePracticePage() {
                                     {(currentExercise as SentenceCreationExercise).prompt.target}
                                 </p>
                                 {showTranslation && (
-                                    <p className="text-sm text-slate-600">
+                                    <p className="text-sm text-neutral-600">
                                         {(currentExercise as SentenceCreationExercise).prompt.base}
                                     </p>
                                 )}
                                 {(currentExercise as SentenceCreationExercise).context && (
-                                    <p className="text-sm italic text-slate-500">
+                                    <p className="text-sm italic text-neutral-500">
                                         {(currentExercise as SentenceCreationExercise).context}
                                     </p>
                                 )}
@@ -281,12 +281,12 @@ export default function ExercisePracticePage() {
                                 let buttonClass = "w-full justify-start text-left h-auto p-4 ";
                                 if (showResult) {
                                     if (isCorrect) {
-                                        buttonClass += "border-green-500 bg-green-50 hover:bg-green-50";
+                                        buttonClass += "border-success-border bg-success-bg hover:bg-success-bg";
                                     } else if (isSelected && !isCorrect) {
-                                        buttonClass += "border-red-500 bg-red-50 hover:bg-red-50";
+                                        buttonClass += "border-error-border bg-error-bg hover:bg-error-bg";
                                     }
                                 } else if (isSelected) {
-                                    buttonClass += "border-blue-500 bg-blue-50";
+                                    buttonClass += "border-orange-500 bg-orange-50";
                                 }
 
                                 return (
@@ -304,7 +304,7 @@ export default function ExercisePracticePage() {
                                         <div className="space-y-1 w-full">
                                             <div className="font-medium">{option.target}</div>
                                             {showTranslation && (
-                                                <div className="text-sm text-slate-600">{option.base}</div>
+                                                <div className="text-sm text-neutral-600">{option.base}</div>
                                             )}
                                             {showResult && isCorrect && (
                                                 <Badge className="mt-2" variant="default">Correct</Badge>
@@ -322,7 +322,7 @@ export default function ExercisePracticePage() {
                             <textarea
                                 value={userSentence}
                                 onChange={(e) => setUserSentence(e.target.value)}
-                                className="min-h-32 w-full rounded-md border border-slate-200 bg-white p-3 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                                className="min-h-32 w-full rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-200"
                                 placeholder="Write your sentence here..."
                                 disabled={scSubmitting}
                             />
@@ -339,14 +339,14 @@ export default function ExercisePracticePage() {
                     {/* Sentence Creation Result */}
                     {exerciseSet.type === 'sentence_creation' && scResult && (
                         <div className="space-y-4">
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                                <p className="text-sm font-medium text-slate-700 mb-2">Your answer:</p>
+                            <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+                                <p className="text-sm font-medium text-neutral-700 mb-2">Your answer:</p>
                                 <p className="text-base">{userSentence}</p>
                             </div>
 
-                            <div className={`rounded-lg border p-4 ${(scResult.score || 0) >= 80 ? 'border-green-200 bg-green-50' :
+                            <div className={`rounded-lg border p-4 ${(scResult.score || 0) >= 80 ? 'border-success-border bg-success-bg' :
                                     (scResult.score || 0) >= 60 ? 'border-yellow-200 bg-yellow-50' :
-                                        'border-red-200 bg-red-50'
+                                        'border-error-border bg-error-bg'
                                 }`}>
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-sm font-medium">Score</span>
@@ -355,9 +355,9 @@ export default function ExercisePracticePage() {
                                 <p className="text-sm mt-3">{scResult.feedback}</p>
                             </div>
 
-                            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                                <p className="text-sm font-medium text-blue-900 mb-2">Reference answer:</p>
-                                <p className="text-sm text-blue-800">
+                            <div className="rounded-lg border border-teal-200 bg-teal-50 p-4">
+                                <p className="text-sm font-medium text-teal-900 mb-2">Reference answer:</p>
+                                <p className="text-sm text-teal-700">
                                     {(currentExercise as SentenceCreationExercise).referenceAnswer}
                                 </p>
                             </div>
