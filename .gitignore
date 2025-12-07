@@ -4,9 +4,10 @@ data/
 !packages/landing-page/data
 
 # Playwright
-/test-results/
+/tests/test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
 .genkit
+.playwright-mcp/
