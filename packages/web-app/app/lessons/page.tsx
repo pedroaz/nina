@@ -96,9 +96,16 @@ async function LessonList() {
                             </CardTitle>
                         </div>
                         <form action={`/api/lessons/${lesson.id}`} method="post">
-                            <Button variant="destructive" size="icon-sm" type="submit">
-                                <Trash2 className="size-4" />
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button variant="destructive" size="icon-sm" type="submit">
+                                    <Trash2 className="size-4" />
+                                </Button>
+                                <Button asChild size="sm">
+                                    <Link href={`/lessons/${lesson.id}`}>
+                                        <Play></Play>
+                                    </Link>
+                                </Button>
+                            </div>
                         </form>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-2 text-sm text-neutral-600">
@@ -106,13 +113,6 @@ async function LessonList() {
                             {lesson.topic}
                         </p>
                     </CardContent>
-                    <CardFooter className="flex justify-end">
-                        <Button asChild size="sm">
-                            <Link href={`/lessons/${lesson.id}`}>
-                                <Play className="mr-2 size-4" /> Start lesson
-                            </Link>
-                        </Button>
-                    </CardFooter>
                 </Card>
             ))}
         </div>

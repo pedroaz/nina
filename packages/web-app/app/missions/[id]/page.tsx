@@ -129,7 +129,7 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
                             <Button onClick={() => router.push('/missions')} className="flex-1">
                                 Back to Missions
                             </Button>
-                            <Button onClick={() => window.location.reload()} variant="outline" className="flex-1">
+                            <Button onClick={() => window.location.reload()} className="flex-1">
                                 Try Again
                             </Button>
                         </div>
@@ -167,8 +167,8 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
                             >
                                 <div
                                     className={`max-w-[70%] rounded-lg p-3 ${msg.role === 'user'
-                                            ? 'bg-teal-600 text-white'
-                                            : 'bg-neutral-100 text-neutral-900'
+                                        ? 'bg-teal-600 text-white'
+                                        : 'bg-neutral-100 text-neutral-900'
                                         }`}
                                 >
                                     {msg.content}
@@ -202,7 +202,7 @@ export default function MissionChatPage({ params }: { params: Promise<{ id: stri
             </Card>
 
             <div className="flex gap-4">
-                <Button onClick={() => router.push('/missions')} variant="outline">
+                <Button onClick={() => router.push('/missions')}>
                     Back
                 </Button>
                 <Button onClick={handleComplete} disabled={loading || messages.length < 4}>

@@ -16,6 +16,8 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 
+import { Dumbbell } from "lucide-react";
+
 interface GenerateExercisesDialogProps {
     lessonId: string;
     lessonTitle: string;
@@ -78,7 +80,9 @@ export function GenerateExercisesDialog({ lessonId, lessonTitle }: GenerateExerc
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline">Generate Exercises</Button>
+                <Button size="icon" variant="secondary">
+                    <Dumbbell></Dumbbell>
+                </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
@@ -150,7 +154,6 @@ export function GenerateExercisesDialog({ lessonId, lessonTitle }: GenerateExerc
                 <DialogFooter>
                     <Button
                         type="button"
-                        variant="outline"
                         onClick={() => setOpen(false)}
                         disabled={isGenerating}
                     >

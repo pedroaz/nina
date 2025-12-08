@@ -14,6 +14,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
+import { Home, User, BookOpen, Users, Map, CreditCard, Dumbbell, Target } from "lucide-react";
 
 interface GenerateFlashCardsDialogProps {
     lessonId: string;
@@ -75,7 +76,9 @@ export function GenerateFlashCardsDialog({ lessonId, lessonTitle }: GenerateFlas
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline">Generate Flash Cards</Button>
+                <Button size="icon" variant="secondary">
+                    <CreditCard></CreditCard>
+                </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
@@ -125,7 +128,6 @@ export function GenerateFlashCardsDialog({ lessonId, lessonTitle }: GenerateFlas
                 <DialogFooter>
                     <Button
                         type="button"
-                        variant="outline"
                         onClick={() => setOpen(false)}
                         disabled={isGenerating}
                     >

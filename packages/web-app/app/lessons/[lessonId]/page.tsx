@@ -85,9 +85,10 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
     return (
         <>
             <section className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10">
+                <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
+
                 <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="space-y-2">
-                        <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
                         {lesson.vocabulary && (
                             <p className="text-sm text-neutral-500">Vocabulary focus: {lesson.vocabulary}</p>
                         )}
@@ -102,7 +103,7 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
                             lessonId={lessonId}
                             lessonTitle={lessonTitle}
                         />
-                        <Button variant="outline" asChild>
+                        <Button asChild>
                             <Link href="/lessons">Back to lessons</Link>
                         </Button>
                     </div>

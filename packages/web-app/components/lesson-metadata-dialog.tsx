@@ -10,6 +10,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import { Info } from 'lucide-react';
 
 interface MetadataResponse {
     operations?: Array<{
@@ -96,8 +97,8 @@ export function LessonMetadataDialog({ lessonId }: LessonMetadataDialogProps) {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                    Metadata
+                <Button size="icon" variant="secondary">
+                    <Info></Info>
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">

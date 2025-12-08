@@ -205,7 +205,7 @@ export default function ExercisePracticePage() {
             <div>
                 <div className="flex items-center gap-2 mb-2">
                     <h1 className="text-2xl font-semibold">{exerciseSet.title}</h1>
-                    <Badge variant="outline">
+                    <Badge>
                         {exerciseSet.type === 'multiple_choice' ? 'Multiple Choice' : 'Sentence Creation'}
                     </Badge>
                 </div>
@@ -292,7 +292,6 @@ export default function ExercisePracticePage() {
                                 return (
                                     <Button
                                         key={index}
-                                        variant="outline"
                                         className={buttonClass}
                                         onClick={() => {
                                             if (!mcSubmitted) {
@@ -345,8 +344,8 @@ export default function ExercisePracticePage() {
                             </div>
 
                             <div className={`rounded-lg border p-4 ${(scResult.score || 0) >= 80 ? 'border-success-border bg-success-bg' :
-                                    (scResult.score || 0) >= 60 ? 'border-yellow-200 bg-yellow-50' :
-                                        'border-error-border bg-error-bg'
+                                (scResult.score || 0) >= 60 ? 'border-yellow-200 bg-yellow-50' :
+                                    'border-error-border bg-error-bg'
                                 }`}>
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-sm font-medium">Score</span>
@@ -367,7 +366,6 @@ export default function ExercisePracticePage() {
                     {/* Action Buttons */}
                     <div className="flex justify-between pt-4">
                         <Button
-                            variant="outline"
                             onClick={() => router.push('/exercises')}
                         >
                             Back to exercises

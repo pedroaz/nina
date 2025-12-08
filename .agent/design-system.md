@@ -44,7 +44,7 @@ import { Button } from "@/components/ui/button";
 <Button>Primary Action</Button>
 <Button variant="secondary">Secondary Action</Button>
 <Button variant="destructive">Delete</Button>
-<Button variant="outline">Cancel</Button>
+<Button variant="destructive">Cancel</Button>
 ```
 
 ### 3. Badge (`components/ui/badge.tsx`)

@@ -148,7 +148,6 @@ export function FlashCardPractice({
                             </Button>
                             <Button
                                 onClick={() => window.location.href = '/flash-cards'}
-                                variant="outline"
                                 size="lg"
                                 className="text-lg px-8"
                             >

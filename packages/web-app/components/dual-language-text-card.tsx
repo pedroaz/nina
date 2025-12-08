@@ -18,6 +18,7 @@ import {
     ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { translateText } from '@/lib/translation';
+import { BookA, BookType } from 'lucide-react';
 
 type LanguageKey = 'base' | 'target';
 
@@ -237,8 +238,8 @@ export function DualLanguageTextCard({
                     <CardTitle className="text-lg font-semibold">{heading}</CardTitle>
                     <CardAction>
                         <div className="flex items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={handleToggle}>
-                                {showTranslation ? 'Translate' : 'Translate'}
+                            <Button size="sm" onClick={handleToggle}>
+                                <BookA></BookA>
                             </Button>
                         </div>
                     </CardAction>

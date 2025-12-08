@@ -171,7 +171,6 @@ export function AdminDatabasePanel() {
 
                     <DialogFooter>
                         <Button
-                            variant="outline"
                             onClick={() => setIsDialogOpen(false)}
                             disabled={isClearing}
                         >

@@ -71,7 +71,7 @@ export default async function ExercisesPage() {
                                                             {set.topic}
                                                         </CardDescription>
                                                     </div>
-                                                    <Badge variant="outline">MC</Badge>
+                                                    <Badge>MC</Badge>
                                                 </div>
                                             </CardHeader>
                                             <CardContent>
@@ -110,7 +110,7 @@ export default async function ExercisesPage() {
                                                             {set.topic}
                                                         </CardDescription>
                                                     </div>
-                                                    <Badge variant="outline">SC</Badge>
+                                                    <Badge>SC</Badge>
                                                 </div>
                                             </CardHeader>
                                             <CardContent>

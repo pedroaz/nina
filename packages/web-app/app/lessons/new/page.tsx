@@ -167,7 +167,6 @@ export default function CustomLessonsNew() {
                     <Button
                         type="button"
                         onClick={() => setFocus(focus === 'vocabulary' ? null : 'vocabulary')}
-                        variant="destructive"
                         className={`${focus === 'vocabulary'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
                             : 'border-neutral-200'
@@ -181,7 +180,6 @@ export default function CustomLessonsNew() {
                     <Button
                         type="button"
                         onClick={() => setFocus(focus === 'grammar' ? null : 'grammar')}
-                        variant="outline"
                         className={`${focus === 'grammar'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
                             : 'border-neutral-200'
@@ -230,7 +228,6 @@ export default function CustomLessonsNew() {
                     <Button
                         type="button"
                         onClick={() => setModelType('detailed')}
-                        variant="outline"
                         className={`flex-1 ${modelType === 'detailed'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
                             : 'border-neutral-200'
@@ -247,7 +244,6 @@ export default function CustomLessonsNew() {
                     <Button
                         type="button"
                         onClick={() => setModelType('fast')}
-                        variant="outline"
                         className={`flex-1 ${modelType === 'fast'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
                             : 'border-neutral-200'
@@ -290,7 +286,7 @@ export default function CustomLessonsNew() {
                 <div className="flex items-center justify-end gap-4">
                     <Button
                         type="button"
-                        variant="ghost"
+                        variant="destructive"
                         onClick={() => router.push("/lessons")}
                         disabled={isSubmitting}
                     >
