@@ -166,8 +166,16 @@ export function FlashCardPractice({
         <div className={cn("mx-auto flex w-full flex-col gap-6", !isMini && "min-h-[60vh] max-w-2xl px-4 py-10", className)}>
             <div className="flex items-center justify-between">
                 <h1 className={cn("font-extrabold", isMini ? "text-xl" : "text-3xl")}>{deckTitle}</h1>
-                <Badge variant="secondary" className="text-base px-3 py-1">
-                    {currentIndex + 1} / {shuffledCards.length}
+                <Badge variant="secondary" className="text-base flex items-center gap-2 px-4 py-2">
+                    <div>
+                        {currentIndex + 1}
+                    </div>
+                    <div>
+                        /
+                    </div>
+                    <div>
+                        {shuffledCards.length}
+                    </div>
                 </Badge>
             </div>
 
@@ -177,33 +185,21 @@ export function FlashCardPractice({
             >
                 <div className={cn("flex items-center justify-center h-full", isMini ? "p-6" : "p-12")}>
                     <div className="text-center space-y-4">
-                        <p className="text-xs text-neutral-600 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
-                            {isFlipped ? (displayPreference === 'base-first' ? <Target className="size-4" /> : <Languages className="size-4" />) : (displayPreference === 'base-first' ? <Languages className="size-4" /> : <Target className="size-4" />)}
-                            {isFlipped ? (displayPreference === 'base-first' ? 'Target' : 'English') : (displayPreference === 'base-first' ? 'English' : 'Target')}
-                        </p>
                         <p className={cn("font-bold leading-relaxed text-neutral-900", isMini ? "text-2xl" : "text-3xl")}>
                             {isFlipped ? backSide : frontSide}
                         </p>
                         {!isFlipped && (
                             <p className="text-sm text-neutral-500 mt-4 font-semibold">
-                                👆 Click to flip
+                                (Click to flip)
                             </p>
                         )}
+                        { }
                     </div>
                 </div>
             </Card>
 
             <div className="flex gap-4 justify-center">
-                {!isFlipped ? (
-                    <Button
-                        variant="secondary"
-                        size="lg"
-                        className="text-lg px-8"
-                        onClick={handleFlip}
-                    >
-                        <RotateCcw className="mr-2 size-5" /> Flip Card
-                    </Button>
-                ) : (
+                {isFlipped ? (
                     <>
                         <Button
                             variant="destructive"
@@ -211,17 +207,17 @@ export function FlashCardPractice({
                             className="text-lg px-6"
                             onClick={() => handleAnswer('dontKnow')}
                         >
-                            <X className="mr-2 size-5" /> I don&apos;t know
+                            <X className="mr-2 size-5" /> Revise later
                         </Button>
                         <Button
                             size="lg"
                             className="text-lg px-6 bg-success border-success-text hover:bg-success/90"
                             onClick={() => handleAnswer('know')}
                         >
-                            <Check className="mr-2 size-5" /> I know it
+                            <Check className="mr-2 size-5" /> Got it!
                         </Button>
                     </>
-                )}
+                ) : null}
             </div>
         </div>
     );
