@@ -11,7 +11,7 @@ export default function CustomLessonsNew() {
     const router = useRouter();
     const [topic, setTopic] = useState("");
     const [image, setImage] = useState<string | null>(null);
-    const [modelType, setModelType] = useState<'fast' | 'detailed'>('detailed');
+    const [modelType, setModelType] = useState<'fast' | 'detailed'>('fast');
     const [focus, setFocus] = useState<'vocabulary' | 'grammar' | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -227,23 +227,6 @@ export default function CustomLessonsNew() {
                 <div className="flex gap-3">
                     <Button
                         type="button"
-                        variant={modelType === 'detailed' ? "default" : "outline"}
-                        onClick={() => setModelType('detailed')}
-                        className={`flex-1 ${modelType === 'detailed'
-                            ? 'border-orange-500 bg-orange-50 text-orange-700'
-                            : 'border-neutral-200'
-                            }`}
-                        disabled={isSubmitting}
-                    >
-                        <Sparkles className="h-4 w-4" />
-                        <div className="text-left">
-                            <div className="text-sm font-semibold">Detailed</div>
-                            <div className="text-xs opacity-75">Comprehensive</div>
-                        </div>
-                    </Button>
-
-                    <Button
-                        type="button"
                         variant={modelType === 'fast' ? "default" : "outline"}
                         onClick={() => setModelType('fast')}
                         className={`flex-1 ${modelType === 'fast'
@@ -256,6 +239,23 @@ export default function CustomLessonsNew() {
                         <div className="text-left">
                             <div className="text-sm font-semibold">Fast</div>
                             <div className="text-xs opacity-75">Quick & Efficient</div>
+                        </div>
+                    </Button>
+
+                    <Button
+                        type="button"
+                        variant={modelType === 'detailed' ? "default" : "outline"}
+                        onClick={() => setModelType('detailed')}
+                        className={`flex-1 ${modelType === 'detailed'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-neutral-200'
+                            }`}
+                        disabled={isSubmitting}
+                    >
+                        <Sparkles className="h-4 w-4" />
+                        <div className="text-left">
+                            <div className="text-sm font-semibold">Detailed</div>
+                            <div className="text-xs opacity-75">Comprehensive</div>
                         </div>
                     </Button>
                 </div>

@@ -29,9 +29,6 @@ export function DeckCard({ id, title, cardCount, knownCards, totalCards, sourceL
     const [isDeleting, setIsDeleting] = useState(false);
 
     const handleDelete = async () => {
-        if (!confirm(`Are you sure you want to delete "${title}"?`)) {
-            return;
-        }
 
         setIsDeleting(true);
 

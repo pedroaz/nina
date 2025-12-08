@@ -20,7 +20,7 @@ const logger = winston.createLogger({
             return log;
         })
     ),
-    defaultMeta: { service: 'nina' },
+    defaultMeta: {},
     transports: [
         new winston.transports.Console()
     ],
