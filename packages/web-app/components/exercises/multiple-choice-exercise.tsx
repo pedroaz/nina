@@ -44,6 +44,11 @@ export function MultipleChoiceExerciseComponent({
 }: MultipleChoiceExerciseProps) {
     const [selectedOption, setSelectedOption] = React.useState<number | null>(null);
 
+    React.useEffect(() => {
+        // Reset selected option when the exercise changes
+        setSelectedOption(null);
+    }, [exercise]);
+
     const handleSubmit = async () => {
         if (selectedOption === null) return;
 
