@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { clearAllDatabaseTablesCommand, getDatabaseStatsCommand, logger } from "@core/index";
+import { clearAllDatabaseTablesCommand, getDatabaseStatsCommand } from "@core/index";
+import logger from "@/lib/logger"
 
 const ADMIN_EMAIL = "nina-app@outlook.com";
 
@@ -20,7 +21,7 @@ export async function GET() {
         const stats = await getDatabaseStatsCommand();
         return NextResponse.json({ stats });
     } catch (error) {
-        logger.error('[Admin API] Error getting database stats:', error);
+        logger.error(`[Admin API] Error getting database stats: ${error}`);
         return NextResponse.json(
             { error: "Failed to get database statistics" },
             { status: 500 }
@@ -46,7 +47,7 @@ export async function DELETE() {
 
         return NextResponse.json(result);
     } catch (error) {
-        logger.error('[Admin API] Error clearing database:', error);
+        logger.error(`[Admin API] Error clearing database: ${error}`);
         return NextResponse.json(
             { error: "Failed to clear database" },
             { status: 500 }

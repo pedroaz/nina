@@ -34,7 +34,7 @@ export async function migrateUserLanguages() {
             }
         );
 
-        logger.info(`[Migration] Updated ${result.modifiedCount} users`);
+        logger.info({ modifiedCount: result.modifiedCount }, '[Migration] Updated users');
         logger.info('[Migration] Migration completed successfully');
 
         return {
@@ -51,7 +51,7 @@ export async function migrateUserLanguages() {
 if (require.main === module) {
     migrateUserLanguages()
         .then((result) => {
-            logger.info('Migration result:', result);
+            logger.info(result, 'Migration result');
             process.exit(0);
         })
         .catch((error) => {

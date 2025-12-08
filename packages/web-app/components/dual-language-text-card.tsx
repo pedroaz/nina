@@ -18,8 +18,8 @@ import {
     ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { translateText } from '@/lib/translation';
-import { BookA, BookType } from 'lucide-react';
-import { logger } from '@core/index';
+import { BookA } from 'lucide-react';
+import logger from "@/lib/logger"
 
 type LanguageKey = 'base' | 'target';
 
@@ -229,7 +229,7 @@ export function DualLanguageTextCard({
     };
 
     const handleAddToFlashcard = () => {
-        logger.info('Add to flash card:', highlightedText);
+        logger.info(`Add to flash card: {highlightedText}`);
     };
 
     return (

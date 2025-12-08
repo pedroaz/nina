@@ -1,29 +1,21 @@
-import winston from 'winston';
+import pino from 'pino';
 
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 
 /**
- * Shared logger instance for backend and frontend
- * Uses console transport for both server and client logging
- * Can be extended with additional transports (file, database, HTTP, etc.) in the future
+ * Server-side logger with Pino
+ * Use this in API routes, server components, and server actions
  */
-const logger = winston.createLogger({
+export const logger = pino({
     level: LOG_LEVEL,
-    format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.errors({ stack: true }),
-        winston.format.printf(({ level, message, timestamp, ...meta }) => {
-            let log = `${timestamp} [${level.toUpperCase()}]: ${message}`;
-            if (Object.keys(meta).length > 0) {
-                log += ` ${JSON.stringify(meta)}`;
-            }
-            return log;
-        })
-    ),
-    defaultMeta: {},
-    transports: [
-        new winston.transports.Console()
-    ],
+    base: { service: 'nina' },
+    timestamp: pino.stdTimeFunctions.isoTime,
+    formatters: {
+        level: (label) => {
+            return { level: label.toUpperCase() };
+        },
+    },
+    // Add more server-only transports here using pino.transport()
 });
 
 export default logger;

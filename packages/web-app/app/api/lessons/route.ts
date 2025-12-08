@@ -5,9 +5,9 @@ import {
     createLessonCommand,
     getLessonsByUserId,
     getUserByEmail,
-    logger,
 } from "@core/index";
 import { MODEL_CATEGORIES, getModelConfig } from "@core/llm/llm";
+import logger from "@/lib/logger"
 
 
 export async function POST(req: Request) {

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { logger } from "@core/index";
+import logger from "@/lib/logger"
+import { BookA } from 'lucide-react';
 
 type DualLanguage = {
     base: string;
@@ -99,9 +100,7 @@ export default function ExercisePracticePage() {
 
         const exercise = exerciseSet.exercises[currentIndex] as MultipleChoiceExercise;
 
-        logger.info('Submitting exercise:', exercise);
-        logger.info('Exercise ID:', exercise._id);
-        logger.info('Selected option:', selectedOption);
+        logger.info(`Submitting exercise: ${exercise._id}`);
 
         try {
             const response = await fetch(`/api/exercise-sets/${setId}/submit`, {
@@ -210,7 +209,6 @@ export default function ExercisePracticePage() {
                         {exerciseSet.type === 'multiple_choice' ? 'Multiple Choice' : 'Sentence Creation'}
                     </Badge>
                 </div>
-                <p className="text-neutral-600">{exerciseSet.topic}</p>
             </div>
 
             {/* Progress */}
@@ -231,10 +229,10 @@ export default function ExercisePracticePage() {
                         </CardTitle>
                         <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon"
                             onClick={() => setShowTranslation(!showTranslation)}
                         >
-                            {showTranslation ? 'Hide' : 'Show'} translation
+                            <BookA />
                         </Button>
                     </div>
                 </CardHeader>

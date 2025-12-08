@@ -1,4 +1,4 @@
-import winston from 'winston';
+import pino from 'pino';
 
 /**
  * Client-side logger for web-app
@@ -16,45 +16,22 @@ const LOG_LEVEL = process.env.NEXT_PUBLIC_LOG_LEVEL || 'info';
 const createClientLogger = () => {
     if (!ENABLE_CLIENT_LOGS) {
         // Return a silent logger when logs are disabled
-        return winston.createLogger({
-            level: 'error', // Only show critical errors
-            format: winston.format.combine(
-                winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-                winston.format.errors({ stack: true }),
-                winston.format.printf(({ level, message, timestamp, ...meta }) => {
-                    let log = `${timestamp} [${level.toUpperCase()}]: ${message}`;
-                    if (Object.keys(meta).length > 0) {
-                        log += ` ${JSON.stringify(meta)}`;
-                    }
-                    return log;
-                })
-            ),
-            transports: [
-                new winston.transports.Console({
-                    silent: true
-                })
-            ],
+        return pino({
+            level: 'silent',
+            browser: {
+                asObject: false,
+            },
         });
     }
 
     // Return a logger that outputs to console when enabled
-    return winston.createLogger({
+    return pino({
         level: LOG_LEVEL,
-        format: winston.format.combine(
-            winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-            winston.format.errors({ stack: true }),
-            winston.format.printf(({ level, message, timestamp, ...meta }) => {
-                let log = `${timestamp} [${level.toUpperCase()}]: ${message}`;
-                if (Object.keys(meta).length > 0) {
-                    log += ` ${JSON.stringify(meta)}`;
-                }
-                return log;
-            })
-        ),
-        defaultMeta: { service: 'nina-web' },
-        transports: [
-            new winston.transports.Console()
-        ],
+        base: { service: 'nina-web' },
+        browser: {
+            asObject: false,
+            serialize: true,
+        },
     });
 };
 

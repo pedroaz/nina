@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
-import { sendChatMessage, type ChatMessage, getUserByEmail, savePromptMetadataCommand, logger } from '@core/index';
+import { sendChatMessage, type ChatMessage, getUserByEmail, savePromptMetadataCommand } from '@core/index';
 import type { Lesson } from '@core/entities/lesson';
+import logger from "@/lib/logger"
+
 
 export async function POST(request: NextRequest) {
     const startTime = performance.now();
@@ -74,7 +76,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ response }, { status: 200 });
     } catch (error) {
         const totalTime = performance.now() - startTime;
-        logger.error(`[Chat API] Error after ${totalTime.toFixed(2)}ms:`, error);
+        logger.error(`[Chat API] Error after ${totalTime.toFixed(2)}ms: ${String(error)}`);
         return NextResponse.json(
             { error: 'Failed to process chat message' },
             { status: 500 }

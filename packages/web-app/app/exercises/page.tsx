@@ -4,8 +4,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getExerciseSetsByUserIdQuery, getUserByEmail } from "@core/index";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Play, Trash2 } from "lucide-react";
 
 export default async function ExercisesPage() {
     const session = await getServerSession(authOptions);
@@ -61,31 +62,32 @@ export default async function ExercisesPage() {
                             </h2>
                             <div className="grid gap-4 md:grid-cols-2">
                                 {multipleChoiceSets.map((set) => (
-                                    <Link key={set._id} href={`/exercises/${set._id}`}>
-                                        <Card className="h-full cursor-pointer hover:border-orange-500 transition-colors">
-                                            <CardHeader>
-                                                <div className="flex items-start justify-between">
-                                                    <div className="flex-1">
-                                                        <CardTitle className="text-lg">{set.title}</CardTitle>
-                                                        <CardDescription className="mt-1">
-                                                            {set.topic}
-                                                        </CardDescription>
-                                                    </div>
-                                                    <Badge>MC</Badge>
+                                    <Card key={set._id}>
+                                        <CardHeader className="flex flex-row items-start justify-between gap-4">
+                                            <div className="space-y-1">
+                                                <CardTitle className="text-base font-medium">
+                                                    {set.title}
+                                                </CardTitle>
+                                            </div>
+                                            <form action={`/api/exercise-sets/${set._id}`} method="post">
+                                                <div className="flex gap-2">
+                                                    <Button variant="destructive" size="icon-sm" type="submit">
+                                                        <Trash2 className="size-4" />
+                                                    </Button>
+                                                    <Button asChild size="sm">
+                                                        <Link href={`/exercises/${set._id}`}>
+                                                            <Play></Play>
+                                                        </Link>
+                                                    </Button>
                                                 </div>
-                                            </CardHeader>
-                                            <CardContent>
-                                                <p className="text-sm text-neutral-600">
-                                                    {set.exercises.length} {set.exercises.length === 1 ? 'exercise' : 'exercises'}
-                                                </p>
-                                                {set.sourceLesson && (
-                                                    <Badge variant="orange" className="mt-2">
-                                                        From Lesson
-                                                    </Badge>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Link>
+                                            </form>
+                                        </CardHeader>
+                                        <CardContent className="flex flex-col gap-2 text-sm text-neutral-600">
+                                            <p className="whitespace-pre-wrap leading-relaxed">
+                                                {set.topic || "No topic available."}
+                                            </p>
+                                        </CardContent>
+                                    </Card>
                                 ))}
                             </div>
                         </div>
@@ -100,31 +102,32 @@ export default async function ExercisesPage() {
                             </h2>
                             <div className="grid gap-4 md:grid-cols-2">
                                 {sentenceCreationSets.map((set) => (
-                                    <Link key={set._id} href={`/exercises/${set._id}`}>
-                                        <Card className="hover:bg-neutral-50 transition-colors cursor-pointer">
-                                            <CardHeader>
-                                                <div className="flex items-start justify-between">
-                                                    <div className="flex-1">
-                                                        <CardTitle className="text-lg">{set.title}</CardTitle>
-                                                        <CardDescription className="mt-1">
-                                                            {set.topic}
-                                                        </CardDescription>
-                                                    </div>
-                                                    <Badge>SC</Badge>
+                                    <Card key={set._id}>
+                                        <CardHeader className="flex flex-row items-start justify-between gap-4">
+                                            <div className="space-y-1">
+                                                <CardTitle className="text-base font-medium">
+                                                    {set.title}
+                                                </CardTitle>
+                                            </div>
+                                            <form action={`/api/exercise-sets/${set._id}`} method="post">
+                                                <div className="flex gap-2">
+                                                    <Button variant="destructive" size="icon-sm" type="submit">
+                                                        <Trash2 className="size-4" />
+                                                    </Button>
+                                                    <Button asChild size="sm">
+                                                        <Link href={`/exercises/${set._id}`}>
+                                                            <Play></Play>
+                                                        </Link>
+                                                    </Button>
                                                 </div>
-                                            </CardHeader>
-                                            <CardContent>
-                                                <p className="text-sm text-neutral-600">
-                                                    {set.exercises.length} {set.exercises.length === 1 ? 'exercise' : 'exercises'}
-                                                </p>
-                                                {set.sourceLesson && (
-                                                    <Badge variant="secondary" className="mt-2">
-                                                        From Lesson
-                                                    </Badge>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    </Link>
+                                            </form>
+                                        </CardHeader>
+                                        <CardContent className="flex flex-col gap-2 text-sm text-neutral-600">
+                                            <p className="whitespace-pre-wrap leading-relaxed">
+                                                {set.topic || "No topic available."}
+                                            </p>
+                                        </CardContent>
+                                    </Card>
                                 ))}
                             </div>
                         </div>

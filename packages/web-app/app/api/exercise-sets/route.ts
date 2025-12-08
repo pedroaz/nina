@@ -8,9 +8,9 @@ import {
     generateSentenceCreationFromLessonCommand,
     createExerciseSetCommand,
     getExerciseSetsByUserIdQuery,
-    getUserByEmail,
-    logger,
+    getUserByEmail
 } from "@core/index";
+import logger from "@/lib/logger"
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
@@ -135,7 +135,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json(exerciseSet, { status: 201 });
     } catch (error) {
-        logger.error('[Exercise Sets API] Error creating exercise set:', error);
+        logger.error(`[Exercise Sets API] Error creating exercise set: ${error}`);
         return NextResponse.json(
             { error: "Failed to create exercise set" },
             { status: 500 }

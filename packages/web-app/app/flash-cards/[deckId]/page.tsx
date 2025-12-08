@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getFlashCardDeckById, getUserByEmail, logger } from "@core/index";
+import { getFlashCardDeckById, getUserByEmail } from "@core/index";
+import logger from "@/lib/logger"
 import { FlashCardPractice } from "@/components/flashcard-practice";
 
 export default async function FlashCardDeckPage({ params }: { params: Promise<{ deckId: string }> }) {
@@ -19,7 +20,7 @@ export default async function FlashCardDeckPage({ params }: { params: Promise<{ 
         redirect(signInUrl);
     }
 
-    logger.info('[Flash Card Practice] Fetching deck with ID:', { deckId });
+    logger.info({ deckId }, '[Flash Card Practice] Fetching deck with ID');
     const deck = await getFlashCardDeckById(deckId);
 
     if (!deck) {
@@ -27,9 +28,9 @@ export default async function FlashCardDeckPage({ params }: { params: Promise<{ 
         redirect('/flash-cards');
     }
 
-    logger.info('[Flash Card Practice] Deck found:', { deckTitle: deck.title });
-    logger.info('[Flash Card Practice] User ID:', { userId: user._id });
-    logger.info('[Flash Card Practice] Deck owner ID:', { deckOwnerId: deck.studentData.userId });
+    logger.info({ deckTitle: deck.title }, '[Flash Card Practice] Deck found');
+    logger.info({ userId: user._id }, '[Flash Card Practice] User ID');
+    logger.info({ deckOwnerId: deck.studentData.userId }, '[Flash Card Practice] Deck owner ID');
 
     // Verify ownership - convert both to strings for comparison
     if (deck.studentData.userId.toString() !== user._id.toString()) {
