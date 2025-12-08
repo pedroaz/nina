@@ -87,19 +87,21 @@ export function DashboardStats({ userId }: DashboardStatsProps) {
             {statCards.map((stat, index) => {
                 const Icon = stat.icon;
                 const isOrange = index % 2 === 0;
-                const cardClass = isOrange ? 'stat-card-orange' : 'stat-card-teal';
+                const bgColor = isOrange ? 'bg-orange-50 border-orange-600' : 'bg-teal-50 border-teal-600';
+                const iconBg = isOrange ? 'bg-orange-200' : 'bg-teal-200';
+                
                 return (
-                    <div key={stat.title} className={`card-playful ${cardClass} p-6`}>
+                    <Card key={stat.title} className={`${bgColor} p-6`}>
                         <div className="flex items-center justify-between mb-3">
                             <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wide">
                                 {stat.title}
                             </h3>
-                            <div className={`icon-bubble ${stat.bgColor === 'bg-orange-50' || stat.bgColor === 'bg-orange-100' ? 'bg-orange-200' : 'bg-teal-200'}`}>
+                            <div className={`rounded-2xl border-[3px] border-neutral-900 p-2.5 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.15)] ${iconBg}`}>
                                 <Icon className={`h-5 w-5 ${stat.color}`} />
                             </div>
                         </div>
                         <div className="text-4xl font-extrabold text-neutral-900">{stat.value}</div>
-                    </div>
+                    </Card>
                 );
             })}
         </div>

@@ -42,12 +42,14 @@ export default async function ExercisesPage() {
             </div>
 
             {exerciseSets.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-neutral-200 p-12 text-center text-neutral-500">
-                    <p>You don&apos;t have any exercise sets yet.</p>
-                    <p className="mt-2 text-sm">
-                        Create an exercise set to start practicing your language skills.
-                    </p>
-                </div>
+                <Card className="border-dashed border-neutral-300 shadow-none hover:shadow-none hover:translate-y-0 bg-neutral-50">
+                    <div className="p-12 text-center text-neutral-500">
+                        <p className="text-lg font-medium">You don&apos;t have any exercise sets yet.</p>
+                        <p className="mt-2 text-sm">
+                            Create an exercise set to start practicing your language skills.
+                        </p>
+                    </div>
+                </Card>
             ) : (
                 <div className="space-y-8">
                     {/* Multiple Choice Section */}
@@ -55,12 +57,12 @@ export default async function ExercisesPage() {
                         <div>
                             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                                 Multiple Choice
-                                <Badge variant="secondary">{multipleChoiceSets.length}</Badge>
+                                <Badge variant="teal">{multipleChoiceSets.length}</Badge>
                             </h2>
                             <div className="grid gap-4 md:grid-cols-2">
                                 {multipleChoiceSets.map((set) => (
                                     <Link key={set._id} href={`/exercises/${set._id}`}>
-                                        <Card className="hover:bg-neutral-50 transition-colors cursor-pointer">
+                                        <Card className="h-full cursor-pointer hover:border-orange-500 transition-colors">
                                             <CardHeader>
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1">
@@ -77,7 +79,7 @@ export default async function ExercisesPage() {
                                                     {set.exercises.length} {set.exercises.length === 1 ? 'exercise' : 'exercises'}
                                                 </p>
                                                 {set.sourceLesson && (
-                                                    <Badge variant="secondary" className="mt-2">
+                                                    <Badge variant="orange" className="mt-2">
                                                         From Lesson
                                                     </Badge>
                                                 )}
@@ -94,7 +96,7 @@ export default async function ExercisesPage() {
                         <div>
                             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                                 Sentence Creation
-                                <Badge variant="secondary">{sentenceCreationSets.length}</Badge>
+                                <Badge variant="teal">{sentenceCreationSets.length}</Badge>
                             </h2>
                             <div className="grid gap-4 md:grid-cols-2">
                                 {sentenceCreationSets.map((set) => (

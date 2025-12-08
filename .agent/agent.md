@@ -11,6 +11,7 @@ Before starting any task, consult the relevant documentation files in this direc
 - **[stack.md](./stack.md)**: **CRITICAL**. Review the technology stack and versions. Do not introduce incompatible libraries or patterns.
 - **[role.md](./role.md)**: Internalize your role as a Senior Fullstack Developer.
 - **[architecture-app.md](./architecture-app.md)**: Consult this when working on the `web-app` package.
+- **[design-system.md](./design-system.md)**: **CRITICAL**. Consult this for UI/UX guidelines, component usage, and styling standards for the `web-app`.
 - **[architecture-landing-page.md](./architecture-landing-page.md)**: Consult this when working on the `landing-page` package.
 
 ## Reminders

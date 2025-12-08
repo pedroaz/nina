@@ -82,30 +82,30 @@ export function UsageStats() {
                 </CardHeader>
                 <CardContent>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                        <div className="card-playful bg-neutral-50 p-4">
+                        <Card className="bg-neutral-50 p-4">
                             <p className="text-xs text-neutral-700 font-bold uppercase mb-2">Total Operations</p>
                             <p className="text-3xl font-extrabold text-neutral-900">{summary.operationCount.toLocaleString()}</p>
-                        </div>
-                        <div className="card-playful bg-neutral-50 p-4">
+                        </Card>
+                        <Card className="bg-neutral-50 p-4">
                             <p className="text-xs text-neutral-700 font-bold uppercase mb-2">Total Tokens</p>
                             <p className="text-3xl font-extrabold text-neutral-900">{summary.totalTokens.toLocaleString()}</p>
                             <p className="text-xs text-neutral-600 font-semibold mt-1">
                                 {summary.totalInputTokens.toLocaleString()} in / {summary.totalOutputTokens.toLocaleString()} out
                             </p>
-                        </div>
-                        <div className="card-playful bg-neutral-50 p-4">
+                        </Card>
+                        <Card className="bg-neutral-50 p-4">
                             <p className="text-xs text-neutral-700 font-bold uppercase mb-2">Total Cost</p>
                             <p className="text-3xl font-extrabold text-neutral-900">${summary.totalCost.toFixed(4)}</p>
                             <p className="text-xs text-neutral-600 font-semibold mt-1">
                                 ${summary.totalInputCost.toFixed(4)} in / ${summary.totalOutputCost.toFixed(4)} out
                             </p>
-                        </div>
-                        <div className="card-playful stat-card-teal p-4">
+                        </Card>
+                        <Card className="border-teal-600 bg-teal-50 p-4">
                             <p className="text-xs text-teal-900 font-bold uppercase mb-2">💰 Avg Cost/Operation</p>
                             <p className="text-3xl font-extrabold text-teal-900">
                                 ${(summary.totalCost / summary.operationCount).toFixed(4)}
                             </p>
-                        </div>
+                        </Card>
                     </div>
                 </CardContent>
             </Card>

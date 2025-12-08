@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { CheckCircle2, Play } from "lucide-react";
 
 interface Mission {
     _id: string;
@@ -67,23 +69,23 @@ export default function MissionsPage() {
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {missions.map((mission) => (
-                    <Card key={mission._id} className="hover:shadow-lg transition-shadow">
+                    <Card key={mission._id} className="flex flex-col">
                         <CardHeader>
                             <div className="flex items-center justify-between mb-2">
                                 <CardTitle className="text-xl">{mission.title}</CardTitle>
-                                <span className="px-2 py-1 text-xs font-semibold rounded bg-teal-100 text-teal-700">
+                                <Badge variant="teal">
                                     {mission.difficulty}
-                                </span>
+                                </Badge>
                             </div>
                             <CardDescription>{mission.scenario}</CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            <div className="mb-4">
+                        <CardContent className="flex-1 flex flex-col justify-between gap-4">
+                            <div>
                                 <h4 className="text-sm font-semibold mb-2">Objectives:</h4>
-                                <ul className="text-sm text-neutral-600 space-y-1">
+                                <ul className="text-sm text-neutral-600 space-y-2">
                                     {mission.objectives.map((obj, idx) => (
-                                        <li key={idx} className="flex items-start">
-                                            <span className="mr-2">•</span>
+                                        <li key={idx} className="flex items-start gap-2">
+                                            <CheckCircle2 className="size-4 text-success mt-0.5 shrink-0" />
                                             <span>{obj}</span>
                                         </li>
                                     ))}
@@ -93,7 +95,7 @@ export default function MissionsPage() {
                                 onClick={() => router.push(`/missions/${mission._id}`)}
                                 className="w-full"
                             >
-                                Start Mission
+                                <Play className="mr-2 size-4" /> Start Mission
                             </Button>
                         </CardContent>
                     </Card>

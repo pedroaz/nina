@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getFlashCardDecksByUserId, getUserByEmail, getDeckProgressSummary } from "@core/index";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { DeckCard } from "@/components/deck-card";
 
 type DeckListItem = {
@@ -65,12 +66,14 @@ export default async function FlashCards() {
             </div>
 
             {deckItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-neutral-200 p-12 text-center text-neutral-500">
-                    <p>You don&apos;t have any flash card decks yet.</p>
-                    <p className="mt-2 text-sm">
-                        Create a deck to start practicing vocabulary and phrases.
-                    </p>
-                </div>
+                <Card className="border-dashed border-neutral-300 shadow-none hover:shadow-none hover:translate-y-0 bg-neutral-50">
+                    <div className="p-12 text-center text-neutral-500">
+                        <p className="text-lg font-medium">You don&apos;t have any flash card decks yet.</p>
+                        <p className="mt-2 text-sm">
+                            Create a deck to start practicing vocabulary and phrases.
+                        </p>
+                    </div>
+                </Card>
             ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                     {deckItems.map((deck) => (

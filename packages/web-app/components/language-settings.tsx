@@ -98,7 +98,7 @@ export function LanguageSettings({ initialBaseLanguage, initialTargetLanguage }:
                     {BASE_LANGUAGES.map((langOption) => (
                         <label
                             key={langOption.value}
-                            className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
+                            className="flex items-center gap-3 rounded-2xl border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
                         >
                             <input
                                 type="radio"
@@ -127,7 +127,7 @@ export function LanguageSettings({ initialBaseLanguage, initialTargetLanguage }:
                     {TARGET_LANGUAGES.map((langOption) => (
                         <label
                             key={langOption.value}
-                            className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
+                            className="flex items-center gap-3 rounded-2xl border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
                         >
                             <input
                                 type="radio"

@@ -44,7 +44,7 @@ export function FlashCardSettings({ initialPreference, baseLanguage = 'Base', ta
                 Choose which language to show first when practicing flash cards.
             </p>
             <div className="space-y-2">
-                <label className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors">
+                <label className="flex items-center gap-3 rounded-2xl border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors">
                     <input
                         type="radio"
                         name="flashCardDisplay"
@@ -61,7 +61,7 @@ export function FlashCardSettings({ initialPreference, baseLanguage = 'Base', ta
                         </p>
                     </div>
                 </label>
-                <label className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors">
+                <label className="flex items-center gap-3 rounded-2xl border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors">
                     <input
                         type="radio"
                         name="flashCardDisplay"

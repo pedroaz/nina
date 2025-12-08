@@ -12,6 +12,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
+import { Trash2, Play } from "lucide-react";
 
 type LessonListItem = {
     id: string;
@@ -63,12 +64,14 @@ export default async function CustomLessons() {
             </div>
 
             {lessonItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-neutral-200 p-12 text-center text-neutral-500">
-                    <p>You have not submitted any lesson requests yet.</p>
-                    <p className="mt-2 text-sm">
-                        Share what you want to learn and we will create a lesson for you.
-                    </p>
-                </div>
+                <Card className="border-dashed border-neutral-300 shadow-none hover:shadow-none hover:translate-y-0 bg-neutral-50">
+                    <div className="p-12 text-center text-neutral-500">
+                        <p className="text-lg font-medium">You have not submitted any lesson requests yet.</p>
+                        <p className="mt-2 text-sm">
+                            Share what you want to learn and we will create a lesson for you.
+                        </p>
+                    </div>
+                </Card>
             ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                     {lessonItems.map((lesson) => (
@@ -80,8 +83,8 @@ export default async function CustomLessons() {
                                     </CardTitle>
                                 </div>
                                 <form action={`/api/lessons/${lesson.id}`} method="post">
-                                    <Button variant="destructive" size="sm" type="submit">
-                                        Delete
+                                    <Button variant="destructive" size="icon-sm" type="submit">
+                                        <Trash2 className="size-4" />
                                     </Button>
                                 </form>
                             </CardHeader>
@@ -92,7 +95,9 @@ export default async function CustomLessons() {
                             </CardContent>
                             <CardFooter className="flex justify-end">
                                 <Button asChild size="sm">
-                                    <Link href={`/lessons/${lesson.id}`}>Start lesson</Link>
+                                    <Link href={`/lessons/${lesson.id}`}>
+                                        <Play className="mr-2 size-4" /> Start lesson
+                                    </Link>
                                 </Button>
                             </CardFooter>
                         </Card>

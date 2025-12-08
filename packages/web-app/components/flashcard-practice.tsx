@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { ArrowLeft, Check, RotateCcw, X, Target, Languages, PartyPopper } from "lucide-react";
 
 // Serialized flash card type (plain objects only)
 export interface SerializedFlashCard {
@@ -118,19 +120,21 @@ export function FlashCardPractice({
 
         return (
             <div className={cn("mx-auto flex min-h-[60vh] w-full max-w-2xl flex-col items-center justify-center gap-6 px-4 py-10", className)}>
-                <div className="w-full card-playful bg-white p-8">
-                    <h2 className="text-center text-3xl font-extrabold mb-6 text-neutral-900">🎉 Session Complete!</h2>
+                <Card className="w-full bg-white p-8">
+                    <h2 className="text-center text-3xl font-extrabold mb-6 text-neutral-900 flex items-center justify-center gap-2">
+                        <PartyPopper className="size-8 text-orange-500" /> Session Complete!
+                    </h2>
                     <div className="space-y-6">
                         <div className="text-center space-y-4">
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="card-playful bg-success-bg p-6 border-success-text">
+                                <Card className="bg-success-bg p-6 border-success-text">
                                     <p className="text-sm text-success-text font-bold uppercase">Known</p>
                                     <p className="text-4xl font-extrabold text-success-text mt-2">{knownCount}</p>
-                                </div>
-                                <div className="card-playful bg-error-bg p-6 border-error-text">
+                                </Card>
+                                <Card className="bg-error-bg p-6 border-error-text">
                                     <p className="text-sm text-error-text font-bold uppercase">Don&apos;t Know</p>
                                     <p className="text-4xl font-extrabold text-error-text mt-2">{unknownCount}</p>
-                                </div>
+                                </Card>
                             </div>
                             <div className="pt-4">
                                 <p className="text-neutral-600">
@@ -139,15 +143,20 @@ export function FlashCardPractice({
                             </div>
                         </div>
                         <div className="flex gap-4 justify-center">
-                            <button onClick={handlePracticeAgain} className="btn-playful btn-primary-playful px-8 py-3 text-lg">
-                                🔄 Practice Again
-                            </button>
-                            <button onClick={() => window.location.href = '/flash-cards'} className="btn-playful bg-white border-neutral-900 text-neutral-900 hover:bg-neutral-100 px-8 py-3 text-lg">
-                                ← Back to Decks
-                            </button>
+                            <Button onClick={handlePracticeAgain} size="lg" className="text-lg px-8">
+                                <RotateCcw className="mr-2 size-5" /> Practice Again
+                            </Button>
+                            <Button
+                                onClick={() => window.location.href = '/flash-cards'}
+                                variant="outline"
+                                size="lg"
+                                className="text-lg px-8"
+                            >
+                                <ArrowLeft className="mr-2 size-5" /> Back to Decks
+                            </Button>
                         </div>
                     </div>
-                </div>
+                </Card>
             </div>
         );
     }
@@ -158,19 +167,20 @@ export function FlashCardPractice({
         <div className={cn("mx-auto flex w-full flex-col gap-6", !isMini && "min-h-[60vh] max-w-2xl px-4 py-10", className)}>
             <div className="flex items-center justify-between">
                 <h1 className={cn("font-extrabold", isMini ? "text-xl" : "text-3xl")}>{deckTitle}</h1>
-                <div className="badge-playful bg-neutral-100">
+                <Badge variant="secondary" className="text-base px-3 py-1">
                     {currentIndex + 1} / {shuffledCards.length}
-                </div>
+                </Badge>
             </div>
 
-            <div
-                className={cn("flashcard-playful bg-white cursor-pointer", isMini ? "min-h-[200px]" : "min-h-[320px]")}
+            <Card
+                className={cn("bg-white cursor-pointer rounded-3xl hover:translate-y-[-2px] transition-all", isMini ? "min-h-[200px]" : "min-h-[320px]")}
                 onClick={handleFlip}
             >
                 <div className={cn("flex items-center justify-center h-full", isMini ? "p-6" : "p-12")}>
                     <div className="text-center space-y-4">
-                        <p className="text-xs text-neutral-600 font-bold uppercase tracking-widest">
-                            {isFlipped ? (displayPreference === 'base-first' ? '🎯 Target' : '🇬🇧 English') : (displayPreference === 'base-first' ? '🇬🇧 English' : '🎯 Target')}
+                        <p className="text-xs text-neutral-600 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+                            {isFlipped ? (displayPreference === 'base-first' ? <Target className="size-4" /> : <Languages className="size-4" />) : (displayPreference === 'base-first' ? <Languages className="size-4" /> : <Target className="size-4" />)}
+                            {isFlipped ? (displayPreference === 'base-first' ? 'Target' : 'English') : (displayPreference === 'base-first' ? 'English' : 'Target')}
                         </p>
                         <p className={cn("font-bold leading-relaxed text-neutral-900", isMini ? "text-2xl" : "text-3xl")}>
                             {isFlipped ? backSide : frontSide}
@@ -182,30 +192,35 @@ export function FlashCardPractice({
                         )}
                     </div>
                 </div>
-            </div>
+            </Card>
 
             <div className="flex gap-4 justify-center">
                 {!isFlipped ? (
-                    <button
-                        className="btn-playful btn-secondary-playful px-8 py-3 text-lg"
+                    <Button
+                        variant="secondary"
+                        size="lg"
+                        className="text-lg px-8"
                         onClick={handleFlip}
                     >
-                        🔄 Flip Card
-                    </button>
+                        <RotateCcw className="mr-2 size-5" /> Flip Card
+                    </Button>
                 ) : (
                     <>
-                        <button
-                            className="btn-playful bg-error-bg border-error-text text-error-text hover:bg-error/10 px-6 py-3 text-lg"
+                        <Button
+                            variant="destructive"
+                            size="lg"
+                            className="text-lg px-6"
                             onClick={() => handleAnswer('dontKnow')}
                         >
-                            ❌ Don&apos;t Know
-                        </button>
-                        <button
-                            className="btn-playful btn-success-playful px-6 py-3 text-lg"
+                            <X className="mr-2 size-5" /> I don&apos;t know
+                        </Button>
+                        <Button
+                            size="lg"
+                            className="text-lg px-6 bg-success border-success-text hover:bg-success/90"
                             onClick={() => handleAnswer('know')}
                         >
-                            ✅ I Know
-                        </button>
+                            <Check className="mr-2 size-5" /> I know it
+                        </Button>
                     </>
                 )}
             </div>

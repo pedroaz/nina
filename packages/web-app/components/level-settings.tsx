@@ -62,7 +62,7 @@ export function LevelSettings({ initialLevel }: LevelSettingsProps) {
                 {LEVELS.map((levelOption) => (
                     <label
                         key={levelOption.value}
-                        className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
+                        className="flex items-center gap-3 rounded-2xl border border-neutral-200 p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
                     >
                         <input
                             type="radio"
