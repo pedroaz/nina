@@ -1,7 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import type { ComponentProps } from "react";
-import { useSession } from "next-auth/react";
 import { Home, User, BookOpen, Users, Map, CreditCard, Dumbbell, Target } from "lucide-react";
 
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthButton } from "./auth-button";
+import { useUserStore } from "@/stores/user-store";
 
 // Navigation data with icons
 const data = {
@@ -71,7 +72,8 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
-  const { data: session, status } = useSession();
+  const session = useUserStore((state) => state.session);
+  const status = useUserStore((state) => state.status);
 
   return (
     <Sidebar {...props}>
@@ -98,13 +100,13 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
           {data.navMain.map((item) => (
             <SidebarGroup key={item.title} className="p-0">
               <SidebarMenuButton asChild className="p-0">
-                <a
+                <Link
                   href={item.url}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-neutral-900 hover:bg-orange-50 hover:text-orange-700 transition-all border-2 border-transparent hover:border-orange-200 hover:shadow-[2px_2px_0px_0px_rgba(251,146,60,0.3)]"
                 >
                   <span className="text-xl">{item.emoji}</span>
                   <span>{item.title}</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarGroup>
           ))}

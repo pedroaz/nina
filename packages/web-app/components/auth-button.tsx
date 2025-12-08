@@ -1,10 +1,18 @@
 "use client";
 
-import { useSession, signIn, signOut } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { LogOut, LogIn } from "lucide-react";
 
+import { Skeleton } from "@/components/ui/skeleton";
+import { useUserStore } from "@/stores/user-store";
+
 export function AuthButton() {
-    const { data: session } = useSession();
+    const session = useUserStore((state) => state.session);
+    const status = useUserStore((state) => state.status);
+
+    if (status === "loading") {
+        return <Skeleton className="h-12 w-full rounded-xl" />;
+    }
 
     if (session) {
         return (

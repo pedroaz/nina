@@ -2,16 +2,14 @@ import type { Metadata } from "next";
 import { Nunito, Geist_Mono } from "next/font/google";
 import "@uiw/react-markdown-preview/markdown.css";
 import "./globals.css";
-import Link from "next/link";
-import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { AuthButton } from "@/components/auth-button";
 import { Providers } from "./providers";
+import { getSession } from "@/lib/auth";
 
 const nunito = Nunito({
   variable: "--font-nunito",
@@ -29,17 +27,18 @@ export const metadata: Metadata = {
   description: "Learn languages with AI-powered lessons, flashcards, and exercises",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getSession();
   return (
     <html lang="en">
       <body
         className={`${nunito.variable} ${geistMono.variable} antialiased`}
       >
-        <Providers>
+        <Providers initialSession={session}>
           <SidebarProvider>
             <AppSidebar />
             <SidebarInset>
