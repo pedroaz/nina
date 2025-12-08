@@ -12,7 +12,7 @@ The Nina Web App features a **playful, engaging design** inspired by language le
 
 ## Core Components
 
-We have standardized the core UI components to automatically apply this playful style. **Always use these components** instead of raw HTML or utility classes.
+We have standardized the core UI components to automatically apply this playful style. **Always use these shadcn components** instead of raw HTML, utility classes, or creating custom components. This ensures visual consistency, better accessibility, and maintainability across the entire application.
 
 ### 1. Card (`components/ui/card.tsx`)
 The default `Card` component applies the `card-playful` style: white background, thick border, shadow, and hover lift effect.
@@ -100,14 +100,22 @@ import { Trash2 } from "lucide-react";
 ## Creating New Components
 
 When creating new components:
-1.  **Reuse**: Check if a standard component (`Card`, `Button`) can be used.
-2.  **Consistency**: If you need a custom element, try to use the `card-playful` or `btn-playful` utility classes (or better yet, the components that wrap them) to maintain consistency.
-3.  **Lucide**: Use Lucide icons.
+1.  **Check shadcn/ui first**: Look through [shadcn/ui](https://ui.shadcn.com/) components to see if one already exists that fits your needs. The library has many pre-built, accessible components.
+2.  **Reuse**: Check if a standard component (`Card`, `Button`, `Dialog`, `Dropdown`, `Input`, etc.) can be used or combined.
+3.  **Avoid custom HTML elements**: Don't create `<button>`, `<div role="button">`, or other custom interactive elements. Use the `Button` component instead. Avoid custom divs styled as cards—use `Card`.
+4.  **Consistency**: If you absolutely must create a custom element, ensure it uses the `card-playful` or `btn-playful` utility classes (or better yet, the components that wrap them) to maintain visual consistency.
+5.  **Last resort**: Only create truly custom components when shadcn doesn't have an equivalent and it's impossible to compose existing components to achieve the desired functionality.
 
 ## Do's and Don'ts
 
+- **DO** use shadcn/ui components for all UI elements.
 - **DO** use `<Card>` for containers.
-- **DO** use `<Button>` for interactive elements.
-- **DON'T** create new card styles unless absolutely necessary.
-- **DON'T** use emojis in buttons or labels (use icons).
+- **DO** use `<Button>` for all interactive button elements (never raw `<button>` HTML).
+- **DO** use `<Dialog>`, `<Dropdown>`, `<Input>`, and other shadcn components for their respective purposes.
+- **DO** combine components to create more complex interfaces.
+- **DON'T** create custom buttons—use `<Button>` with appropriate variants.
+- **DON'T** create new card styles unless absolutely necessary (use `<Card>` instead).
+- **DON'T** use raw HTML elements like `<button>` or custom styled divs for interactive elements.
+- **DON'T** create custom components that duplicate shadcn functionality.
+- **DON'T** use emojis in buttons or labels (use Lucide icons instead).
 - **DON'T** override the global styles locally unless for specific layout needs.
