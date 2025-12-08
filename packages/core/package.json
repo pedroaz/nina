@@ -21,6 +21,7 @@
     "mongodb": "^6.20.0",
     "mongoose": "^8.19.2",
     "tsx": "^4.20.6",
+    "winston": "^3.19.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

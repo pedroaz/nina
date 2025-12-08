@@ -9,6 +9,7 @@ import {
     createExerciseSetCommand,
     getExerciseSetsByUserIdQuery,
     getUserByEmail,
+    logger,
 } from "@core/index";
 
 export async function POST(req: Request) {
@@ -50,8 +51,8 @@ export async function POST(req: Request) {
                 );
             }
 
-            console.log(`[Exercise Sets API] Generating ${exerciseType} exercises from prompt for user: ${user.email}`);
-            console.log(`[Exercise Sets API] Topic: "${topic}", Count: ${exerciseCount}`);
+            logger.info(`[Exercise Sets API] Generating ${exerciseType} exercises from prompt for user: ${user.email}`);
+            logger.info(`[Exercise Sets API] Topic: "${topic}", Count: ${exerciseCount}`);
 
             if (exerciseType === 'multiple_choice') {
                 exerciseSet = await generateMultipleChoiceFromPromptCommand({
@@ -80,8 +81,8 @@ export async function POST(req: Request) {
                 );
             }
 
-            console.log(`[Exercise Sets API] Generating ${exerciseType} exercises from lesson for user: ${user.email}`);
-            console.log(`[Exercise Sets API] Lesson ID: ${lessonId}, Count: ${exerciseCount}`);
+            logger.info(`[Exercise Sets API] Generating ${exerciseType} exercises from lesson for user: ${user.email}`);
+            logger.info(`[Exercise Sets API] Lesson ID: ${lessonId}, Count: ${exerciseCount}`);
 
             if (exerciseType === 'multiple_choice') {
                 exerciseSet = await generateMultipleChoiceFromLessonCommand({
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
                 );
             }
 
-            console.log(`[Exercise Sets API] Creating manual ${exerciseType} exercise set for user: ${user.email}`);
+            logger.info(`[Exercise Sets API] Creating manual ${exerciseType} exercise set for user: ${user.email}`);
 
             exerciseSet = await createExerciseSetCommand({
                 userId: user._id,
@@ -130,11 +131,11 @@ export async function POST(req: Request) {
         }
 
         const totalTime = performance.now() - startTime;
-        console.log(`[Exercise Sets API] Exercise set created in ${totalTime.toFixed(2)}ms`);
+        logger.info(`[Exercise Sets API] Exercise set created in ${totalTime.toFixed(2)}ms`);
 
         return NextResponse.json(exerciseSet, { status: 201 });
     } catch (error) {
-        console.error('[Exercise Sets API] Error creating exercise set:', error);
+        logger.error('[Exercise Sets API] Error creating exercise set:', error);
         return NextResponse.json(
             { error: "Failed to create exercise set" },
             { status: 500 }

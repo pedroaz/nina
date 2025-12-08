@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getFlashCardDeckById, getUserByEmail } from "@core/index";
+import { getFlashCardDeckById, getUserByEmail, logger } from "@core/index";
 import { FlashCardPractice } from "@/components/flashcard-practice";
 
 export default async function FlashCardDeckPage({ params }: { params: Promise<{ deckId: string }> }) {
@@ -19,21 +19,21 @@ export default async function FlashCardDeckPage({ params }: { params: Promise<{ 
         redirect(signInUrl);
     }
 
-    console.log('[Flash Card Practice] Fetching deck with ID:', deckId);
+    logger.info('[Flash Card Practice] Fetching deck with ID:', { deckId });
     const deck = await getFlashCardDeckById(deckId);
 
     if (!deck) {
-        console.log('[Flash Card Practice] Deck not found, redirecting...');
+        logger.info('[Flash Card Practice] Deck not found, redirecting...');
         redirect('/flash-cards');
     }
 
-    console.log('[Flash Card Practice] Deck found:', deck.title);
-    console.log('[Flash Card Practice] User ID:', user._id);
-    console.log('[Flash Card Practice] Deck owner ID:', deck.studentData.userId);
+    logger.info('[Flash Card Practice] Deck found:', { deckTitle: deck.title });
+    logger.info('[Flash Card Practice] User ID:', { userId: user._id });
+    logger.info('[Flash Card Practice] Deck owner ID:', { deckOwnerId: deck.studentData.userId });
 
     // Verify ownership - convert both to strings for comparison
     if (deck.studentData.userId.toString() !== user._id.toString()) {
-        console.log('[Flash Card Practice] Ownership verification failed, redirecting...');
+        logger.info('[Flash Card Practice] Ownership verification failed, redirecting...');
         redirect('/flash-cards');
     }
 

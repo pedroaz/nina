@@ -10,12 +10,13 @@
 
 import { connectDatabase } from "../database";
 import { UserModel } from "../../entities/user";
+import { logger } from "../../";
 
 export async function migrateUserLanguages() {
     try {
         await connectDatabase();
 
-        console.log('[Migration] Starting user language field migration...');
+        logger.info('[Migration] Starting user language field migration...');
 
         // Update all users that don't have baseLanguage or targetLanguage set
         const result = await UserModel.updateMany(
@@ -33,8 +34,8 @@ export async function migrateUserLanguages() {
             }
         );
 
-        console.log(`[Migration] Updated ${result.modifiedCount} users`);
-        console.log('[Migration] Migration completed successfully');
+        logger.info(`[Migration] Updated ${result.modifiedCount} users`);
+        logger.info('[Migration] Migration completed successfully');
 
         return {
             success: true,
@@ -50,7 +51,7 @@ export async function migrateUserLanguages() {
 if (require.main === module) {
     migrateUserLanguages()
         .then((result) => {
-            console.log('Migration result:', result);
+            logger.info('Migration result:', result);
             process.exit(0);
         })
         .catch((error) => {

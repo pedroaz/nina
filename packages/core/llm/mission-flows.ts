@@ -1,6 +1,9 @@
 
 // Mission Chat Flow
 
+import { chatAi, getModelConfig, logger, MODEL_CATEGORIES, studentLevelSchemaZ, UsageMetadata } from "../";
+import { z } from "zod";
+
 export const MissionChatInputSchema = z.object({
     missionTitle: z.string().describe('Title of the mission'),
     scenario: z.string().describe('Scenario description'),
@@ -26,9 +29,9 @@ export const missionChatFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Mission Chat] Starting mission chat`);
-    console.log(`[Mission Chat] Using ${modelConfig.displayName}`);
-    console.log(`[Mission Chat] Mission: "${input.missionTitle}"`);
+    logger.info(`[Mission Chat] Starting mission chat`);
+    logger.info(`[Mission Chat] Using ${modelConfig.displayName}`);
+    logger.info(`[Mission Chat] Mission: "${input.missionTitle}"`);
 
     const systemPrompt = `You are a ${input.targetLanguage} language tutor conducting a roleplay scenario.
 
@@ -64,12 +67,12 @@ Your role:
     const { text, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Mission Chat] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Mission Chat] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Mission Chat] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Mission Chat] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Mission Chat] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Mission Chat] Output tokens: ${usage?.outputTokens || 0}`);
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Mission Chat] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Mission Chat] Total time: ${totalTime.toFixed(2)}ms`);
 
     return {
         output: { response: text },
@@ -110,9 +113,9 @@ export const evaluateMissionFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Mission Evaluation] Starting evaluation`);
-    console.log(`[Mission Evaluation] Using ${modelConfig.displayName}`);
-    console.log(`[Mission Evaluation] Mission: "${input.missionTitle}"`);
+    logger.info(`[Mission Evaluation] Starting evaluation`);
+    logger.info(`[Mission Evaluation] Using ${modelConfig.displayName}`);
+    logger.info(`[Mission Evaluation] Mission: "${input.missionTitle}"`);
 
     const conversationSummary = input.chatHistory.map(msg =>
         `${msg.role === 'user' ? 'Student' : 'Assistant'}: ${msg.content}`
@@ -148,13 +151,13 @@ Return JSON with "score" (number) and "feedback" (string).`;
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Mission Evaluation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Mission Evaluation] Score: ${output?.score || 0}`);
+    logger.info(`[Mission Evaluation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Mission Evaluation] Score: ${output?.score || 0}`);
 
     if (!output) throw new Error('Failed to evaluate mission');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Mission Evaluation] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Mission Evaluation] Total time: ${totalTime.toFixed(2)}ms`);
 
     return {
         output,

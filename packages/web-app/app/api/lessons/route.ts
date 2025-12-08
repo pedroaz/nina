@@ -5,6 +5,7 @@ import {
     createLessonCommand,
     getLessonsByUserId,
     getUserByEmail,
+    logger,
 } from "@core/index";
 import { MODEL_CATEGORIES, getModelConfig } from "@core/llm/llm";
 
@@ -37,9 +38,9 @@ export async function POST(req: Request) {
     const modelConfig = getModelConfig(modelCategory);
     const startTime = performance.now();
 
-    console.log(`[Lesson API] Creating lesson for user: ${user.email}`);
-    console.log(`[Lesson API] Using model: ${modelConfig.displayName}`);
-    console.log(`[Lesson API] Topic: "${topic}"`);
+    logger.info(`[Lesson API] Creating lesson for user: ${user.email}`);
+    logger.info(`[Lesson API] Using model: ${modelConfig.displayName}`);
+    logger.info(`[Lesson API] Topic: "${topic}"`);
 
     const created = await createLessonCommand({
         userId: user._id,
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
     });
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Lesson API] Lesson created in ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Lesson API] Lesson created in ${totalTime.toFixed(2)}ms`);
 
     return NextResponse.json(created, { status: 201 });
 }

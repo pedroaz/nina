@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
-import { sendChatMessage, type ChatMessage, getUserByEmail, savePromptMetadataCommand } from '@core/index';
+import { sendChatMessage, type ChatMessage, getUserByEmail, savePromptMetadataCommand, logger } from '@core/index';
 import type { Lesson } from '@core/entities/lesson';
 
 export async function POST(request: NextRequest) {
     const startTime = performance.now();
-    console.log('[Chat API] Request received');
+    logger.info('[Chat API] Request received');
 
     try {
         // Check authentication
         const authStart = performance.now();
         const session = await getServerSession(authOptions);
         const authEnd = performance.now();
-        console.log(`[Chat API] Authentication check: ${(authEnd - authStart).toFixed(2)}ms`);
+        logger.info(`[Chat API] Authentication check: ${(authEnd - authStart).toFixed(2)}ms`);
 
         if (!session?.user?.email) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -33,10 +33,10 @@ export async function POST(request: NextRequest) {
             lessonContext?: Lesson;
         };
         const parseEnd = performance.now();
-        console.log(`[Chat API] Body parsing: ${(parseEnd - parseStart).toFixed(2)}ms`);
-        console.log(`[Chat API] Message length: ${message.length} chars`);
-        console.log(`[Chat API] History length: ${history.length} messages`);
-        console.log(`[Chat API] Has lesson context: ${!!lessonContext}`);
+        logger.info(`[Chat API] Body parsing: ${(parseEnd - parseStart).toFixed(2)}ms`);
+        logger.info(`[Chat API] Message length: ${message.length} chars`);
+        logger.info(`[Chat API] History length: ${history.length} messages`);
+        logger.info(`[Chat API] Has lesson context: ${!!lessonContext}`);
 
         // Validate input
         if (!message || typeof message !== 'string') {
@@ -48,12 +48,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Send chat message
-        console.log('[Chat API] Sending message to LLM...');
+        logger.info('[Chat API] Sending message to LLM...');
         const llmStart = performance.now();
         const { message: response, usage } = await sendChatMessage(message, history, lessonContext);
         const llmEnd = performance.now();
-        console.log(`[Chat API] LLM response time: ${(llmEnd - llmStart).toFixed(2)}ms`);
-        console.log(`[Chat API] Response length: ${response.length} chars`);
+        logger.info(`[Chat API] LLM response time: ${(llmEnd - llmStart).toFixed(2)}ms`);
+        logger.info(`[Chat API] Response length: ${response.length} chars`);
 
         // Save prompt metadata for chat
         await savePromptMetadataCommand({
@@ -69,12 +69,12 @@ export async function POST(request: NextRequest) {
         });
 
         const totalTime = performance.now() - startTime;
-        console.log(`[Chat API] Total request time: ${totalTime.toFixed(2)}ms`);
+        logger.info(`[Chat API] Total request time: ${totalTime.toFixed(2)}ms`);
 
         return NextResponse.json({ response }, { status: 200 });
     } catch (error) {
         const totalTime = performance.now() - startTime;
-        console.error(`[Chat API] Error after ${totalTime.toFixed(2)}ms:`, error);
+        logger.error(`[Chat API] Error after ${totalTime.toFixed(2)}ms:`, error);
         return NextResponse.json(
             { error: 'Failed to process chat message' },
             { status: 500 }

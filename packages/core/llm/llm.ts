@@ -1,5 +1,6 @@
 import { genkit } from 'genkit/beta';
 import { z } from 'zod';
+import logger from '../logger';
 import { createFinalPrompt } from './prompt';
 import { lessonSchemaZ, type Lesson } from '../entities/lesson';
 import { dualLanguageSchemaZ } from '../entities/base';
@@ -57,7 +58,7 @@ const ai = genkit({
 });
 
 // AI instance for chat - uses FAST model category
-const chatAi = genkit({
+export const chatAi = genkit({
     plugins: [openAI({ apiKey: process.env.OPENAI_API_KEY })],
     model: openAI.model(getModelName(MODEL_CATEGORIES.FAST)),
     promptDir: './packages/core/llm/prompts',
@@ -105,19 +106,19 @@ export const createLessonFlow = async (
     const aiInstance = modelCategory === MODEL_CATEGORIES.FAST ? chatAi : ai;
     const startTime = performance.now();
 
-    console.log(`[Lesson Creation] Starting lesson generation`);
-    console.log(`[Lesson Creation] Using ${modelConfig.displayName}`);
-    console.log(`[Lesson Creation] Topic: "${input.topic}"`);
-    console.log(`[Lesson Creation] Vocabulary: "${input.vocabulary}"`);
-    console.log(`[Lesson Creation] Base language: "${input.baseLanguage}"`);
-    console.log(`[Lesson Creation] Target language: "${input.targetLanguage}"`);
-    console.log(`[Lesson Creation] Focus: "${input.focus || 'general'}"`);
+    logger.info(`[Lesson Creation] Starting lesson generation`);
+    logger.info(`[Lesson Creation] Using ${modelConfig.displayName}`);
+    logger.info(`[Lesson Creation] Topic: "${input.topic}"`);
+    logger.info(`[Lesson Creation] Vocabulary: "${input.vocabulary}"`);
+    logger.info(`[Lesson Creation] Base language: "${input.baseLanguage}"`);
+    logger.info(`[Lesson Creation] Target language: "${input.targetLanguage}"`);
+    logger.info(`[Lesson Creation] Focus: "${input.focus || 'general'}"`);
 
     const userPrompt = createFinalPrompt(input.topic, input.vocabulary, input.baseLanguage, input.targetLanguage, input.focus);
 
     let promptInput: any = userPrompt;
     if (input.image) {
-        console.log(`[Lesson Creation] Image provided, using vision capabilities`);
+        logger.info(`[Lesson Creation] Image provided, using vision capabilities`);
         promptInput = [
             { text: userPrompt },
             { media: { url: input.image } }
@@ -132,16 +133,16 @@ export const createLessonFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Lesson Creation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Lesson Creation] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Lesson Creation] Output tokens: ${usage?.outputTokens || 0}`);
-    console.log(`[Lesson Creation] Total tokens: ${usage?.totalTokens || 0}`);
+    logger.info(`[Lesson Creation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Lesson Creation] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Lesson Creation] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Lesson Creation] Total tokens: ${usage?.totalTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate lesson');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Lesson Creation] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Lesson Creation] Lesson created successfully`);
+    logger.info(`[Lesson Creation] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Lesson Creation] Lesson created successfully`);
 
     return {
         lesson: output,
@@ -176,10 +177,10 @@ export const appendExtraSectionFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Extra Section] Starting extra section generation`);
-    console.log(`[Extra Section] Using ${modelConfig.displayName}`);
-    console.log(`[Extra Section] Request: "${input.request}"`);
-    console.log(`[Extra Section] Topic: "${input.lessonContext.topic}"`);
+    logger.info(`[Extra Section] Starting extra section generation`);
+    logger.info(`[Extra Section] Using ${modelConfig.displayName}`);
+    logger.info(`[Extra Section] Request: "${input.request}"`);
+    logger.info(`[Extra Section] Topic: "${input.lessonContext.topic}"`);
 
     const prompt = `You are Nina, a ${input.lessonContext.targetLanguage} learning assistant. A student is studying a lesson about "${input.lessonContext.topic}" ${input.lessonContext.vocabulary ? `with vocabulary: ${input.lessonContext.vocabulary}` : ''}.
 
@@ -205,15 +206,15 @@ Important: Return a JSON object with exactly two string fields: "base" (${input.
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Extra Section] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Extra Section] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Extra Section] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Extra Section] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Extra Section] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Extra Section] Output tokens: ${usage?.outputTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate extra section');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Extra Section] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Extra Section] Extra section created successfully`);
+    logger.info(`[Extra Section] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Extra Section] Extra section created successfully`);
 
     return {
         section: output,
@@ -254,7 +255,7 @@ export async function sendChatMessage(
 ): Promise<{ message: string; usage: UsageMetadata }> {
     const startTime = performance.now();
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
-    console.log('[LLM] Building prompt...');
+    logger.info('[LLM] Building prompt...');
 
     const promptStart = performance.now();
     const systemPrompt = lessonContext
@@ -286,23 +287,23 @@ Student: ${userMessage}
 Nina:`;
 
     const promptEnd = performance.now();
-    console.log(`[LLM] Prompt built in: ${(promptEnd - promptStart).toFixed(2)}ms`);
-    console.log(`[LLM] Prompt length: ${fullPrompt.length} chars`);
+    logger.info(`[LLM] Prompt built in: ${(promptEnd - promptStart).toFixed(2)}ms`);
+    logger.info(`[LLM] Prompt length: ${fullPrompt.length} chars`);
 
     // Generate response in a single call using fast chat model
-    console.log('[LLM] Calling AI model (gpt-4o-mini)...');
+    logger.info('[LLM] Calling AI model (gpt-4o-mini)...');
     const generateStart = performance.now();
     const response = await chatAi.generate({
         prompt: fullPrompt,
     });
     const { text, usage, finishReason } = response;
     const generateEnd = performance.now();
-    console.log(`[LLM] AI generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[LLM] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[LLM] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[LLM] AI generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[LLM] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[LLM] Output tokens: ${usage?.outputTokens || 0}`);
 
     const totalTime = performance.now() - startTime;
-    console.log(`[LLM] Total LLM function time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[LLM] Total LLM function time: ${totalTime.toFixed(2)}ms`);
 
     return {
         message: text,
@@ -340,13 +341,13 @@ export const generateFlashCardsFromPromptFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Flash Cards] Starting flash card generation from prompt`);
-    console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
-    console.log(`[Flash Cards] Topic: "${input.topic}"`);
-    console.log(`[Flash Cards] Card count: ${input.cardCount}`);
-    console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
-    console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
-    console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
+    logger.info(`[Flash Cards] Starting flash card generation from prompt`);
+    logger.info(`[Flash Cards] Using ${modelConfig.displayName}`);
+    logger.info(`[Flash Cards] Topic: "${input.topic}"`);
+    logger.info(`[Flash Cards] Card count: ${input.cardCount}`);
+    logger.info(`[Flash Cards] Student level: ${input.studentLevel}`);
+    logger.info(`[Flash Cards] Base language: "${input.baseLanguage}"`);
+    logger.info(`[Flash Cards] Target language: "${input.targetLanguage}"`);
 
     const prompt = createFlashCardFromPromptInstructions(
         input.topic,
@@ -364,15 +365,15 @@ export const generateFlashCardsFromPromptFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Flash Cards] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Flash Cards] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Flash Cards] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Flash Cards] Output tokens: ${usage?.outputTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate flash cards from prompt');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
+    logger.info(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Flash Cards] Generated ${output.cards.length} cards`);
 
     return {
         output,
@@ -407,13 +408,13 @@ export const generateFlashCardsFromLessonFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Flash Cards] Starting flash card generation from lesson`);
-    console.log(`[Flash Cards] Using ${modelConfig.displayName}`);
-    console.log(`[Flash Cards] Lesson topic: "${input.lesson.topic}"`);
-    console.log(`[Flash Cards] Card count: ${input.cardCount}`);
-    console.log(`[Flash Cards] Student level: ${input.studentLevel}`);
-    console.log(`[Flash Cards] Base language: "${input.baseLanguage}"`);
-    console.log(`[Flash Cards] Target language: "${input.targetLanguage}"`);
+    logger.info(`[Flash Cards] Starting flash card generation from lesson`);
+    logger.info(`[Flash Cards] Using ${modelConfig.displayName}`);
+    logger.info(`[Flash Cards] Lesson topic: "${input.lesson.topic}"`);
+    logger.info(`[Flash Cards] Card count: ${input.cardCount}`);
+    logger.info(`[Flash Cards] Student level: ${input.studentLevel}`);
+    logger.info(`[Flash Cards] Base language: "${input.baseLanguage}"`);
+    logger.info(`[Flash Cards] Target language: "${input.targetLanguage}"`);
 
     const prompt = createFlashCardFromLessonInstructions(
         input.lesson.topic,
@@ -434,15 +435,15 @@ export const generateFlashCardsFromLessonFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Flash Cards] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Flash Cards] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Flash Cards] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Flash Cards] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Flash Cards] Output tokens: ${usage?.outputTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate flash cards from lesson');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Flash Cards] Generated ${output.cards.length} cards`);
+    logger.info(`[Flash Cards] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Flash Cards] Generated ${output.cards.length} cards`);
 
     return {
         output,
@@ -480,11 +481,11 @@ export const generateMultipleChoiceFromPromptFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Exercises MC] Starting multiple choice generation from prompt`);
-    console.log(`[Exercises MC] Using ${modelConfig.displayName}`);
-    console.log(`[Exercises MC] Topic: "${input.topic}"`);
-    console.log(`[Exercises MC] Exercise count: ${input.exerciseCount}`);
-    console.log(`[Exercises MC] Student level: ${input.studentLevel}`);
+    logger.info(`[Exercises MC] Starting multiple choice generation from prompt`);
+    logger.info(`[Exercises MC] Using ${modelConfig.displayName}`);
+    logger.info(`[Exercises MC] Topic: "${input.topic}"`);
+    logger.info(`[Exercises MC] Exercise count: ${input.exerciseCount}`);
+    logger.info(`[Exercises MC] Student level: ${input.studentLevel}`);
 
     const prompt = createMultipleChoiceFromPromptInstructions(
         input.topic,
@@ -502,15 +503,15 @@ export const generateMultipleChoiceFromPromptFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Exercises MC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Exercises MC] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Exercises MC] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Exercises MC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Exercises MC] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Exercises MC] Output tokens: ${usage?.outputTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate multiple choice exercises from prompt');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Exercises MC] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Exercises MC] Generated ${output.exercises.length} exercises`);
+    logger.info(`[Exercises MC] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Exercises MC] Generated ${output.exercises.length} exercises`);
 
     return {
         output,
@@ -545,10 +546,10 @@ export const generateMultipleChoiceFromLessonFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Exercises MC] Starting multiple choice generation from lesson`);
-    console.log(`[Exercises MC] Using ${modelConfig.displayName}`);
-    console.log(`[Exercises MC] Lesson topic: "${input.lesson.topic}"`);
-    console.log(`[Exercises MC] Exercise count: ${input.exerciseCount}`);
+    logger.info(`[Exercises MC] Starting multiple choice generation from lesson`);
+    logger.info(`[Exercises MC] Using ${modelConfig.displayName}`);
+    logger.info(`[Exercises MC] Lesson topic: "${input.lesson.topic}"`);
+    logger.info(`[Exercises MC] Exercise count: ${input.exerciseCount}`);
 
     const prompt = createMultipleChoiceFromLessonInstructions(
         input.lesson.topic,
@@ -569,15 +570,15 @@ export const generateMultipleChoiceFromLessonFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Exercises MC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Exercises MC] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Exercises MC] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Exercises MC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Exercises MC] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Exercises MC] Output tokens: ${usage?.outputTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate multiple choice exercises from lesson');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Exercises MC] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Exercises MC] Generated ${output.exercises.length} exercises`);
+    logger.info(`[Exercises MC] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Exercises MC] Generated ${output.exercises.length} exercises`);
 
     return {
         output,
@@ -613,11 +614,11 @@ export const generateSentenceCreationFromPromptFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Exercises SC] Starting sentence creation generation from prompt`);
-    console.log(`[Exercises SC] Using ${modelConfig.displayName}`);
-    console.log(`[Exercises SC] Topic: "${input.topic}"`);
-    console.log(`[Exercises SC] Exercise count: ${input.exerciseCount}`);
-    console.log(`[Exercises SC] Student level: ${input.studentLevel}`);
+    logger.info(`[Exercises SC] Starting sentence creation generation from prompt`);
+    logger.info(`[Exercises SC] Using ${modelConfig.displayName}`);
+    logger.info(`[Exercises SC] Topic: "${input.topic}"`);
+    logger.info(`[Exercises SC] Exercise count: ${input.exerciseCount}`);
+    logger.info(`[Exercises SC] Student level: ${input.studentLevel}`);
 
     const prompt = createSentenceCreationFromPromptInstructions(
         input.topic,
@@ -635,15 +636,15 @@ export const generateSentenceCreationFromPromptFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Exercises SC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Exercises SC] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Exercises SC] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Exercises SC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Exercises SC] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Exercises SC] Output tokens: ${usage?.outputTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate sentence creation exercises from prompt');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Exercises SC] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Exercises SC] Generated ${output.exercises.length} exercises`);
+    logger.info(`[Exercises SC] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Exercises SC] Generated ${output.exercises.length} exercises`);
 
     return {
         output,
@@ -678,10 +679,10 @@ export const generateSentenceCreationFromLessonFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Exercises SC] Starting sentence creation generation from lesson`);
-    console.log(`[Exercises SC] Using ${modelConfig.displayName}`);
-    console.log(`[Exercises SC] Lesson topic: "${input.lesson.topic}"`);
-    console.log(`[Exercises SC] Exercise count: ${input.exerciseCount}`);
+    logger.info(`[Exercises SC] Starting sentence creation generation from lesson`);
+    logger.info(`[Exercises SC] Using ${modelConfig.displayName}`);
+    logger.info(`[Exercises SC] Lesson topic: "${input.lesson.topic}"`);
+    logger.info(`[Exercises SC] Exercise count: ${input.exerciseCount}`);
 
     const prompt = createSentenceCreationFromLessonInstructions(
         input.lesson.topic,
@@ -702,15 +703,15 @@ export const generateSentenceCreationFromLessonFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Exercises SC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Exercises SC] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Exercises SC] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Exercises SC] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Exercises SC] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Exercises SC] Output tokens: ${usage?.outputTokens || 0}`);
 
     if (!output) throw new Error('Failed to generate sentence creation exercises from lesson');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Exercises SC] Total time: ${totalTime.toFixed(2)}ms`);
-    console.log(`[Exercises SC] Generated ${output.exercises.length} exercises`);
+    logger.info(`[Exercises SC] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Exercises SC] Generated ${output.exercises.length} exercises`);
 
     return {
         output,
@@ -750,10 +751,10 @@ export const judgeSentenceFlow = async (
     const modelConfig = getModelConfig(MODEL_CATEGORIES.FAST);
     const startTime = performance.now();
 
-    console.log(`[Judge Sentence] Starting sentence evaluation`);
-    console.log(`[Judge Sentence] Using ${modelConfig.displayName}`);
-    console.log(`[Judge Sentence] Student level: ${input.studentLevel}`);
-    console.log(`[Judge Sentence] User answer: "${input.userAnswer}"`);
+    logger.info(`[Judge Sentence] Starting sentence evaluation`);
+    logger.info(`[Judge Sentence] Using ${modelConfig.displayName}`);
+    logger.info(`[Judge Sentence] Student level: ${input.studentLevel}`);
+    logger.info(`[Judge Sentence] User answer: "${input.userAnswer}"`);
 
     const prompt = judgeSentenceInstructions(
         input.prompt,
@@ -774,15 +775,15 @@ export const judgeSentenceFlow = async (
     const { output, usage, finishReason } = response;
     const generateEnd = performance.now();
 
-    console.log(`[Judge Sentence] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
-    console.log(`[Judge Sentence] Input tokens: ${usage?.inputTokens || 0}`);
-    console.log(`[Judge Sentence] Output tokens: ${usage?.outputTokens || 0}`);
-    console.log(`[Judge Sentence] Score: ${output?.score || 0}`);
+    logger.info(`[Judge Sentence] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Judge Sentence] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Judge Sentence] Output tokens: ${usage?.outputTokens || 0}`);
+    logger.info(`[Judge Sentence] Score: ${output?.score || 0}`);
 
     if (!output) throw new Error('Failed to judge sentence');
 
     const totalTime = performance.now() - startTime;
-    console.log(`[Judge Sentence] Total time: ${totalTime.toFixed(2)}ms`);
+    logger.info(`[Judge Sentence] Total time: ${totalTime.toFixed(2)}ms`);
 
     return {
         output,

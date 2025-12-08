@@ -1,6 +1,7 @@
 import { connectDatabase } from '../database/database';
 import { PromptMetadata, PromptMetadataModel, PromptOperationType, PromptModelName } from '../entities/prompt-metadata';
 import { calculateCost, ModelName } from '../llm/model-config';
+import { logger } from "@core/index";
 
 export interface SavePromptMetadataRequestData {
     lessonId?: string;
@@ -44,8 +45,8 @@ export async function savePromptMetadataCommand(
 
     await promptMetadata.save();
 
-    console.log(`[Prompt Metadata] Saved metadata for ${data.operation}`);
-    console.log(`[Prompt Metadata] Cost: $${costBreakdown.totalCost.toFixed(6)}`);
+    logger.info(`[Prompt Metadata] Saved metadata for ${data.operation}`);
+    logger.info(`[Prompt Metadata] Cost: $${costBreakdown.totalCost.toFixed(6)}`);
 
     return promptMetadata;
 }

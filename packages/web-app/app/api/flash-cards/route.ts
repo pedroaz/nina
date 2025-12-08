@@ -10,6 +10,8 @@ import {
     getDeckProgressSummary,
 } from "@core/index";
 
+import { logger } from "@core/index";
+
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
 
@@ -40,8 +42,8 @@ export async function POST(req: Request) {
                 );
             }
 
-            console.log(`[Flash Cards API] Generating deck from prompt for user: ${user.email}`);
-            console.log(`[Flash Cards API] Topic: "${topic}", Cards: ${cardCount}`);
+            logger.info(`[Flash Cards API] Generating deck from prompt for user: ${user.email}`);
+            logger.info(`[Flash Cards API] Topic: "${topic}", Cards: ${cardCount}`);
 
             deck = await generateFlashCardDeckFromPromptCommand({
                 userId: user._id,
@@ -57,8 +59,8 @@ export async function POST(req: Request) {
                 );
             }
 
-            console.log(`[Flash Cards API] Generating deck from lesson for user: ${user.email}`);
-            console.log(`[Flash Cards API] Lesson ID: ${lessonId}, Cards: ${cardCount}`);
+            logger.info(`[Flash Cards API] Generating deck from lesson for user: ${user.email}`);
+            logger.info(`[Flash Cards API] Lesson ID: ${lessonId}, Cards: ${cardCount}`);
 
             deck = await generateFlashCardDeckFromLessonCommand({
                 userId: user._id,
@@ -75,7 +77,7 @@ export async function POST(req: Request) {
                 );
             }
 
-            console.log(`[Flash Cards API] Creating manual deck for user: ${user.email}`);
+            logger.info(`[Flash Cards API] Creating manual deck for user: ${user.email}`);
 
             deck = await createFlashCardDeckCommand({
                 userId: user._id,
@@ -91,7 +93,7 @@ export async function POST(req: Request) {
         }
 
         const totalTime = performance.now() - startTime;
-        console.log(`[Flash Cards API] Deck created in ${totalTime.toFixed(2)}ms`);
+        logger.info(`[Flash Cards API] Deck created in ${totalTime.toFixed(2)}ms`);
 
         return NextResponse.json(deck, { status: 201 });
     } catch (error) {

@@ -1,3 +1,4 @@
+export { default as logger } from './logger';
 export * from './entities/user';
 export * from './entities/lesson';
 export * from './entities/flashcard-deck';

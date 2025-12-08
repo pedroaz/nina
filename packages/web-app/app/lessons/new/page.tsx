@@ -134,24 +134,22 @@ export default function CustomLessonsNew() {
                 onSubmit={handleSubmit}
                 className="flex w-full max-w-2xl flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-8 shadow-sm"
             >
-                {userLanguages && (
-                    <div className="rounded-lg bg-neutral-50 p-4 border border-neutral-200">
-                        <h3 className="font-semibold text-sm mb-2">Language Settings</h3>
-                        <div className="flex gap-6 text-sm">
-                            <div>
-                                <span className="text-neutral-600">Base Language:</span>{' '}
-                                <span className="font-medium">{capitalizeLanguage(userLanguages.baseLanguage)}</span>
-                            </div>
-                            <div>
-                                <span className="text-neutral-600">Target Language:</span>{' '}
-                                <span className="font-medium">{capitalizeLanguage(userLanguages.targetLanguage)}</span>
-                            </div>
-                        </div>
-                    </div>
-                )}
+
 
                 <div className="flex flex-col gap-2">
-                    <Label htmlFor="topic">What do you want to learn?</Label>
+                    <Label htmlFor="topic" className="text-lg font-bold">What do you want to learn?</Label>
+                    <div className="flex gap-6 text-sm">
+                        {userLanguages && (
+                            <><div>
+                                <span className="text-neutral-600">Base Language:</span>{' '}
+                                <span className="font-medium">{capitalizeLanguage(userLanguages.baseLanguage)}</span>
+                            </div><div>
+                                    <span className="text-neutral-600">Target Language:</span>{' '}
+                                    <span className="font-medium">{capitalizeLanguage(userLanguages.targetLanguage)}</span>
+                                </div></>
+                        )}
+
+                    </div>
                     <textarea
                         id="topic"
                         name="topic"
@@ -166,6 +164,7 @@ export default function CustomLessonsNew() {
                 <div className="flex flex-wrap gap-3">
                     <Button
                         type="button"
+                        variant={focus === 'vocabulary' ? "default" : "outline"}
                         onClick={() => setFocus(focus === 'vocabulary' ? null : 'vocabulary')}
                         className={`${focus === 'vocabulary'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
@@ -179,6 +178,7 @@ export default function CustomLessonsNew() {
 
                     <Button
                         type="button"
+                        variant={focus === 'grammar' ? "default" : "outline"}
                         onClick={() => setFocus(focus === 'grammar' ? null : 'grammar')}
                         className={`${focus === 'grammar'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
@@ -227,6 +227,7 @@ export default function CustomLessonsNew() {
                 <div className="flex gap-3">
                     <Button
                         type="button"
+                        variant={modelType === 'detailed' ? "default" : "outline"}
                         onClick={() => setModelType('detailed')}
                         className={`flex-1 ${modelType === 'detailed'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
@@ -243,6 +244,7 @@ export default function CustomLessonsNew() {
 
                     <Button
                         type="button"
+                        variant={modelType === 'fast' ? "default" : "outline"}
                         onClick={() => setModelType('fast')}
                         className={`flex-1 ${modelType === 'fast'
                             ? 'border-orange-500 bg-orange-50 text-orange-700'
