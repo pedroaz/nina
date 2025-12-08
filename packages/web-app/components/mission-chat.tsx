@@ -4,10 +4,16 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PentagonSpinner } from "@/components/pentagon-spinner";
 import { Mission } from "@core/index";
 
 interface MissionChatProps {
     mission: Mission;
+}
+
+interface ObjectiveProgress {
+    objective: string;
+    completed: boolean;
 }
 
 export function MissionChat({ mission }: MissionChatProps) {
@@ -16,8 +22,12 @@ export function MissionChat({ mission }: MissionChatProps) {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [completed, setCompleted] = useState(false);
+    const [evaluating, setEvaluating] = useState(false);
     const [score, setScore] = useState<number | null>(null);
+    const [grammarScore, setGrammarScore] = useState<number | null>(null);
     const [feedback, setFeedback] = useState<string | null>(null);
+    const [sessionId, setSessionId] = useState<string | null>(null);
+    const [objectiveProgress, setObjectiveProgress] = useState<ObjectiveProgress[]>([]);
 
     useEffect(() => {
         // Send initial greeting
@@ -36,34 +46,97 @@ export function MissionChat({ mission }: MissionChatProps) {
         setLoading(true);
 
         try {
-            // This would call the mission chat API
-            // For now, we'll simulate a response
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            const requestBody: { message: string; sessionId?: string } = {
+                message: userMessage,
+            };
 
-            const assistantResponse = 'Great! Continue practicing...';
-            setMessages(prev => [...prev, { role: 'assistant', content: assistantResponse }]);
+            if (sessionId) {
+                requestBody.sessionId = sessionId;
+            }
+
+            const response = await fetch(`/api/missions/${mission._id}/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                console.error('Chat API error:', error);
+                throw new Error(error.error || 'Failed to send message');
+            }
+
+            const data = await response.json();
+
+            // Store session ID for subsequent messages
+            if (!sessionId) {
+                console.log('Setting sessionId:', data.sessionId);
+                setSessionId(data.sessionId);
+            }
+
+            setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
         } catch (error) {
             console.error('Failed to send message:', error);
+            // Remove the user message we added if there was an error
+            setMessages(prev => prev.slice(0, -1));
         } finally {
             setLoading(false);
         }
     };
 
     const handleComplete = async () => {
-        setLoading(true);
-        try {
-            // This would call the mission evaluation API
-            await new Promise(resolve => setTimeout(resolve, 1500));
+        console.log('handleComplete called, sessionId:', sessionId);
+        if (!sessionId) {
+            console.error('No session ID available');
+            return;
+        }
 
-            setScore(85);
-            setFeedback('Great job! You completed the mission successfully. Your grammar was good, and you used appropriate vocabulary for your level.');
+        setEvaluating(true);
+        try {
+            console.log('Sending check request with sessionId:', sessionId);
+            const response = await fetch(`/api/missions/${mission._id}/check`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: sessionId,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                console.error('Check API error:', error);
+                throw new Error(error.error || 'Failed to evaluate mission');
+            }
+
+            const data = await response.json();
+            setScore(data.score);
+            setGrammarScore(data.grammarScore);
+            setFeedback(data.feedback);
+            setObjectiveProgress(data.objectiveProgress || []);
             setCompleted(true);
         } catch (error) {
             console.error('Failed to complete mission:', error);
         } finally {
-            setLoading(false);
+            setEvaluating(false);
         }
     };
+
+    if (evaluating) {
+        return (
+            <div className="container mx-auto px-4 py-10 max-w-2xl flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <div className="mb-4">
+                        <PentagonSpinner />
+                    </div>
+                    <p className="text-neutral-600">Evaluating your mission performance...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (completed && score !== null && feedback) {
         return (
@@ -73,10 +146,35 @@ export function MissionChat({ mission }: MissionChatProps) {
                         <CardTitle className="text-2xl text-center">Mission Complete!</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                        <div className="text-center">
-                            <div className="text-6xl font-bold text-teal-600 mb-2">{score}</div>
-                            <p className="text-neutral-600">out of 100</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="text-center">
+                                <div className="text-6xl font-bold text-teal-600 mb-2">{score}</div>
+                                <p className="text-sm text-neutral-600">Overall Score</p>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-6xl font-bold text-blue-600 mb-2">{grammarScore}</div>
+                                <p className="text-sm text-neutral-600">Grammar Score</p>
+                            </div>
                         </div>
+
+                        {objectiveProgress.length > 0 && (
+                            <div className="bg-neutral-50 p-4 rounded-lg">
+                                <h3 className="font-semibold mb-3">Objectives:</h3>
+                                <ul className="space-y-2">
+                                    {objectiveProgress.map((obj, idx) => (
+                                        <li key={idx} className="flex items-start gap-3">
+                                            <span className={`text-lg mt-0.5 ${obj.completed ? 'text-green-600' : 'text-neutral-400'}`}>
+                                                {obj.completed ? '✓' : '○'}
+                                            </span>
+                                            <span className={obj.completed ? 'text-neutral-700' : 'text-neutral-500'}>
+                                                {obj.objective}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
                         <div className="bg-neutral-50 p-4 rounded-lg">
                             <h3 className="font-semibold mb-2">Feedback:</h3>
                             <p className="text-neutral-700">{feedback}</p>

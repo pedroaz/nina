@@ -26,4 +26,5 @@ export * from './cqrs/admin-commands';
 export * from './cqrs/mission-commands';
 export * from './cqrs/mission-queries';
 export * from './llm/mission-flows';
+export * from './llm/session-store';
 export * from './entities/mission';

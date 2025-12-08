@@ -19,5 +19,8 @@ export default async function MissionPage({ params }: MissionPageProps) {
         notFound();
     }
 
-    return <MissionChat mission={mission} />;
+    // Convert MongoDB document to plain object for client component
+    const plainMission = JSON.parse(JSON.stringify(mission));
+
+    return <MissionChat mission={plainMission} />;
 }
