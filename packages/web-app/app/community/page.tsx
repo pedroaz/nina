@@ -1,15 +1,10 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { PentagonSpinner } from "@/components/pentagon-spinner";
 
-export default async function Community() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/community")}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
+export default function Community() {
     return (
         <section className="mx-auto flex min-h-[60vh] w-full max-w-5xl flex-col gap-8 px-4 py-10">
             <div className="flex flex-col gap-4">
@@ -18,6 +13,20 @@ export default async function Community() {
                     Connect with other Language learners, share experiences, and grow together.
                 </p>
             </div>
+            <Suspense fallback={<PentagonSpinner />}>
+                <AuthCheck />
+            </Suspense>
         </section>
     );
+}
+
+async function AuthCheck() {
+    const session = await getServerSession(authOptions);
+    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/community")}`;
+
+    if (!session?.user?.email) {
+        redirect(signInUrl);
+    }
+
+    return null;
 }
