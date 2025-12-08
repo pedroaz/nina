@@ -1,9 +1,7 @@
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getFlashCardDecksByUserId, getUserByEmail, getDeckProgressSummary } from "@core/index";
+import { getFlashCardDecksByUserId, getDeckProgressSummary } from "@core/index";
 import { Card } from "@/components/ui/card";
 import { DeckCard } from "@/components/deck-card";
+import { getAuthenticatedUser } from "@/lib/get-authenticated-user";
 
 type DeckListItem = {
     id: string;
@@ -15,18 +13,7 @@ type DeckListItem = {
 };
 
 export async function DeckList() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/flash-cards")}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
-    const user = await getUserByEmail(session.user.email);
-
-    if (!user) {
-        redirect(signInUrl);
-    }
+    const user = await getAuthenticatedUser("/flash-cards");
 
     const decks = await getFlashCardDecksByUserId(user._id);
 

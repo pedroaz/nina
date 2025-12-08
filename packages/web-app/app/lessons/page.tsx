@@ -1,9 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getLessonsByUserId, getUserByEmail } from "@core/index";
+import { getLessonsByUserId } from "@core/index";
 import { Button } from "@/components/ui/button";
 import { PentagonSpinner } from "@/components/pentagon-spinner";
 import {
@@ -50,18 +47,8 @@ export default function CustomLessons() {
 }
 
 async function LessonList() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/lessons")}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
-    const user = await getUserByEmail(session.user.email);
-
-    if (!user) {
-        redirect(signInUrl);
-    }
+    const { getAuthenticatedUser } = await import("@/lib/get-authenticated-user");
+    const user = await getAuthenticatedUser("/lessons");
 
     const lessons = await getLessonsByUserId(user._id);
 

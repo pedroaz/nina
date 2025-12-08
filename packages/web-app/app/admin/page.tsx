@@ -1,23 +1,15 @@
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminDatabasePanel } from "@/components/admin-database-panel";
+import { getAuthenticatedSession } from "@/lib/get-authenticated-user";
 
 const ADMIN_EMAIL = "nina-app@outlook.com";
 
 export default async function AdminPage() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/admin")}`;
-
-    // Auth check - must be signed in
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
+    const session = await getAuthenticatedSession("/admin");
 
     // Admin check - must be the specific admin email
-    if (session.user.email !== ADMIN_EMAIL) {
+    if (session.user?.email !== ADMIN_EMAIL) {
         redirect("/");
     }
 

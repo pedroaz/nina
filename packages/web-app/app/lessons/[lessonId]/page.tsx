@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { redirect, notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { DualLanguageTextCard, type DualLanguageContent } from "@/components/dual-language-text-card";
 import { AvatarHelper } from "@/components/avatar-helper";
@@ -9,7 +7,8 @@ import { ExtraSectionsInput } from "@/components/extra-sections-input";
 import { GenerateFlashCardsDialog } from "@/components/generate-flashcards-dialog";
 import { GenerateExercisesDialog } from "@/components/generate-exercises-dialog";
 import { LessonMetadataDialog } from "@/components/lesson-metadata-dialog";
-import { getLessonById, getUserByEmail } from "@core/index";
+import { getLessonById } from "@core/index";
+import { getAuthenticatedUser } from "@/lib/get-authenticated-user";
 
 type LessonPageProps = {
     params: Promise<{
@@ -19,18 +18,7 @@ type LessonPageProps = {
 
 export default async function LessonDetailsPage({ params }: LessonPageProps) {
     const { lessonId } = await params;
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent(`/lessons/${lessonId}`)}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
-    const user = await getUserByEmail(session.user.email);
-
-    if (!user) {
-        redirect(signInUrl);
-    }
+    await getAuthenticatedUser(`/lessons/${lessonId}`);
 
     const lesson = await getLessonById(lessonId);
 

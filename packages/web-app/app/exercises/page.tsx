@@ -1,32 +1,18 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getExerciseSetsByUserIdQuery, getUserByEmail } from "@core/index";
+import { getExerciseSetsByUserIdQuery, ExerciseSet } from "@core/index";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Play, Trash2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { getAuthenticatedUser } from "@/lib/get-authenticated-user";
+import { ExerciseSection } from "@/components/exercises/exercise-section";
+
+const EXERCISE_TYPES: { type: ExerciseSet['type']; label: string }[] = [
+    { type: 'multiple_choice', label: 'Multiple Choice' },
+    { type: 'sentence_creation', label: 'Sentence Creation' },
+];
 
 export default async function ExercisesPage() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/exercises")}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
-    const user = await getUserByEmail(session.user.email);
-
-    if (!user) {
-        redirect(signInUrl);
-    }
-
+    const user = await getAuthenticatedUser("/exercises");
     const exerciseSets = await getExerciseSetsByUserIdQuery(user._id);
-
-    // Group by type
-    const multipleChoiceSets = exerciseSets.filter((set) => set.type === 'multiple_choice');
-    const sentenceCreationSets = exerciseSets.filter((set) => set.type === 'sentence_creation');
 
     return (
         <section className="mx-auto flex min-h-[60vh] w-full max-w-5xl flex-col gap-8 px-4 py-10">
@@ -53,85 +39,13 @@ export default async function ExercisesPage() {
                 </Card>
             ) : (
                 <div className="space-y-8">
-                    {/* Multiple Choice Section */}
-                    {multipleChoiceSets.length > 0 && (
-                        <div>
-                            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                                Multiple Choice
-                                <Badge variant="teal">{multipleChoiceSets.length}</Badge>
-                            </h2>
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {multipleChoiceSets.map((set) => (
-                                    <Card key={set._id}>
-                                        <CardHeader className="flex flex-row items-start justify-between gap-4">
-                                            <div className="space-y-1">
-                                                <CardTitle className="text-base font-medium">
-                                                    {set.title}
-                                                </CardTitle>
-                                            </div>
-                                            <form action={`/api/exercise-sets/${set._id}`} method="post">
-                                                <div className="flex gap-2">
-                                                    <Button variant="destructive" size="icon-sm" type="submit">
-                                                        <Trash2 className="size-4" />
-                                                    </Button>
-                                                    <Button asChild size="sm">
-                                                        <Link href={`/exercises/${set._id}`}>
-                                                            <Play></Play>
-                                                        </Link>
-                                                    </Button>
-                                                </div>
-                                            </form>
-                                        </CardHeader>
-                                        <CardContent className="flex flex-col gap-2 text-sm text-neutral-600">
-                                            <p className="whitespace-pre-wrap leading-relaxed">
-                                                {set.topic || "No topic available."}
-                                            </p>
-                                        </CardContent>
-                                    </Card>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Sentence Creation Section */}
-                    {sentenceCreationSets.length > 0 && (
-                        <div>
-                            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                                Sentence Creation
-                                <Badge variant="teal">{sentenceCreationSets.length}</Badge>
-                            </h2>
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {sentenceCreationSets.map((set) => (
-                                    <Card key={set._id}>
-                                        <CardHeader className="flex flex-row items-start justify-between gap-4">
-                                            <div className="space-y-1">
-                                                <CardTitle className="text-base font-medium">
-                                                    {set.title}
-                                                </CardTitle>
-                                            </div>
-                                            <form action={`/api/exercise-sets/${set._id}`} method="post">
-                                                <div className="flex gap-2">
-                                                    <Button variant="destructive" size="icon-sm" type="submit">
-                                                        <Trash2 className="size-4" />
-                                                    </Button>
-                                                    <Button asChild size="sm">
-                                                        <Link href={`/exercises/${set._id}`}>
-                                                            <Play></Play>
-                                                        </Link>
-                                                    </Button>
-                                                </div>
-                                            </form>
-                                        </CardHeader>
-                                        <CardContent className="flex flex-col gap-2 text-sm text-neutral-600">
-                                            <p className="whitespace-pre-wrap leading-relaxed">
-                                                {set.topic || "No topic available."}
-                                            </p>
-                                        </CardContent>
-                                    </Card>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    {EXERCISE_TYPES.map(({ type, label }) => (
+                        <ExerciseSection
+                            key={type}
+                            title={label}
+                            exerciseSets={exerciseSets.filter((set) => set.type === type)}
+                        />
+                    ))}
                 </div>
             )}
         </section>

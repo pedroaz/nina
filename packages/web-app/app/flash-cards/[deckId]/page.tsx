@@ -1,24 +1,12 @@
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getFlashCardDeckById, getUserByEmail } from "@core/index";
+import { getFlashCardDeckById } from "@core/index";
 import logger from "@/lib/logger"
 import { FlashCardPractice } from "@/components/flashcard-practice";
+import { getAuthenticatedUser } from "@/lib/get-authenticated-user";
 
 export default async function FlashCardDeckPage({ params }: { params: Promise<{ deckId: string }> }) {
     const { deckId } = await params;
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent(`/flash-cards/${deckId}`)}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
-    const user = await getUserByEmail(session.user.email);
-
-    if (!user) {
-        redirect(signInUrl);
-    }
+    const user = await getAuthenticatedUser(`/flash-cards/${deckId}`);
 
     logger.info({ deckId }, '[Flash Card Practice] Fetching deck with ID');
     const deck = await getFlashCardDeckById(deckId);

@@ -1,14 +1,7 @@
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { getAuthenticatedSession } from "@/lib/get-authenticated-user";
 
 export default async function LearningPath() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/learning-path")}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
+    await getAuthenticatedSession("/learning-path");
 
     return (
         <section className="mx-auto flex min-h-[60vh] w-full max-w-5xl flex-col gap-8 px-4 py-10">

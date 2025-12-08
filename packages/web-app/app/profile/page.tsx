@@ -1,27 +1,13 @@
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FlashCardSettings } from "@/components/flash-card-settings";
 import { LevelSettings } from "@/components/level-settings";
 import { LanguageSettings } from "@/components/language-settings";
 import { SignOutButton } from "@/components/sign-out-button";
-import { getUserByEmail } from "@core/index";
+import { getAuthenticatedUser } from "@/lib/get-authenticated-user";
 
 export default async function Profile() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/profile")}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
-    const user = await getUserByEmail(session.user.email);
-
-    if (!user) {
-        redirect(signInUrl);
-    }
+    const user = await getAuthenticatedUser("/profile");
+    const session = { user: { email: user.email, name: user.name } };
 
     const displayName = user.name || session.user.name || "Anonymous";
     const userLevel = user.level || "A1";

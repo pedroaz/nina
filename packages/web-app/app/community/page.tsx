@@ -1,8 +1,6 @@
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { PentagonSpinner } from "@/components/pentagon-spinner";
+import { getAuthenticatedSession } from "@/lib/get-authenticated-user";
 
 export default function Community() {
     return (
@@ -21,12 +19,6 @@ export default function Community() {
 }
 
 async function AuthCheck() {
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent("/community")}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
+    await getAuthenticatedSession("/community");
     return null;
 }
