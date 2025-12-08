@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FlashCardSettings } from "@/components/flash-card-settings";
 import { LevelSettings } from "@/components/level-settings";
 import { LanguageSettings } from "@/components/language-settings";
+import { SignOutButton } from "@/components/sign-out-button";
 import { getUserByEmail } from "@core/index";
 
 export default async function Profile() {
@@ -62,6 +63,9 @@ export default async function Profile() {
                             </dd>
                         </div>
                     </dl>
+                    <div className="mt-6">
+                        <SignOutButton />
+                    </div>
                 </CardContent>
             </Card>
 
