@@ -1,0 +1,1 @@
+Always start by reading the file agent.md (inside the ./agent folder from the root of the repo) file to grab some information about the agent system.
