@@ -164,35 +164,37 @@ export default function CustomLessonsNew() {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                    <button
+                    <Button
                         type="button"
                         onClick={() => setFocus(focus === 'vocabulary' ? null : 'vocabulary')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${focus === 'vocabulary'
-                                ? 'border-orange-500 bg-orange-50 text-orange-700'
-                                : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        variant="destructive"
+                        className={`${focus === 'vocabulary'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-neutral-200'
                             }`}
                         disabled={isSubmitting}
                     >
                         <BookText className="h-4 w-4" />
                         <span className="text-sm font-medium">Vocabulary Focus</span>
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
                         type="button"
                         onClick={() => setFocus(focus === 'grammar' ? null : 'grammar')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${focus === 'grammar'
-                                ? 'border-orange-500 bg-orange-50 text-orange-700'
-                                : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        variant="outline"
+                        className={`${focus === 'grammar'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-neutral-200'
                             }`}
                         disabled={isSubmitting}
                     >
                         <GraduationCap className="h-4 w-4" />
                         <span className="text-sm font-medium">Grammar Focus</span>
-                    </button>
+                    </Button>
 
                     <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${image
-                            ? 'border-orange-500 bg-orange-50 text-orange-700'
-                            : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-neutral-200 bg-white hover:border-neutral-300'
                         }`}>
                         <ImageIcon className="h-4 w-4" />
                         <span className="text-sm font-medium">
@@ -208,13 +210,13 @@ export default function CustomLessonsNew() {
                     </label>
 
                     {image && (
-                        <button
+                        <Button
                             type="button"
                             onClick={() => setImage(null)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-error-border bg-error-bg text-error-text hover:bg-error-bg transition-all"
+                            variant="destructive"
                         >
                             <span className="text-sm font-medium">Remove Image</span>
-                        </button>
+                        </Button>
                     )}
                 </div>
 
@@ -225,12 +227,13 @@ export default function CustomLessonsNew() {
                 )}
 
                 <div className="flex gap-3">
-                    <button
+                    <Button
                         type="button"
                         onClick={() => setModelType('detailed')}
-                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all ${modelType === 'detailed'
-                                ? 'border-orange-500 bg-orange-50 text-orange-700'
-                                : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        variant="outline"
+                        className={`flex-1 ${modelType === 'detailed'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-neutral-200'
                             }`}
                         disabled={isSubmitting}
                     >
@@ -239,14 +242,15 @@ export default function CustomLessonsNew() {
                             <div className="text-sm font-semibold">Detailed</div>
                             <div className="text-xs opacity-75">Comprehensive</div>
                         </div>
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button
                         type="button"
                         onClick={() => setModelType('fast')}
-                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-all ${modelType === 'fast'
-                                ? 'border-orange-500 bg-orange-50 text-orange-700'
-                                : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        variant="outline"
+                        className={`flex-1 ${modelType === 'fast'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-neutral-200'
                             }`}
                         disabled={isSubmitting}
                     >
@@ -255,7 +259,7 @@ export default function CustomLessonsNew() {
                             <div className="text-sm font-semibold">Fast</div>
                             <div className="text-xs opacity-75">Quick & Efficient</div>
                         </div>
-                    </button>
+                    </Button>
                 </div>
 
                 {error ? (
@@ -286,7 +290,7 @@ export default function CustomLessonsNew() {
                 <div className="flex items-center justify-end gap-4">
                     <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         onClick={() => router.push("/lessons")}
                         disabled={isSubmitting}
                     >

@@ -185,7 +185,7 @@ export default function NewExerciseSet() {
                 <div className="flex items-center justify-end gap-4">
                     <Button
                         type="button"
-                        variant="outline"
+                        variant="destructive"
                         onClick={() => router.push("/exercises")}
                         disabled={isSubmitting}
                     >

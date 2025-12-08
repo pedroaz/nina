@@ -284,13 +284,15 @@ export function DualLanguageTextCard({
                 <div className="absolute left-full top-0 ml-4 max-w-sm w-80 bg-white border border-neutral-200 rounded-lg shadow-lg p-4 z-50">
                     <div className="flex justify-between items-center mb-3">
                         <h3 className="text-sm font-semibold text-neutral-900">Translations</h3>
-                        <button
+                        <Button
                             onClick={handleClearAllTranslations}
-                            className="text-xs text-neutral-500 hover:text-neutral-700 transition-colors"
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-auto p-1"
                             aria-label="Clear all translations"
                         >
                             Clear all
-                        </button>
+                        </Button>
                     </div>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                         {translations.map((pair, index) => (
@@ -305,9 +307,11 @@ export function DualLanguageTextCard({
                                             {pair.translated}
                                         </p>
                                     </div>
-                                    <button
+                                    <Button
                                         onClick={() => handleRemoveTranslation(index)}
-                                        className="text-neutral-400 hover:text-neutral-600 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-neutral-400 hover:text-neutral-600 opacity-0 group-hover:opacity-100 flex-shrink-0 h-auto w-auto p-0"
                                         aria-label="Remove translation"
                                     >
                                         <svg
@@ -324,7 +328,7 @@ export function DualLanguageTextCard({
                                             <line x1="18" y1="6" x2="6" y2="18"></line>
                                             <line x1="6" y1="6" x2="18" y2="18"></line>
                                         </svg>
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         ))}

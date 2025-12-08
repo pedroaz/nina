@@ -54,31 +54,23 @@ export function DashboardStats({ userId }: DashboardStatsProps) {
     const statCards = [
         {
             title: "Lessons",
-            value: stats?.lessonsCount || 0,
+            value: stats?.lessonsCount ?? 0,
             icon: BookOpen,
-            color: "text-orange-600",
-            bgColor: "bg-orange-50",
         },
         {
             title: "Exercise Sets",
-            value: stats?.exerciseSetsCount || 0,
+            value: stats?.exerciseSetsCount ?? 0,
             icon: Dumbbell,
-            color: "text-teal-600",
-            bgColor: "bg-teal-50",
         },
         {
             title: "Flashcard Decks",
-            value: stats?.flashCardDecksCount || 0,
+            value: stats?.flashCardDecksCount ?? 0,
             icon: CreditCard,
-            color: "text-orange-700",
-            bgColor: "bg-orange-100",
         },
         {
             title: "Missions Completed",
-            value: stats?.missionsCompleted || 0,
+            value: stats?.missionsCompleted ?? 0,
             icon: Target,
-            color: "text-teal-700",
-            bgColor: "bg-teal-100",
         },
     ];
 
@@ -86,21 +78,20 @@ export function DashboardStats({ userId }: DashboardStatsProps) {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {statCards.map((stat, index) => {
                 const Icon = stat.icon;
-                const isOrange = index % 2 === 0;
-                const bgColor = isOrange ? 'bg-orange-50 border-orange-600' : 'bg-teal-50 border-teal-600';
-                const iconBg = isOrange ? 'bg-orange-200' : 'bg-teal-200';
+                const isPrimary = index % 2 === 0;
+                const iconColor = isPrimary ? 'text-orange-500' : 'text-teal-500';
 
                 return (
-                    <Card key={stat.title} className={`${bgColor} p-6`}>
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wide">
-                                {stat.title}
-                            </h3>
-                            <div className={`rounded-2xl border-[3px] border-neutral-900 p-2.5 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.15)] ${iconBg}`}>
-                                <Icon className={`h-5 w-5 ${stat.color}`} />
-                            </div>
-                        </div>
-                        <div className="text-4xl font-extrabold text-neutral-900">{stat.value}</div>
+                    <Card key={stat.title}>
+                        <CardHeader>
+                            <CardTitle className="flex items-center justify-between">
+                                <span className="text-sm">{stat.title}</span>
+                                <Icon className={`h-6 w-6 ${iconColor}`} />
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold">{stat.value}</div>
+                        </CardContent>
                     </Card>
                 );
             })}
