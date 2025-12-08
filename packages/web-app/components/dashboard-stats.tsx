@@ -89,7 +89,7 @@ export function DashboardStats({ userId }: DashboardStatsProps) {
                 const isOrange = index % 2 === 0;
                 const bgColor = isOrange ? 'bg-orange-50 border-orange-600' : 'bg-teal-50 border-teal-600';
                 const iconBg = isOrange ? 'bg-orange-200' : 'bg-teal-200';
-                
+
                 return (
                     <Card key={stat.title} className={`${bgColor} p-6`}>
                         <div className="flex items-center justify-between mb-3">
