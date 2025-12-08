@@ -5,6 +5,7 @@ import { logger } from "@core/index";
 
 export interface SavePromptMetadataRequestData {
     lessonId?: string;
+    missionId?: string;
     operation: PromptOperationType;
     modelUsed: PromptModelName;
     inputTokens: number;
@@ -29,6 +30,7 @@ export async function savePromptMetadataCommand(
 
     const promptMetadata = new PromptMetadataModel({
         lessonId: data.lessonId,
+        missionId: data.missionId,
         operation: data.operation,
         modelUsed: data.modelUsed,
         inputTokens: data.inputTokens,

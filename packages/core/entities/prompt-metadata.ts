@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 export const promptOperationTypeZ = z.enum([
     'lesson_creation',
+    'mission_creation',
     'extra_section',
     'chat',
     'flashcard_generation',
@@ -26,6 +27,7 @@ export const promptMetadataSchemaZ = z.object({
     _id: z.string(),
     __v: z.number(),
     lessonId: z.string().optional(),
+    missionId: z.string().optional(),
     operation: promptOperationTypeZ,
     modelUsed: modelNameZ,
     inputTokens: z.number(),
@@ -44,10 +46,11 @@ export type PromptMetadata = z.infer<typeof promptMetadataSchemaZ>;
 
 export const promptMetadataSchema = new mongoose.Schema<PromptMetadata>({
     lessonId: { type: String, required: false },
+    missionId: { type: String, required: false },
     operation: {
         type: String,
         required: true,
-        enum: ['lesson_creation', 'extra_section', 'chat', 'flashcard_generation', 'exercise_generation_mc', 'exercise_generation_sc', 'exercise_sentence_judging']
+        enum: ['lesson_creation', 'mission_creation', 'extra_section', 'chat', 'flashcard_generation', 'exercise_generation_mc', 'exercise_generation_sc', 'exercise_sentence_judging']
     },
     modelUsed: {
         type: String,
@@ -68,6 +71,7 @@ export const promptMetadataSchema = new mongoose.Schema<PromptMetadata>({
 
 // Add index for efficient queries
 promptMetadataSchema.index({ lessonId: 1 });
+promptMetadataSchema.index({ missionId: 1 });
 promptMetadataSchema.index({ userId: 1 });
 promptMetadataSchema.index({ timestamp: -1 });
 

@@ -15,6 +15,7 @@ export const missionSchemaZ = z.object({
     objectives: z.array(z.string()),
     studentData: studentDataSchemaZ,
     createdAt: z.date(),
+    creationPromptMetadataId: z.string().optional(),
 });
 
 export type Mission = z.infer<typeof missionSchemaZ>;
@@ -26,6 +27,7 @@ export const missionSchema = new mongoose.Schema<Mission>({
     objectives: [{ type: String, required: true }],
     studentData: studentSchemaM,
     createdAt: { type: Date, required: true, default: Date.now },
+    creationPromptMetadataId: { type: String, required: false },
 });
 
 export const MissionModel =

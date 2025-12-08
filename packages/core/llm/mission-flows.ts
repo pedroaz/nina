@@ -1,8 +1,83 @@
 
+// Mission Creation Flow
+
+import { chatAi, ai, getModelConfig, logger, MODEL_CATEGORIES, studentLevelSchemaZ, UsageMetadata } from "../";
+import { z } from "zod";
+
+export const MissionCreationInputSchema = z.object({
+    topic: z.string().describe('User topic for the mission'),
+    baseLanguage: z.string().describe('Base language'),
+    targetLanguage: z.string().describe('Target language'),
+    studentLevel: studentLevelSchemaZ.describe('Student proficiency level'),
+});
+
+export const MissionCreationOutputSchema = z.object({
+    title: z.string().describe('Title of the mission'),
+    scenario: z.string().describe('Scenario description'),
+    difficulty: z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']).describe('Difficulty level'),
+    objectives: z.array(z.string()).describe('List of 3-5 objectives for the mission'),
+});
+
+export const createMissionFlow = async (
+    input: z.infer<typeof MissionCreationInputSchema>
+): Promise<{ mission: z.infer<typeof MissionCreationOutputSchema>; usage: UsageMetadata }> => {
+    const modelConfig = getModelConfig(MODEL_CATEGORIES.DETAILED);
+    const startTime = performance.now();
+
+    logger.info(`[Mission Creation] Starting mission generation`);
+    logger.info(`[Mission Creation] Using ${modelConfig.displayName}`);
+    logger.info(`[Mission Creation] Topic: "${input.topic}"`);
+
+    const prompt = `You are an expert language tutor creating a roleplay mission for a student.
+
+Topic: ${input.topic}
+Student Level: ${input.studentLevel}
+Target Language: ${input.targetLanguage}
+Base Language: ${input.baseLanguage}
+
+Create a realistic and engaging roleplay scenario based on the topic.
+The scenario should be appropriate for the student's level.
+Define 3-5 clear objectives for the student to achieve during the roleplay.
+The title should be concise and engaging.
+The difficulty should match the student level (A1-C2).
+
+Return a JSON object with the following fields:
+- title: The title of the mission
+- scenario: A description of the situation and the student's role
+- difficulty: The CEFR level (A1, A2, B1, B2, C1, C2)
+- objectives: An array of strings, each describing a specific goal`;
+
+    const generateStart = performance.now();
+    const response = await ai.generate({
+        prompt: prompt,
+        output: { schema: MissionCreationOutputSchema },
+    });
+    const { output, usage, finishReason } = response;
+    const generateEnd = performance.now();
+
+    logger.info(`[Mission Creation] Generation time: ${(generateEnd - generateStart).toFixed(2)}ms`);
+    logger.info(`[Mission Creation] Input tokens: ${usage?.inputTokens || 0}`);
+    logger.info(`[Mission Creation] Output tokens: ${usage?.outputTokens || 0}`);
+
+    if (!output) throw new Error('Failed to generate mission');
+
+    const totalTime = performance.now() - startTime;
+
+    return {
+        mission: output,
+        usage: {
+            inputTokens: usage?.inputTokens || 0,
+            outputTokens: usage?.outputTokens || 0,
+            totalTokens: usage?.totalTokens || 0,
+            modelUsed: modelConfig.name,
+            executionTimeMs: totalTime,
+            finishReason: finishReason || undefined,
+        },
+    };
+};
+
 // Mission Chat Flow
 
-import { chatAi, getModelConfig, logger, MODEL_CATEGORIES, studentLevelSchemaZ, UsageMetadata } from "../";
-import { z } from "zod";
 
 export const MissionChatInputSchema = z.object({
     missionTitle: z.string().describe('Title of the mission'),
