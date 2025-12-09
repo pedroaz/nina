@@ -13,9 +13,10 @@ import {
   LandingProductTourContent
 } from '@/components/landing/LandingProductTour';
 import Image from '@/components/shared/Image';
+import { getAllBlogPosts } from '@/lib/blog-data';
 
 export default function Component() {
-
+  const blogPosts = getAllBlogPosts();
 
   return (
     <>
@@ -109,6 +110,70 @@ export default function Component() {
           href="https://coolify.io"
         />
       </LandingBentoGridSection>
+
+      <section className="w-full py-12 lg:py-16 px-6">
+        <div className="container mx-auto max-w-7xl">
+          <div className="grid lg:grid-cols-2 gap-12">
+            {/* Blog Section */}
+            <div>
+              <h2 className="text-3xl lg:text-4xl font-bold font-display mb-4">Learn from our Blog</h2>
+              <p className="text-lg opacity-70 mb-8">
+                Stay updated with the latest insights and tips for learning German with AI.
+              </p>
+              {blogPosts.length > 0 ? (
+                <div className="space-y-4">
+                  {blogPosts.map((post) => (
+                    <a
+                      key={post.slug}
+                      href={`/blog/${post.slug}`}
+                      className="block p-4 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
+                    >
+                      <h3 className="font-bold text-lg mb-2">{post.title}</h3>
+                      <p className="text-sm opacity-70 mb-2">{post.summary}</p>
+                      <div className="flex items-center justify-between text-xs opacity-50">
+                        <span>{post.date}</span>
+                        <span>{post.readingTime} min read</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm opacity-50">No blog posts yet.</p>
+              )}
+            </div>
+
+            {/* Legal Section */}
+            <div>
+              <h2 className="text-3xl lg:text-4xl font-bold font-display mb-4">Legal Information</h2>
+              <p className="text-lg opacity-70 mb-8">
+                Review our privacy practices and terms of service.
+              </p>
+              <div className="space-y-4">
+                <a
+                  href="/privacy-policy"
+                  className="block p-4 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
+                >
+                  <h3 className="font-bold text-lg mb-2">Privacy Policy</h3>
+                  <p className="text-sm opacity-70 mb-2">
+                    Learn how we collect, use, and protect your personal data in compliance with GDPR.
+                  </p>
+                  <span className="text-xs text-primary-500">Read more →</span>
+                </a>
+                <a
+                  href="/terms-of-service"
+                  className="block p-4 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
+                >
+                  <h3 className="font-bold text-lg mb-2">Terms of Service</h3>
+                  <p className="text-sm opacity-70 mb-2">
+                    Read the terms governing your use of Nina and our Services.
+                  </p>
+                  <span className="text-xs text-primary-500">Read more →</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <LandingPricingSection
         title="Simple, flexible pricing"
