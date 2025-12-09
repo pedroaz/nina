@@ -1,10 +1,14 @@
 import Link from "next/link";
-import { redirect, notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { DualLanguageTextCard, type DualLanguageContent } from "@/components/dual-language-text-card";
-import { getLessonById, getUserByEmail } from "@core/index";
+import { AvatarHelper } from "@/components/avatar-helper";
+import { ExtraSectionsInput } from "@/components/extra-sections-input";
+import { GenerateFlashCardsDialog } from "@/components/generate-flashcards-dialog";
+import { GenerateExercisesDialog } from "@/components/generate-exercises-dialog";
+import { LessonMetadataDialog } from "@/components/lesson-metadata-dialog";
+import { getLessonById } from "@core/index";
+import { getAuthenticatedUser } from "@/lib/get-authenticated-user";
 
 type LessonPageProps = {
     params: Promise<{
@@ -14,18 +18,7 @@ type LessonPageProps = {
 
 export default async function LessonDetailsPage({ params }: LessonPageProps) {
     const { lessonId } = await params;
-    const session = await getServerSession(authOptions);
-    const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent(`/lessons/${lessonId}`)}`;
-
-    if (!session?.user?.email) {
-        redirect(signInUrl);
-    }
-
-    const user = await getUserByEmail(session.user.email);
-
-    if (!user) {
-        redirect(signInUrl);
-    }
+    await getAuthenticatedUser(`/lessons/${lessonId}`);
 
     const lesson = await getLessonById(lessonId);
 
@@ -33,19 +26,19 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         notFound();
     }
 
-    const sanitizeDualLanguage = <T extends Partial<Record<"base" | "german", unknown>>>(
+    const sanitizeDualLanguage = <T extends Partial<Record<"base" | "target", unknown>>>(
         entry: T | null | undefined,
     ): DualLanguageContent => {
         if (!entry) return {};
 
         const base = typeof entry.base === "string" ? entry.base : undefined;
-        const german = typeof entry.german === "string" ? entry.german : undefined;
+        const target = typeof entry.target === "string" ? entry.target : undefined;
 
-        return { base, german };
+        return { base, target };
     };
 
     const sanitizeDualLanguageList = (
-        entries: Array<Partial<Record<"base" | "german", unknown>>> | null | undefined,
+        entries: Array<Partial<Record<"base" | "target", unknown>>> | null | undefined,
     ): DualLanguageContent[] => {
         if (!Array.isArray(entries)) return [];
         return entries.map((entry) => sanitizeDualLanguage(entry));
@@ -56,45 +49,81 @@ export default async function LessonDetailsPage({ params }: LessonPageProps) {
         quickSummary: sanitizeDualLanguage(lesson.quickSummary),
         quickExamples: sanitizeDualLanguageList(lesson.quickExamples),
         fullExplanation: sanitizeDualLanguage(lesson.fullExplanation),
+        extraSections: sanitizeDualLanguageList(lesson.extraSections),
     };
 
+    // Convert lesson to plain object for client component
+    // Use JSON serialization to strip MongoDB types (ObjectId, Date, etc.)
+    const plainLesson = JSON.parse(JSON.stringify({
+        _id: lesson._id.toString(),
+        __v: lesson.__v,
+        topic: lesson.topic,
+        vocabulary: lesson.vocabulary,
+        studentData: lesson.studentData,
+        title: lesson.title,
+        quickSummary: lesson.quickSummary,
+        quickExamples: lesson.quickExamples,
+        fullExplanation: lesson.fullExplanation,
+    }));
+
     const lessonTitleRaw =
-        sanitizedLesson.title.base || sanitizedLesson.title.german || "Untitled lesson";
+        sanitizedLesson.title.base || sanitizedLesson.title.target || "Untitled lesson";
     const lessonTitle = lessonTitleRaw.replace(/^#+\s*/, "").trimStart();
 
     return (
-        <section className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10">
-            <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-2">
-                    <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
-                    {lesson.vocabulary && (
-                        <p className="text-sm text-slate-500">Vocabulary focus: {lesson.vocabulary}</p>
-                    )}
-                </div>
-                <Button variant="outline" asChild>
-                    <Link href="/lessons">Back to lessons</Link>
-                </Button>
-            </header>
+        <>
+            <section className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10">
+                <h1 className="text-3xl font-semibold">{lessonTitle}</h1>
 
-            <article className="space-y-8">
-                <DualLanguageTextCard
-                    heading="Summary"
-                    content={sanitizedLesson.quickSummary}
-                    emptyMessage="This lesson does not have a summary yet."
-                />
+                <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-2">
+                        {lesson.vocabulary && (
+                            <p className="text-sm text-neutral-500">Vocabulary focus: {lesson.vocabulary}</p>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                        <LessonMetadataDialog lessonId={lessonId} />
+                        <GenerateFlashCardsDialog
+                            lessonId={lessonId}
+                            lessonTitle={lessonTitle}
+                        />
+                        <GenerateExercisesDialog
+                            lessonId={lessonId}
+                            lessonTitle={lessonTitle}
+                        />
+                        <Button asChild>
+                            <Link href="/lessons">Back to lessons</Link>
+                        </Button>
+                    </div>
+                </header>
 
-                <DualLanguageTextCard
-                    heading="Examples"
-                    content={sanitizedLesson.quickExamples}
-                    emptyMessage="This lesson does not have examples yet."
-                />
+                <article className="space-y-8">
+                    <DualLanguageTextCard
+                        heading="Summary"
+                        content={sanitizedLesson.quickSummary}
+                        emptyMessage="This lesson does not have a summary yet."
+                    />
 
-                <DualLanguageTextCard
-                    heading="Detailed Explanation"
-                    content={sanitizedLesson.fullExplanation}
-                    emptyMessage="This lesson does not have a detailed explanation yet."
-                />
-            </article>
-        </section>
+                    <DualLanguageTextCard
+                        heading="Examples"
+                        content={sanitizedLesson.quickExamples}
+                        emptyMessage="This lesson does not have examples yet."
+                    />
+
+                    <DualLanguageTextCard
+                        heading="Detailed Explanation"
+                        content={sanitizedLesson.fullExplanation}
+                        emptyMessage="This lesson does not have a detailed explanation yet."
+                    />
+
+                    <ExtraSectionsInput
+                        lessonId={lessonId}
+                        initialExtraSections={sanitizedLesson.extraSections}
+                    />
+                </article>
+            </section>
+
+            <AvatarHelper lesson={plainLesson} />
+        </>
     );
 }

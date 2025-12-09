@@ -14,30 +14,37 @@ export const LandingProductFeature = ({
   children,
   className,
   innerClassName,
+  textClassName,
   title,
   titleComponent,
   description,
   descriptionComponent,
+  leadingComponent,
   textPosition = 'left',
   imageSrc,
   imageAlt = '',
   imagePosition = 'right',
   imagePerspective = 'paper',
   imageShadow = 'hard',
+  imageClassName,
   zoomOnHover = true,
   minHeight = 350,
   withBackground = false,
   withBackgroundGlow = false,
   variant = 'primary',
   backgroundGlowVariant = 'primary',
+  effectComponent,
+  effectClassName,
 }: {
   children?: React.ReactNode;
   className?: string;
   innerClassName?: string;
+  textClassName?: string;
   title?: string | React.ReactNode;
   titleComponent?: React.ReactNode;
   description?: string | React.ReactNode;
   descriptionComponent?: React.ReactNode;
+  leadingComponent?: React.ReactNode;
   textPosition?: 'center' | 'left';
   imageSrc?: string;
   imageAlt?: string;
@@ -50,17 +57,20 @@ export const LandingProductFeature = ({
     | 'bottom-lg'
     | 'paper';
   imageShadow?: 'none' | 'soft' | 'hard';
+  imageClassName?: string;
   zoomOnHover?: boolean;
   minHeight?: number;
   withBackground?: boolean;
   withBackgroundGlow?: boolean;
   variant?: 'primary' | 'secondary';
   backgroundGlowVariant?: 'primary' | 'secondary';
+  effectComponent?: React.ReactNode;
+  effectClassName?: string;
 }) => {
   return (
     <section
       className={clsx(
-        'w-full flex flex-col justify-center items-center gap-8 py-12 lg:py-16',
+        'relative w-full flex flex-col justify-center items-center gap-8 py-12 lg:py-16',
         withBackground && variant === 'primary'
           ? 'bg-primary-100/20 dark:bg-primary-900/10'
           : '',
@@ -68,12 +78,31 @@ export const LandingProductFeature = ({
           ? 'bg-secondary-100/20 dark:bg-secondary-900/10'
           : '',
         withBackgroundGlow || imagePerspective !== 'none'
-          ? 'overflow-x-hidden'
+          ? 'overflow-hidden'
           : '',
         imagePerspective === 'paper' ? 'md:pb-24' : '',
         className,
       )}
     >
+      {effectComponent ? (
+        <div className={clsx('absolute inset-0', effectClassName)}>
+          {effectComponent}
+        </div>
+      ) : null}
+
+      {imageSrc && withBackgroundGlow ? (
+        <div className="hidden lg:flex justify-center w-full h-full absolute pointer-events-none">
+          <GlowBg
+            className={clsx(
+              'w-full lg:w-1/2 h-auto z-0 dark:opacity-50',
+              imagePosition === 'center' ? 'top-5' : ' -top-1/3',
+              imagePerspective === 'paper' ? 'opacity-70' : 'opacity-100',
+            )}
+            variant={backgroundGlowVariant}
+          />
+        </div>
+      ) : null}
+
       <div
         className={clsx(
           'w-full p-6 flex flex-col items-center relative',
@@ -88,15 +117,20 @@ export const LandingProductFeature = ({
       >
         <div
           className={clsx(
-            'flex flex-col gap-4',
+            'w-full flex flex-col gap-4',
             imagePosition === 'left' && 'lg:col-start-2 lg:row-start-1',
             textPosition === 'center'
               ? 'md:max-w-lg items-center text-center'
               : 'items-start',
+            textClassName,
           )}
         >
+          {leadingComponent}
+
           {title ? (
-            <h2 className="text-4xl font-semibold">{title}</h2>
+            <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold leading-tight">
+              {title}
+            </h2>
           ) : (
             titleComponent
           )}
@@ -112,31 +146,20 @@ export const LandingProductFeature = ({
 
         {imageSrc ? (
           <>
-            {withBackgroundGlow ? (
-              <div className="hidden lg:flex justify-center w-full h-full absolute pointer-events-none">
-                <GlowBg
-                  className={clsx(
-                    'w-full lg:w-1/2 h-auto z-0 dark:opacity-50',
-                    imagePosition === 'center' ? 'top-5' : ' -top-1/3',
-                    imagePerspective === 'paper' ? 'opacity-70' : 'opacity-100',
-                  )}
-                  variant={backgroundGlowVariant}
-                />
-              </div>
-            ) : null}
-
             {imagePosition === 'center' ? (
               <section className="w-full mt-auto pt-4 md:pt-6">
                 <Image
                   className={clsx(
                     'w-full rounded-md overflow-hidden',
+                    imageShadow === 'none' && '!shadow-none',
                     imageShadow === 'soft' && 'shadow-md',
                     imageShadow === 'hard' && 'hard-shadow',
+                    imageClassName,
                   )}
                   src={imageSrc}
                   alt={imageAlt}
-                  width={minHeight + 75}
-                  height={minHeight + 75}
+                  width={minHeight ? minHeight + 75 : 1000}
+                  height={minHeight ? minHeight + 75 : 1000}
                 />
               </section>
             ) : null}
@@ -146,6 +169,7 @@ export const LandingProductFeature = ({
                 className={clsx(
                   'relative w-full rounded-md lg:scale-90',
                   zoomOnHover ? 'hover:scale-100 transition-all' : '',
+                  imageShadow === 'none' && '!shadow-none',
                   imageShadow === 'soft' && 'shadow-md',
                   imageShadow === 'hard' && 'hard-shadow',
                   imagePosition === 'left' && 'lg:-left-6',
@@ -155,14 +179,17 @@ export const LandingProductFeature = ({
                   imagePerspective === 'bottom' && 'lg:perspective-bottom',
                   imagePerspective === 'bottom-lg' &&
                     'lg:perspective-bottom-lg',
-                  imagePerspective === 'paper' &&
-                    'lg:perspective-paper hover:scale-90',
+                  imagePerspective === 'paper' && 'lg:perspective-paper',
+                  imagePerspective === 'paper' && zoomOnHover
+                    ? 'hover:scale-90 transition-all'
+                    : '',
                   imagePerspective === 'none' ? 'my-4' : 'my-8',
+                  imageClassName,
                 )}
                 alt={imageAlt}
                 src={imageSrc}
-                width={minHeight + 75}
-                height={minHeight + 75}
+                width={minHeight ? minHeight + 75 : 1000}
+                height={minHeight ? minHeight + 75 : 1000}
               />
             ) : null}
           </>

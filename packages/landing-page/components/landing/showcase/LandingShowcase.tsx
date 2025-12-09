@@ -1,10 +1,9 @@
 import { GlowBg } from '@/components/shared/ui/glow-bg';
 import clsx from 'clsx';
-import { useEffect, useRef, useState } from 'react';
 
 /**
  * A component meant to be used in the landing page.
- * It displays text and a grid of logos, optionally showcasing the companies that use the product, integrations etc.
+ * It displays text and a grid of logos/images, optionally showcasing the companies that use the product, integrations etc.
  */
 export const LandingShowcase = ({
   children,
@@ -43,13 +42,13 @@ export const LandingShowcase = ({
         withBackground && variant === 'secondary'
           ? 'bg-secondary-100/20 dark:bg-secondary-900/10'
           : '',
-        withBackgroundGlow ? 'overflow-x-hidden' : '',
+        withBackgroundGlow ? 'relative overflow-hidden' : '',
         className,
       )}
     >
       <div
         className={clsx(
-          'grid gap-8 items-center relative wide-container lg:grid-cols-2',
+          'grid gap-16 items-center relative container-wide p-6 lg:grid-cols-2',
           innerClassName,
         )}
       >
@@ -60,7 +59,9 @@ export const LandingShowcase = ({
           )}
         >
           {title ? (
-            <h2 className="text-4xl font-semibold">{title}</h2>
+            <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold leading-tight">
+              {title}
+            </h2>
           ) : (
             titleComponent
           )}
@@ -84,7 +85,7 @@ export const LandingShowcase = ({
         ) : null}
 
         {children ? (
-          <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
+          <div className="relative z-10 grid grid-cols-6 md:grid-cols-8 lg:grid-cols-5 2xl:grid-cols-6 gap-4">
             {children}
           </div>
         ) : null}

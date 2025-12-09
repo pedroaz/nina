@@ -14,9 +14,10 @@ export const lessonSchemaZ = z.object({
     title: dualLanguageSchemaZ,
     quickSummary: dualLanguageSchemaZ,
     quickExamples: z.array(dualLanguageSchemaZ),
-    // quickExercises: z.array(dualLanguageSchemaZ),
     fullExplanation: dualLanguageSchemaZ,
-    // exercises: z.array(exerciseSchemaZ),
+    extraSections: z.array(dualLanguageSchemaZ).optional(),
+    modelUsed: z.enum(['gpt-5-nano', 'gpt-4o-mini']).optional(),
+    creationPromptMetadataId: z.string().optional(),
 });
 
 export type Lesson = z.infer<typeof lessonSchemaZ>;
@@ -28,9 +29,10 @@ export const lessonSchema = new mongoose.Schema<Lesson>({
     title: dualLanguageSchemaM,
     quickSummary: dualLanguageSchemaM,
     quickExamples: [dualLanguageSchemaM],
-    // quickExercises: [dualLanguageSchemaM],
     fullExplanation: dualLanguageSchemaM,
-    // exercises: [exerciseSchemaZ],
+    extraSections: [dualLanguageSchemaM],
+    modelUsed: { type: String, required: false, enum: ['gpt-5-nano', 'gpt-4o-mini'] },
+    creationPromptMetadataId: { type: String, required: false },
 });
 
 export const LessonModel =

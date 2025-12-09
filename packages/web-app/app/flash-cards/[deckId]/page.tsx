@@ -1,0 +1,47 @@
+import { redirect } from "next/navigation";
+import { getFlashCardDeckById } from "@core/index";
+import logger from "@/lib/logger"
+import { FlashCardPractice } from "@/components/flashcard-practice";
+import { getAuthenticatedUser } from "@/lib/get-authenticated-user";
+
+export default async function FlashCardDeckPage({ params }: { params: Promise<{ deckId: string }> }) {
+    const { deckId } = await params;
+    const user = await getAuthenticatedUser(`/flash-cards/${deckId}`);
+
+    logger.info({ deckId }, '[Flash Card Practice] Fetching deck with ID');
+    const deck = await getFlashCardDeckById(deckId);
+
+    if (!deck) {
+        logger.info('[Flash Card Practice] Deck not found, redirecting...');
+        redirect('/flash-cards');
+    }
+
+    logger.info({ deckTitle: deck.title }, '[Flash Card Practice] Deck found');
+    logger.info({ userId: user._id }, '[Flash Card Practice] User ID');
+    logger.info({ deckOwnerId: deck.studentData.userId }, '[Flash Card Practice] Deck owner ID');
+
+    // Verify ownership - convert both to strings for comparison
+    if (deck.studentData.userId.toString() !== user._id.toString()) {
+        logger.info('[Flash Card Practice] Ownership verification failed, redirecting...');
+        redirect('/flash-cards');
+    }
+
+    // Get display preference from user
+    const displayPreference = user.flashCardDisplayPreference || 'base-first';
+
+    // Serialize the deck data for the client component
+    const serializedCards = deck.cards.map(card => ({
+        _id: card._id.toString(),
+        base: card.base,
+        target: card.target,
+    }));
+
+    return (
+        <FlashCardPractice
+            deckId={deck._id.toString()}
+            deckTitle={deck.title}
+            cards={serializedCards}
+            displayPreference={displayPreference}
+        />
+    );
+}

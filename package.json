@@ -8,11 +8,15 @@
   "packageManager": "pnpm@10.13.1",
   "devDependencies": {
     "@playwright/test": "^1.56.1",
-    "@types/node": "^24.9.1"
+    "@types/node": "^24.9.1",
+    "dotenv": "^17.2.3"
   },
   "scripts": {
     "web-app:dev": "cd packages/web-app && pnpm dev",
+    "landing-page:dev": "cd packages/landing-page && pnpm dev",
     "test:e2e": "pnpm playwright test",
+    "test:e2e:watch": "nodemon --watch 'tests/**/*.spec.{ts,js}' --watch 'packages/web-app/**/*.{ts,tsx,js,jsx}' --watch 'packages/landing-page/**/*.{ts,tsx,js,jsx}' --watch 'packages/core/**/*.{ts,js}' --ext ts,tsx,js,jsx --exec 'pnpm playwright test'",
+    "test:e2e:ui": "npx playwright test --ui",
     "genkit": "genkit start -- npx tsx --watch ./packages/core/llm/llm.ts"
   },
   "dependencies": {
