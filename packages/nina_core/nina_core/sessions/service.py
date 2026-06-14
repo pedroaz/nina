@@ -257,9 +257,7 @@ class SessionService:
         db = self._session()
         try:
             session = (
-                db.query(ConversationSession)
-                .filter(ConversationSession.id == session_id)
-                .first()
+                db.query(ConversationSession).filter(ConversationSession.id == session_id).first()
             )
             if session is None:
                 return False
@@ -273,9 +271,7 @@ class SessionService:
         db = self._session()
         try:
             session = (
-                db.query(ConversationSession)
-                .filter(ConversationSession.id == session_id)
-                .first()
+                db.query(ConversationSession).filter(ConversationSession.id == session_id).first()
             )
             if session is not None:
                 session.cancel_requested = 0
@@ -287,9 +283,7 @@ class SessionService:
         db = self._session()
         try:
             session = (
-                db.query(ConversationSession)
-                .filter(ConversationSession.id == session_id)
-                .first()
+                db.query(ConversationSession).filter(ConversationSession.id == session_id).first()
             )
             return bool(session and session.cancel_requested)
         finally:
@@ -365,7 +359,9 @@ class SessionService:
         # The most recent message is the user one we just appended; remove it
         # so we don't double-include it after we add it as the final user turn.
         history_messages = [
-            m for m in history_messages if not (m.get("role") == "user" and m.get("content") == user_content)
+            m
+            for m in history_messages
+            if not (m.get("role") == "user" and m.get("content") == user_content)
         ]
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         messages.extend(history_messages)
@@ -692,9 +688,7 @@ class SessionService:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(
-                self.llm.complete(LLMRequest(purpose="agent_plan", prompt=prompt))
-            )
+            return asyncio.run(self.llm.complete(LLMRequest(purpose="agent_plan", prompt=prompt)))
         # We're inside a running loop; fall back to a thread so the legacy
         # path still works when called from async contexts (e.g. tests).
         import concurrent.futures

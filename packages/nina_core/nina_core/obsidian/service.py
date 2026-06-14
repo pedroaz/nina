@@ -123,7 +123,9 @@ class ObsidianService:
             task.note_path = str((archived_dir / path.name).relative_to(self.vault_path))
 
     def unarchive_task_note(self, task: Task) -> None:
-        archived_path = self.vault_path / "System" / "Archived" / f"{task.title.replace(' ', '-').lower()}.md"
+        archived_path = (
+            self.vault_path / "System" / "Archived" / f"{task.title.replace(' ', '-').lower()}.md"
+        )
         if archived_path.exists():
             task_path = self._task_path(task)
             task_path.parent.mkdir(parents=True, exist_ok=True)

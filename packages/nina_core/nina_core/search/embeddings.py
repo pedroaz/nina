@@ -47,9 +47,7 @@ class EmbeddingService(ABC):
     @abstractmethod
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
-    def cosine_top_k(
-        self, query: list[float], rows: list[ScoredRow], k: int
-    ) -> list[ScoredRow]:
+    def cosine_top_k(self, query: list[float], rows: list[ScoredRow], k: int) -> list[ScoredRow]:
         if not rows or not query:
             return []
         q = np.asarray(query, dtype=np.float32)
@@ -104,9 +102,7 @@ class FakeEmbeddingService(EmbeddingService):
             out.append(v.tolist())
         return out
 
-    def cosine_top_k(
-        self, query: list[float], rows: list[ScoredRow], k: int
-    ) -> list[ScoredRow]:
+    def cosine_top_k(self, query: list[float], rows: list[ScoredRow], k: int) -> list[ScoredRow]:
         if not rows or not query:
             return []
         q = np.asarray(query, dtype=np.float32)
@@ -158,7 +154,9 @@ class OpenAIEmbeddingService(EmbeddingService):
     model_name = "text-embedding-3-small"
     dim = 1536
 
-    def __init__(self, model_name: str = "text-embedding-3-small", api_key: str | None = None) -> None:
+    def __init__(
+        self, model_name: str = "text-embedding-3-small", api_key: str | None = None
+    ) -> None:
         from openai import OpenAI
 
         self.model_name = model_name
@@ -191,9 +189,7 @@ def build_embedding_service() -> EmbeddingService:
     raise RuntimeError(f"Unsupported embedding provider: {provider}")
 
 
-def rrf_merge(
-    rankings: list[list[ScoredRow]], k: int = 60, limit: int = 5
-) -> list[ScoredRow]:
+def rrf_merge(rankings: list[list[ScoredRow]], k: int = 60, limit: int = 5) -> list[ScoredRow]:
     """Reciprocal Rank Fusion across multiple ranked lists."""
 
     scores: dict[str, ScoredRow] = {}
@@ -233,7 +229,9 @@ class EmbeddingStore:
         try:
             existing = (
                 db.query(NoteEmbedding)
-                .filter(NoteEmbedding.note_id == note_id, NoteEmbedding.model == self.service.model_name)
+                .filter(
+                    NoteEmbedding.note_id == note_id, NoteEmbedding.model == self.service.model_name
+                )
                 .first()
             )
             if existing and existing.content_hash == content_hash:
@@ -289,9 +287,7 @@ class EmbeddingStore:
         db = self._session()
         try:
             rows = (
-                db.query(NoteEmbedding)
-                .filter(NoteEmbedding.model == self.service.model_name)
-                .all()
+                db.query(NoteEmbedding).filter(NoteEmbedding.model == self.service.model_name).all()
             )
             scored_rows: list[ScoredRow] = []
             for row in rows:
@@ -312,9 +308,7 @@ class EmbeddingStore:
         db = self._session()
         try:
             rows = (
-                db.query(NoteEmbedding)
-                .filter(NoteEmbedding.model == self.service.model_name)
-                .all()
+                db.query(NoteEmbedding).filter(NoteEmbedding.model == self.service.model_name).all()
             )
             return [
                 ScoredRow(

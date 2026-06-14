@@ -2,8 +2,8 @@
 
 ## Scope
 - Local-first personal operations platform for one user.
-- Linux-first in V1; WSL later is acceptable.
-- No remote access, multi-user auth, or general plugin system in V1.
+- Linux-first; WSL later is acceptable.
+- No remote access, multi-user auth, or general plugin system.
 - The product loop is: CLI/TUI action -> daemon API -> SQLite -> Obsidian -> search index -> optional LLM workflow -> visible logs.
 
 ## Runtime Model
@@ -17,9 +17,9 @@
 - Obsidian is authoritative for durable human-readable notes.
 - Nina-created files carry `nina_type` and `nina_id` frontmatter.
 - Manual body edits are allowed; operational fields remain controlled by SQLite.
-- Deletes move notes to `System/Deleted/` instead of hard-deleting in V1.
+- Deletes move notes to `System/Deleted/` instead of hard-deleting.
 
-## V1 Vault Layout
+## Vault Layout
 - `Projects/`
 - `Tasks/`
 - `Daily/`
@@ -43,7 +43,7 @@
 ## Open Questions and Defaults
 - OpenTUI runtime details stay client-side.
 - Use OpenAI API credentials for the provider boundary first; keep Codex-specific auth separate.
-- Keep task fields simple in V1.
-- Keep one active profile in V1.
+- Keep task fields simple.
+- Keep one active profile.
 - Prefer moving deleted notes to `System/Deleted/`.
 - Validate the Linux Obsidian open command before adding a hard dependency.

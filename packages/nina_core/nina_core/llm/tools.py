@@ -79,7 +79,9 @@ class ToolRegistry:
             return {"error": f"{type(exc).__name__}: {exc}"}
 
 
-def _string_schema(properties: dict[str, dict[str, Any]], required: list[str] | None = None) -> dict[str, Any]:
+def _string_schema(
+    properties: dict[str, dict[str, Any]], required: list[str] | None = None
+) -> dict[str, Any]:
     return {
         "type": "object",
         "properties": properties,

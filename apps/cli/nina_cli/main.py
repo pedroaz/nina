@@ -35,6 +35,7 @@ from .kanban_commands import kanban_app
 from .llm_commands import llm_app
 from .notes_commands import note_app
 from .project_commands import project_app
+from .providers_commands import providers_app
 from .research_commands import research_app
 from .search_commands import search_app
 from .task_commands import task_app
@@ -52,6 +53,7 @@ app.add_typer(chat_app, name="chat")
 app.add_typer(config_app, name="config")
 app.add_typer(note_app, name="note")
 app.add_typer(project_app, name="project")
+app.add_typer(providers_app, name="providers")
 app.add_typer(task_app, name="task")
 app.add_typer(ticket_app, name="ticket")
 app.add_typer(kanban_app, name="kanban")

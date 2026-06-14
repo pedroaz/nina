@@ -26,7 +26,7 @@ Resolved:
 
 The user said deleted items should be deleted from Obsidian.
 
-Recommended V1 behavior:
+Recommended behavior:
 
 - Move linked notes to `System/Deleted/`.
 - Hide them from active Nina views.
@@ -38,7 +38,7 @@ Reason:
 
 ## Task Fields
 
-V1 uses simple tasks only.
+Nina uses simple tasks only.
 
 Deferred fields:
 
@@ -51,7 +51,7 @@ Deferred fields:
 
 ## Profile System
 
-V1 only supports one profile.
+Nina only supports one profile.
 
 Deferred questions:
 

@@ -150,7 +150,9 @@ def _parse_codex_auth(path: Path, raw: dict[str, Any]) -> CodexAuth:
 
 def _store_codex_auth(auth: CodexAuth, tokens: dict[str, Any]) -> CodexAuth:
     raw = dict(auth.raw)
-    if raw.get("auth_mode") in {"chatgpt", "chatgptAuthTokens"} or isinstance(raw.get("tokens"), dict):
+    if raw.get("auth_mode") in {"chatgpt", "chatgptAuthTokens"} or isinstance(
+        raw.get("tokens"), dict
+    ):
         current = dict(raw.get("tokens") or {})
         current["access_token"] = tokens["access_token"]
         current["refresh_token"] = tokens["refresh_token"]
@@ -331,14 +333,18 @@ class CodexAuthProvider(LLMProvider):
                             "arguments": "",
                         }
                 elif event_type == "response.function_call_arguments.delta":
-                    call_id = getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
+                    call_id = (
+                        getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
+                    )
                     delta = getattr(event, "delta", None)
                     if call_id in tool_calls and isinstance(delta, str):
                         tool_calls[call_id]["arguments"] = (
                             tool_calls[call_id].get("arguments", "") + delta
                         )
                 elif event_type == "response.function_call_arguments.done":
-                    call_id = getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
+                    call_id = (
+                        getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
+                    )
                     final_args = getattr(event, "arguments", None)
                     if call_id in tool_calls and isinstance(final_args, str):
                         tool_calls[call_id]["arguments"] = final_args
@@ -359,7 +365,9 @@ class CodexAuthProvider(LLMProvider):
                         for item in getattr(response, "output", []) or []:
                             if getattr(item, "type", None) != "function_call":
                                 continue
-                            call_id = getattr(item, "call_id", None) or getattr(item, "id", None) or ""
+                            call_id = (
+                                getattr(item, "call_id", None) or getattr(item, "id", None) or ""
+                            )
                             arguments = getattr(item, "arguments", "")
                             if call_id in tool_calls:
                                 if isinstance(arguments, str):
@@ -376,7 +384,9 @@ class CodexAuthProvider(LLMProvider):
             except json.JSONDecodeError:
                 parsed = {"_raw": args}
             parsed_calls.append(
-                ToolCall(id=str(raw.get("id") or ""), name=str(raw.get("name") or ""), arguments=parsed)
+                ToolCall(
+                    id=str(raw.get("id") or ""), name=str(raw.get("name") or ""), arguments=parsed
+                )
             )
         return LLMResponse(
             response=content,
@@ -400,9 +410,7 @@ class OpenAIProvider(LLMProvider):
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         model = request.model or self.model
-        messages = request.messages or [
-            {"role": "user", "content": request.prompt or ""}
-        ]
+        messages = request.messages or [{"role": "user", "content": request.prompt or ""}]
         kwargs: dict[str, Any] = {"model": model, "messages": messages}
         if request.tools:
             kwargs["tools"] = [
@@ -462,7 +470,9 @@ class FakeProvider(LLMProvider):
         self.queued_responses.append(text)
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        index = min(self.call_count, max(len(self.queued_tool_calls), len(self.queued_responses)) - 1)
+        index = min(
+            self.call_count, max(len(self.queued_tool_calls), len(self.queued_responses)) - 1
+        )
         tool_calls = self.queued_tool_calls[index] if self.queued_tool_calls else []
         response_text = (
             self.queued_responses[index]
@@ -609,10 +619,7 @@ def _messages_to_responses_input(
                     )
         elif role == "tool":
             call_id = (
-                message.get("tool_call_id")
-                or message.get("call_id")
-                or message.get("id")
-                or ""
+                message.get("tool_call_id") or message.get("call_id") or message.get("id") or ""
             )
             output = message.get("content", "")
             if not isinstance(output, str):

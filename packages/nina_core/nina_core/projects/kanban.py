@@ -20,7 +20,12 @@ def _now() -> str:
 
 def get_kanban_board(db: Session) -> dict[str, Any]:
     columns = db.query(KanbanColumn).order_by(KanbanColumn.position).all()
-    tasks = db.query(Task).filter(Task.status.notin_(["deleted", "archived"])).order_by(Task.kanban_position).all()
+    tasks = (
+        db.query(Task)
+        .filter(Task.status.notin_(["deleted", "archived"]))
+        .order_by(Task.kanban_position)
+        .all()
+    )
     board: dict[str, Any] = {}
     for col in columns:
         board[col.name] = []

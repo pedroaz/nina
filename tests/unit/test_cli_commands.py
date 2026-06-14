@@ -145,7 +145,13 @@ def test_llm_test_calls_complete_endpoint(monkeypatch) -> None:  # type: ignore[
         (
             "POST",
             "/llm/complete",
-            {"json": {"purpose": "cli_test", "prompt": "Reply with auth ok", "model": "gpt-5.4-mini"}},
+            {
+                "json": {
+                    "purpose": "cli_test",
+                    "prompt": "Reply with auth ok",
+                    "model": "gpt-5.4-mini",
+                }
+            },
         )
     ]
     assert "Provider: openai" in result.stdout
@@ -161,7 +167,9 @@ def test_chat_test_uses_session_create_and_message_flow(monkeypatch) -> None:  #
         if path == "/sessions?mode=chat":
             return FakeResponse([])
         if path == "/sessions":
-            return FakeResponse({"id": "session-1", "mode": "chat", "title": "Chat", "messages": []})
+            return FakeResponse(
+                {"id": "session-1", "mode": "chat", "title": "Chat", "messages": []}
+            )
         if path == "/sessions/session-1/messages":
             return FakeResponse(
                 {

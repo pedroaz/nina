@@ -780,7 +780,11 @@ async def list_notes_endpoint(
     nina_type: str | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
-    return {"notes": get_note_service(request).list_notes(folder=folder, nina_type=nina_type, limit=limit)}
+    return {
+        "notes": get_note_service(request).list_notes(
+            folder=folder, nina_type=nina_type, limit=limit
+        )
+    }
 
 
 @app.get("/notes/{path:path}")
@@ -819,10 +823,16 @@ async def update_note_endpoint(request: Request, path: str, data: NoteUpdate) ->
         if data.body is not None:
             return service.update_note(path, data.body, frontmatter_patch=data.frontmatter_patch)
         if data.frontmatter_patch is not None:
-            return service.update_note(path, service.get_note(path)["body"] if service.get_note(path) else "", frontmatter_patch=data.frontmatter_patch)
+            return service.update_note(
+                path,
+                service.get_note(path)["body"] if service.get_note(path) else "",
+                frontmatter_patch=data.frontmatter_patch,
+            )
     except NotePathError as exc:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
-    return JSONResponse(status_code=400, content={"detail": "Provide body, append, or frontmatter_patch"})
+    return JSONResponse(
+        status_code=400, content={"detail": "Provide body, append, or frontmatter_patch"}
+    )
 
 
 @app.post("/research/run")

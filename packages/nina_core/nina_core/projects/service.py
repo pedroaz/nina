@@ -94,7 +94,12 @@ class TaskService:
         self.db.commit()
         return task
 
-    def list(self, project_id: str | None = None, status: str | None = None, include_archived: bool = False) -> list[Task]:
+    def list(
+        self,
+        project_id: str | None = None,
+        status: str | None = None,
+        include_archived: bool = False,
+    ) -> list[Task]:
         query = self.db.query(Task).filter(Task.status != "deleted")
         if not include_archived:
             query = query.filter(Task.status != "archived")

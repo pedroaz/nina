@@ -40,7 +40,7 @@ Vault/
     Logs/
 ```
 
-V1 uses only:
+Nina uses only:
 
 - `Projects/`
 - `Tasks/`
@@ -82,13 +82,13 @@ The frontmatter is intentionally small. Nina should not depend on Obsidian plugi
 
 Manual edits in Obsidian are expected.
 
-V1 sync model:
+Sync model:
 
 - Nina-created files include `nina_type` and `nina_id`.
 - On index, Nina reads Markdown content and updates search tables.
 - The body text of notes can be edited freely in Obsidian.
 - Operational fields remain controlled by SQLite.
-- If a user changes frontmatter operational fields manually, V1 does not treat that as authoritative.
+- If a user changes frontmatter operational fields manually, Nina does not treat that as authoritative.
 - Nina updates frontmatter when operational state changes.
 
 This keeps kanban reliable while still letting Obsidian be the main knowledge surface.
@@ -108,11 +108,11 @@ Tasks:
 - Task status, column, and position are stored in SQLite.
 - Task Markdown is updated when title/status/project changes.
 
-Not every future DB object must have a note, but projects and tasks should in V1 because they are important for LLM context.
+Not every future DB object must have a note, but projects and tasks should now because they are important for LLM context.
 
 ## Deletes
 
-V1 delete behavior:
+Delete behavior:
 
 - Delete task/project from active SQLite tables.
 - Move the linked Markdown note to `System/Deleted/` instead of permanent deletion.
@@ -131,7 +131,7 @@ Indexed fields:
 - path.
 - `nina_type`.
 
-V1 does not need to parse backlinks, headings, or tags beyond simple title/body extraction.
+Nina does not need to parse backlinks, headings, or tags beyond simple title/body extraction.
 
 Index triggers:
 
@@ -150,4 +150,4 @@ Search results should include:
 - snippet.
 - score/rank.
 
-The CLI and TUI should support opening a result in Obsidian. Linux V1 can shell out through the configured Obsidian URI scheme or a configured command.
+The CLI and TUI should support opening a result in Obsidian. On Linux, Nina can shell out through the configured Obsidian URI scheme or a configured command.

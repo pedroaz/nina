@@ -93,7 +93,11 @@ class NoteService:
             rows = query.order_by(Note.updated_at.desc()).limit(max(1, limit)).all()
             out: list[dict[str, Any]] = []
             for note in rows:
-                if folder and not note.path.startswith(folder.rstrip("/") + "/") and note.path != folder:
+                if (
+                    folder
+                    and not note.path.startswith(folder.rstrip("/") + "/")
+                    and note.path != folder
+                ):
                     continue
                 out.append(self._serialize(note))
             return out

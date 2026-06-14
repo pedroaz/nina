@@ -47,5 +47,8 @@ def test_create_database_creates_note_embeddings(tmp_path: Path) -> None:
     create_database(str(db_path))
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
     with engine.connect() as conn:
-        names = [row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))]
+        names = [
+            row[0]
+            for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+        ]
     assert "note_embeddings" in names

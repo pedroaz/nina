@@ -10,7 +10,7 @@ The current target is a Linux-first monorepo. WSL support is acceptable later. M
 
 ## Document Map
 
-- [01-product-scope.md](01-product-scope.md): clarified V1 scope, non-goals, and critique of the original plan.
+- [01-product-scope.md](01-product-scope.md): scope, non-goals, and critique of the original plan.
 - [02-architecture.md](02-architecture.md): process model, monorepo layout, module boundaries, and runtime decisions.
 - [03-storage-and-obsidian.md](03-storage-and-obsidian.md): SQLite/Obsidian responsibilities, vault layout, sync rules, and delete behavior.
 - [04-database-schema.md](04-database-schema.md): initial relational schema and migration expectations.
@@ -34,9 +34,9 @@ The test and validation commands are:
 
 See [tests/README.md](../tests/README.md) for the test-layer breakdown.
 
-## V1 Summary
+## Summary
 
-V1 should prove the whole product loop with a narrow but real slice:
+Nina should prove the whole product loop with a narrow but real slice:
 
 1. Start a Nina daemon locally.
 2. Initialize one profile and one new Obsidian vault.

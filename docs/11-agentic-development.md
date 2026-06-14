@@ -174,7 +174,7 @@ CLI tests should check exit codes, stdout, stderr, and side effects.
 
 ### TUI Tests
 
-TUI tests are harder, so V1 should make them practical rather than perfect.
+TUI tests are harder, so they should be practical rather than perfect.
 
 Recommended strategy:
 
@@ -183,7 +183,7 @@ Recommended strategy:
 3. Add a mock daemon fixture for TUI integration tests.
 4. Add smoke-level terminal tests for the most important flows.
 
-Required TUI validation for V1:
+Required TUI validation:
 
 - TUI starts without crashing against the dev daemon.
 - Dashboard renders after loading `/health` and board state.

@@ -16,17 +16,17 @@ Nina is not intended to replace the user, own projects autonomously, or become a
 - Package/dependency manager: `uv` for Python.
 - Knowledge layer: one new Obsidian vault created and managed by Nina.
 - Runtime layer: SQLite.
-- Profiles: no multi-profile V1. One active local profile is enough.
-- Most important V1 capabilities: kanban, LLM support, and Obsidian.
-- Search V1: full-text search is enough.
+- Profiles: one active local profile. Multi-profile is not supported yet.
+- Core capabilities: kanban, LLM support, and Obsidian.
+- Search: full-text search only.
 - Scheduler: jobs should run while the TUI is closed.
 - Workflow language: Python.
 - First workflow: summarize last day.
 - LLM provider: Codex auth/token by default, with explicit OpenAI API-key support for opt-in API use.
 
-## Corrected V1 Scope
+## Scope
 
-V1 should not try to build the full platform. It should build the smallest complete product loop:
+Nina does not try to build the full platform. It builds the smallest complete product loop:
 
 ```text
 CLI/TUI action
@@ -38,7 +38,7 @@ CLI/TUI action
   -> visible job/workflow log
 ```
 
-The V1 feature set is:
+The feature set is:
 
 - One local profile.
 - Local daemon.
@@ -59,7 +59,7 @@ The V1 feature set is:
 - Job/workflow log view in the TUI.
 - Tool-calling chat and agent sessions over the vault (see `docs/12-llm-tools.md`).
 
-## V1 Non-Goals
+## Non-Goals
 
 - Multiple simultaneous profiles.
 - Multi-user auth or permissions.
@@ -76,7 +76,7 @@ The V1 feature set is:
 
 ## Critique Of The Original Plan
 
-The original plan has a good product direction, but it mixes V1, V2, and future platform ideas. The biggest risk is building too many abstractions before the first daily-use loop works.
+The original plan has a good product direction, but it mixes current and future platform ideas. The biggest risk is building too many abstractions before the first daily-use loop works.
 
 Specific corrections:
 

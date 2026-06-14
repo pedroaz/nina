@@ -16,7 +16,7 @@ Primary navigation:
 - LLM Logs
 - Settings
 
-V1 should optimize for keyboard use.
+The TUI optimizes for keyboard use.
 
 ## Dashboard
 

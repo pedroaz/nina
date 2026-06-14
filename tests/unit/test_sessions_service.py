@@ -177,9 +177,7 @@ async def test_chat_session_carries_history_into_tool_loop(
             return provider_module.LLMResponse(
                 response="second answer", model="fake", provider="fake"
             )
-        return provider_module.LLMResponse(
-            response="second answer", model="fake", provider="fake"
-        )
+        return provider_module.LLMResponse(response="second answer", model="fake", provider="fake")
 
     # Patch at instance level to capture.
     original_complete = service.llm.complete
@@ -254,7 +252,13 @@ async def test_agent_session_uses_tickets_create_tool(
 
     # First call: create ticket; second call: move it to Doing
     fake.queue_tool_calls(
-        [ToolCall(id="c1", name="tickets_create", arguments={"title": "Add a CLI flag", "description": "Flag X"})],
+        [
+            ToolCall(
+                id="c1",
+                name="tickets_create",
+                arguments={"title": "Add a CLI flag", "description": "Flag X"},
+            )
+        ],
         "",
     )
     fake.queue_tool_calls(
@@ -277,7 +281,9 @@ async def test_agent_session_uses_tickets_create_tool(
     assert response["tools_used"][0]["name"] == "tickets_create"
     assert response["tools_used"][1]["name"] == "tickets_move"
     # The assistant message confirms completion
-    assert "Doing" in response["assistant"]["content"] or "Created" in response["assistant"]["content"]
+    assert (
+        "Doing" in response["assistant"]["content"] or "Created" in response["assistant"]["content"]
+    )
 
 
 async def test_agent_session_creates_note_via_tool(

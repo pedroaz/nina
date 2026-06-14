@@ -68,9 +68,7 @@ def test_obsidian_get_note(tool_context: ToolContext) -> None:
     )
     registry = ToolRegistry()
     register_default_tools(registry)
-    result = registry.execute(
-        "obsidian_get_note", {"path": "Research/codex.md"}, tool_context
-    )
+    result = registry.execute("obsidian_get_note", {"path": "Research/codex.md"}, tool_context)
     assert "Codex OAuth" in result["body"]
     assert result["frontmatter"]["title"] == "Codex Auth Notes"
 
@@ -85,9 +83,7 @@ def test_obsidian_get_note_missing(tool_context: ToolContext) -> None:
 def test_obsidian_list_notes(tool_context: ToolContext) -> None:
     note_dir = tool_context.vault_path / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
-    (note_dir / "a.md").write_text(
-        "---\ntitle: A\nnina_type: note\n---\n\na body\n"
-    )
+    (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\na body\n")
     (tool_context.vault_path / "Projects" / "p.md").write_text(
         "---\ntitle: P\nnina_type: project\n---\n\np body\n"
     )
@@ -96,12 +92,14 @@ def test_obsidian_list_notes(tool_context: ToolContext) -> None:
 
     svc = NoteService(tool_context.db_path, tool_context.vault_path)
     svc.create_note("Research/a.md", (note_dir / "a.md").read_text(), nina_type="note")
-    svc.create_note("Projects/p.md", (tool_context.vault_path / "Projects" / "p.md").read_text(), nina_type="project")
+    svc.create_note(
+        "Projects/p.md",
+        (tool_context.vault_path / "Projects" / "p.md").read_text(),
+        nina_type="project",
+    )
     registry = ToolRegistry()
     register_default_tools(registry)
-    result = registry.execute(
-        "obsidian_list_notes", {"nina_type": "project"}, tool_context
-    )
+    result = registry.execute("obsidian_list_notes", {"nina_type": "project"}, tool_context)
     assert {n["path"] for n in result["notes"]} == {"Projects/p.md"}
 
 

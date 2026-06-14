@@ -354,10 +354,7 @@ def _llm_logs(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     db = SessionLocal()
     try:
         rows = (
-            db.query(LLMInteraction)
-            .order_by(LLMInteraction.created_at.desc())
-            .limit(limit)
-            .all()
+            db.query(LLMInteraction).order_by(LLMInteraction.created_at.desc()).limit(limit).all()
         )
         out = []
         for row in rows:
@@ -544,9 +541,7 @@ def register_default_tools(registry: ToolRegistry) -> None:
         ToolSpec(
             name="projects_get",
             description="Fetch a single project by id or name substring.",
-            parameters=_string_schema(
-                {"id_or_name": {"type": "string"}}, required=["id_or_name"]
-            ),
+            parameters=_string_schema({"id_or_name": {"type": "string"}}, required=["id_or_name"]),
             handler=_projects_get,
             read_only=True,
         )

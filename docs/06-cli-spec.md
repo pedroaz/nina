@@ -16,7 +16,7 @@ Global options:
 --profile default
 ```
 
-`--profile` exists for future compatibility but V1 only supports `default`.
+`--profile` exists for future compatibility, but only `default` is supported.
 
 ## Core Commands
 
@@ -132,6 +132,37 @@ nina llm test "Summarize the current kanban board."
 nina llm logs
 nina llm show <interaction-id>
 ```
+
+## Provider Commands
+
+```text
+nina providers
+nina providers list
+nina providers show <model-substring>
+nina providers refresh [--provider ...] [--source <provider>:<path>]
+```
+
+`nina providers` reads the cached pricing for each supported provider and
+prints a Rich table with columns: `Provider | Model | Input $/1M | Output
+$/1M | Cache Read | Cache Write | Fetched`. The row matching
+`config.llm.model` is highlighted. With `--json`, the table is replaced by
+a JSON document.
+
+`nina providers show <substring>` filters rows whose model name contains
+the substring across providers. `--provider <name>` and `--model
+<substring>` work on every subcommand.
+
+`nina providers refresh` fetches the public pricing pages and writes the
+result to `$NINA_CONFIG_DIR/provider_pricing.json`. The first run requires
+an explicit refresh; an empty cache prints a hint instead of fetching.
+The supported providers today are:
+
+- `claude` — `https://platform.claude.com/docs/en/about-claude/pricing`
+- `openai` — `https://platform.openai.com/docs/pricing`
+
+If a page is unreachable (or you want to pin a snapshot), pass
+`--source <provider>:<path>` to read a saved HTML file instead of hitting
+the network. The path can be repeated to mix sources across providers.
 
 ## Config Commands
 

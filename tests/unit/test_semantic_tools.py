@@ -31,12 +31,8 @@ def tool_context(isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> Tool
 def test_semantic_search_returns_results(tool_context: ToolContext) -> None:
     note_dir = tool_context.vault_path / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
-    (note_dir / "a.md").write_text(
-        "---\ntitle: A\nnina_type: note\n---\n\nthe quick brown fox"
-    )
-    (note_dir / "b.md").write_text(
-        "---\ntitle: B\nnina_type: note\n---\n\nhello world"
-    )
+    (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\nthe quick brown fox")
+    (note_dir / "b.md").write_text("---\ntitle: B\nnina_type: note\n---\n\nhello world")
     registry = ToolRegistry()
     register_default_tools(registry)
     result = registry.execute(

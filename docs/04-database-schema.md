@@ -186,7 +186,7 @@ CREATE TABLE scheduled_jobs (
 );
 ```
 
-In-flight scheduled jobs do not need to resume after daemon restart in V1. Job definitions should persist.
+In-flight scheduled jobs do not need to resume after daemon restart. Job definitions should persist.
 
 ## job_runs
 
@@ -233,7 +233,7 @@ CREATE TABLE settings (
 
 The first migration should:
 
-1. Create all V1 tables.
+1. Create all initial tables.
 2. Create the FTS table.
 3. Seed default kanban columns.
 4. Seed a daily summary scheduled job based on config.

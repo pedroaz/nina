@@ -49,7 +49,7 @@ Acceptance:
 
 Acceptance:
 
-- migration creates all V1 tables.
+- migration creates all initial tables.
 - default columns exist.
 
 ## Phase 3: Daemon API Foundation
@@ -216,3 +216,9 @@ The chat and agent features use a shared LLM tool loop. See
 26. Add `nina search reindex-embeddings` and the `reindex-vault` scheduled workflow as a backstop.
 27. Add `nina_core/search/watcher.py` using `watchdog`; start in the daemon lifespan; debounce per-path; skip refused prefixes.
 28. Expose `search.live_indexing: bool` and `search.reindex_cron: str` in `NinaConfig`; show in the TUI Settings tab.
+
+## Provider Pricing
+
+29. Add `nina_core/pricing/` with pydantic models, JSON cache, fetcher, and per-provider parsers using `selectolax`. Cache lives at `$NINA_CONFIG_DIR/provider_pricing.json`.
+30. Add `nina providers`, `nina providers list`, `nina providers show <substring>`, and `nina providers refresh [--provider ...] [--source <provider>:<path>]`. Empty cache prints a hint to run `refresh`; the row matching `config.llm.model` is highlighted in the table.
+31. Support the Anthropic pricing page (`https://platform.claude.com/docs/en/about-claude/pricing`) and the OpenAI platform pricing page (`https://platform.openai.com/docs/pricing`). Parsers extract model, input, output, and cache read prices in USD per 1M tokens.

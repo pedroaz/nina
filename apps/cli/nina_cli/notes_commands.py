@@ -106,9 +106,7 @@ def note_append(
 def note_update(
     path: str = typer.Argument(..., help="Vault-relative path of the note"),
     body: str | None = typer.Option(None, "--body", help="New full body"),
-    from_file: str | None = typer.Option(
-        None, "--from-file", help="Read new body from this file"
-    ),
+    from_file: str | None = typer.Option(None, "--from-file", help="Read new body from this file"),
 ) -> None:
     if from_file:
         body = open(from_file).read()

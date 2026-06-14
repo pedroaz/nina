@@ -2,7 +2,7 @@
 
 ## Workflow Model
 
-Workflows are Python code. V1 does not support user-authored YAML workflows.
+Workflows are Python code. Nina does not support user-authored YAML workflows.
 
 A workflow has:
 
@@ -34,7 +34,7 @@ After failure:
 - retry if policy allows.
 - otherwise mark step and workflow `failed`.
 
-V1 does not need full resume of interrupted in-flight jobs after daemon restart. It should mark stale `running` runs as `interrupted` or `failed` on daemon startup.
+Nina does not need full resume of interrupted in-flight jobs after daemon restart. It marks stale `running` runs as `interrupted` or `failed` on daemon startup.
 
 ## First Workflow: summarize-last-day
 
@@ -93,7 +93,7 @@ created_at: 2026-06-14T07:00:00Z
 
 ## LLM Provider Boundary
 
-V1 should implement one provider first:
+Implement one provider first:
 
 ```python
 class LLMProvider:
@@ -132,7 +132,7 @@ The user does not require confirmation before AI-generated content is written in
 
 ## Scheduler
 
-Use APScheduler inside the daemon for V1.
+Use APScheduler inside the daemon.
 
 Scheduled job definitions are persisted in SQLite. In-flight job execution does not need to resume after restart.
 
@@ -148,7 +148,7 @@ The scheduler should create `job_runs` and linked `workflow_runs`.
 
 ## Worker Output
 
-V1 workflows should stream status events. Later external worker integrations, such as OpenCode, should stream process output into the same events/log system.
+Workflows stream status events. Later external worker integrations, such as OpenCode, will stream process output into the same events/log system.
 
 ## Later Workflow Ideas
 

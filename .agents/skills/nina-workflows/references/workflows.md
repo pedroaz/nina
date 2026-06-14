@@ -1,8 +1,8 @@
 # Nina Workflows Reference
 
 ## Workflow Model
-- Workflows are Python code in V1.
-- No user-authored YAML workflows in V1.
+- Workflows are Python code.
+- No user-authored YAML workflows.
 - Persist workflow runs and step records in SQLite.
 - Retry policy belongs to the step.
 - Mark stale in-flight runs as interrupted or failed on startup.
@@ -41,4 +41,4 @@
 - Use APScheduler inside the daemon.
 - Persist job definitions in SQLite.
 - Seed the daily-summary job from the configured local time.
-- Keep in-flight jobs restart-tolerant but not resumable in V1.
+- Keep in-flight jobs restart-tolerant but not resumable.

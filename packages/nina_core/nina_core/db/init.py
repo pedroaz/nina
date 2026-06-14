@@ -76,12 +76,23 @@ def _default_clause(column: Any) -> str:
 
 def _is_string_type(column: Any) -> bool:
     type_name = type(column.type).__name__.lower()
-    return "text" in type_name or "string" in type_name or "varchar" in type_name or "char" in type_name
+    return (
+        "text" in type_name
+        or "string" in type_name
+        or "varchar" in type_name
+        or "char" in type_name
+    )
 
 
 def _is_numeric_type(column: Any) -> bool:
     type_name = type(column.type).__name__.lower()
-    return "int" in type_name or "numeric" in type_name or "float" in type_name or "decimal" in type_name or "real" in type_name
+    return (
+        "int" in type_name
+        or "numeric" in type_name
+        or "float" in type_name
+        or "decimal" in type_name
+        or "real" in type_name
+    )
 
 
 def _is_simple_addable(column: Any) -> bool:  # pragma: no cover - kept for future strictness

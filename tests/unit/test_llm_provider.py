@@ -89,7 +89,9 @@ class FakeOpenAI:
 
 
 @pytest.mark.asyncio
-async def test_openai_provider_uses_explicit_api_key_and_configured_model(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_openai_provider_uses_explicit_api_key_and_configured_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "openai-api-key")
     monkeypatch.setenv("NINA_LLM_MODEL", "gpt-5.4-mini")
     monkeypatch.setattr(provider_module, "OpenAI", FakeOpenAI)
@@ -216,9 +218,7 @@ async def test_codex_provider_passes_tools_and_translates_messages(
     assert stream_kwargs["tool_choice"] == "auto"
     items = stream_kwargs["input"]
     # system is dropped; user message present; function_call and function_call_output present
-    assert any(
-        item.get("type") == "message" and item.get("role") == "user" for item in items
-    )
+    assert any(item.get("type") == "message" and item.get("role") == "user" for item in items)
     assert any(item.get("type") == "function_call" for item in items)
     assert any(item.get("type") == "function_call_output" for item in items)
 
@@ -342,13 +342,13 @@ async def test_codex_auth_provider_refreshes_expired_tokens(
     assert stored["tokens"]["account_id"] == "acc-999"
 
 
-def test_llm_service_defaults_to_codex_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_llm_service_defaults_to_codex_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("NINA_LLM_PROVIDER", raising=False)
     monkeypatch.setenv(
         "CODEX_AUTH_FILE",
-        str(
-            tmp_path / "auth.json"
-        ),
+        str(tmp_path / "auth.json"),
     )
     (tmp_path / "auth.json").write_text(
         json.dumps(
@@ -370,6 +370,10 @@ def test_llm_service_defaults_to_codex_provider(tmp_path: Path, monkeypatch: pyt
 
 
 def _jwt(claims: dict[str, object]) -> str:
-    header = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).decode().rstrip("=")
+    header = (
+        base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+        .decode()
+        .rstrip("=")
+    )
     payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
     return f"{header}.{payload}.signature"

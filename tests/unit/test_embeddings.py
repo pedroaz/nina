@@ -54,18 +54,16 @@ def test_fake_embedding_distinguishes_texts() -> None:
     assert a != b
 
 
-def test_embedding_store_upsert_and_search(isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_embedding_store_upsert_and_search(
+    isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("NINA_EMBEDDING_PROVIDER", "fake")
     vault = get_vault_path(isolated_config)
     db_path = str(get_database_path(isolated_config))
     note_dir = vault / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
-    (note_dir / "a.md").write_text(
-        "---\ntitle: A\nnina_type: note\n---\n\nhello world"
-    )
-    (note_dir / "b.md").write_text(
-        "---\ntitle: B\nnina_type: note\n---\n\ngoodbye world"
-    )
+    (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\nhello world")
+    (note_dir / "b.md").write_text("---\ntitle: B\nnina_type: note\n---\n\ngoodbye world")
     store = EmbeddingStore(db_path, service=FakeEmbeddingService())
     count = reindex_embeddings(db_path, str(vault))
     assert count == 2
@@ -76,15 +74,15 @@ def test_embedding_store_upsert_and_search(isolated_config: Path, monkeypatch: p
     assert any(r.path == "Research/a.md" for r in results)
 
 
-def test_embedding_store_skip_unchanged(isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_embedding_store_skip_unchanged(
+    isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("NINA_EMBEDDING_PROVIDER", "fake")
     vault = get_vault_path(isolated_config)
     db_path = str(get_database_path(isolated_config))
     note_dir = vault / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
-    (note_dir / "a.md").write_text(
-        "---\ntitle: A\nnina_type: note\n---\n\nhello"
-    )
+    (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\nhello")
     EmbeddingStore(db_path, service=FakeEmbeddingService())
     first = reindex_embeddings(db_path, str(vault))
     second = reindex_embeddings(db_path, str(vault))
@@ -97,9 +95,7 @@ def test_embedding_store_delete(isolated_config: Path) -> None:
     db_path = str(get_database_path(isolated_config))
     note_dir = vault / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
-    (note_dir / "a.md").write_text(
-        "---\ntitle: A\nnina_type: note\n---\n\nhello"
-    )
+    (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\nhello")
     store = EmbeddingStore(db_path, service=FakeEmbeddingService())
     reindex_embeddings(db_path, str(vault))
     store.delete("a")

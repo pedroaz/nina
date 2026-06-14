@@ -52,9 +52,7 @@ def test_tickets_create_and_move(tool_context: ToolContext) -> None:
         tool_context,
     )
     ticket_id = result["ticket"]["id"]
-    moved = registry.execute(
-        "tickets_move", {"id": ticket_id, "column": "Review"}, tool_context
-    )
+    moved = registry.execute("tickets_move", {"id": ticket_id, "column": "Review"}, tool_context)
     assert moved["ticket"]["kanban_column"] == "Review"
     assert moved["ticket"]["status"] == "review"
 
@@ -95,9 +93,7 @@ def test_search_reindex(tool_context: ToolContext) -> None:
     register_write_tools(registry)
     note_dir = tool_context.vault_path / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
-    (note_dir / "x.md").write_text(
-        "---\ntitle: X\nnina_type: note\n---\n\nhello world"
-    )
+    (note_dir / "x.md").write_text("---\ntitle: X\nnina_type: note\n---\n\nhello world")
     result = registry.execute("search_reindex", {}, tool_context)
     assert result == {"reindexed": True}
 
