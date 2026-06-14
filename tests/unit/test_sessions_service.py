@@ -4,11 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-
 from nina_core.cli.runner import CommandResult
 from nina_core.config import get_database_path, get_vault_path
 from nina_core.sessions.service import SessionService
-
 
 NOW = "2026-06-13T00:00:00+00:00"
 
@@ -63,7 +61,9 @@ async def test_chat_session_uses_obsidian_context(
         "---\ntitle: Codex Auth Notes\nnina_type: note\n---\n\nCodex OAuth is used through the local Codex CLI session.\n"
     )
 
-    service = SessionService(str(get_database_path(isolated_config)), str(get_vault_path(isolated_config)))
+    service = SessionService(
+        str(get_database_path(isolated_config)), str(get_vault_path(isolated_config))
+    )
     session = service.create_session("chat", "Chat")
     response = await service.send_message(session["id"], "How is Codex OAuth used?")
 

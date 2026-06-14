@@ -226,3 +226,40 @@ def test_research_run_writes_summary_and_sources_note(
     assert note.metadata["workflow_run_id"] == payload["workflow_run_id"]
     assert note.metadata["sources"][0]["url"].startswith("https://example.com/")
     assert "Fake research summary" in note.content
+
+
+def test_config_endpoint_updates_runtime_and_reports_restart_requirement(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+) -> None:
+    custom_vault = isolated_config.parent / "daemon-config-vault"
+    response = api_client.patch(
+        "/config",
+        headers=auth_headers,
+        json={
+            "vault_path": str(custom_vault),
+            "daemon_port": 9123,
+            "llm": {"provider": "fake"},
+            "scheduler": {"daily_summary_time": "08:30"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["changed_fields"] == [
+        "vault_path",
+        "daemon_port",
+        "llm.provider",
+        "scheduler.daily_summary_time",
+    ]
+    assert payload["restart_required"] is True
+    assert payload["config"]["vault_path"] == str(custom_vault)
+    assert payload["config"]["daemon_port"] == 9123
+    assert payload["config"]["llm"]["provider"] == "fake"
+    assert payload["config"]["scheduler"]["daily_summary_time"] == "08:30"
+    assert (custom_vault / "Projects").exists()
+
+    health = api_client.get("/health", headers=auth_headers)
+    assert health.status_code == 200
+    assert health.json()["vault_path"] == str(custom_vault)

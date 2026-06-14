@@ -1,4 +1,4 @@
-.PHONY: help install install-cli i i-c uninstall format lint typecheck test test-unit test-integration check smoke dev-init dev-reset dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs start stop status logs cli c tui t promote
+.PHONY: help build b doctor uninstall format lint typecheck test test-unit test-integration check smoke dev-init dev-reset dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs start stop status logs cli c chat tui t promote
 
 PYTHON := uv run python
 UV := uv
@@ -9,9 +9,9 @@ NINA_DEV_ENV := NINA_CONFIG_DIR=$(DEV_CONFIG_DIR)
 help:
 	@echo "Available targets:"
 	@echo "  help              - List available commands"
-	@echo "  install, i        - Install Python and TUI dependencies"
-	@echo "  install-cli, i-c  - Symlink 'nina' into ~/.local/bin for PATH access"
-	@echo "  uninstall         - Remove the symlink from ~/.local/bin"
+	@echo "  build, b          - Build and install the local Nina runtime"
+	@echo "  doctor            - Check local Nina launcher and PATH setup"
+	@echo "  uninstall         - Remove the local launcher from ~/.local/bin"
 	@echo "  format            - Format all code"
 	@echo "  lint              - Static lint checks"
 	@echo "  typecheck         - Type checking"
@@ -34,21 +34,16 @@ help:
 	@echo "  DEV_CONFIG_DIR=$(DEV_CONFIG_DIR)"
 	@echo "  REAL_CONFIG_DIR=$(REAL_CONFIG_DIR)"
 
-install:
+build:
 	$(UV) sync
-	cd apps/tui && bun install
+	cd apps/tui && bun install --frozen-lockfile
+	$(PYTHON) scripts/sync_version.py
+	$(PYTHON) scripts/nina_build.py
 
-i: install
+b: build
 
-install-cli: install
-	@echo "Installing nina CLI to ~/.local/bin..."
-	@mkdir -p $(HOME)/.local/bin
-	@ln -sf $(PWD)/.venv/bin/nina $(HOME)/.local/bin/nina
-	@echo "Done. Make sure ~/.local/bin is in your PATH."
-	@echo "  Add $$HOME/.local/bin to PATH if needed."
-	@echo "Test it: nina version"
-
-i-c: install-cli
+doctor:
+	python3 scripts/nina_doctor.py
 
 uninstall:
 	@echo "Removing nina from ~/.local/bin..."
@@ -119,6 +114,11 @@ cli:
 	$(NINA_DEV_ENV) uv run nina $(ARGS)
 
 c: cli
+
+PROMPT ?= Reply with ok
+
+chat:
+	$(UV) run python -m nina_cli.main chat test "$(PROMPT)"
 
 tui:
 	@cd apps/tui && NINA_CONFIG_DIR=../../$(DEV_CONFIG_DIR) bun run src/main.ts

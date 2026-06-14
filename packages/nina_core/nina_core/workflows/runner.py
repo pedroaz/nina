@@ -79,7 +79,9 @@ class WorkflowRunner:
         db.commit()
         return step
 
-    def _complete_step(self, db: Session, step: WorkflowStep, output: dict[str, Any] | None = None) -> None:
+    def _complete_step(
+        self, db: Session, step: WorkflowStep, output: dict[str, Any] | None = None
+    ) -> None:
         step.status = "completed"
         step.output_json = json.dumps(output or {})
         step.completed_at = _now()
@@ -101,7 +103,9 @@ class WorkflowRunner:
         db.commit()
         return {"message": "Daily summary workflow is scaffolded."}
 
-    def _run_research(self, db: Session, run: WorkflowRun, input_data: dict[str, Any]) -> dict[str, Any]:
+    def _run_research(
+        self, db: Session, run: WorkflowRun, input_data: dict[str, Any]
+    ) -> dict[str, Any]:
         topic = str(input_data.get("topic", "")).strip()
         if not topic:
             raise ValueError("Workflow 'research-topic' requires a 'topic' field")

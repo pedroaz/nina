@@ -172,7 +172,9 @@ def _build_ask_prompt(question: str, sources: list[dict[str, str]]) -> str:
     )
 
 
-async def ask_obsidian(db_path: str, vault_path: str, question: str, limit: int = 5) -> dict[str, Any]:
+async def ask_obsidian(
+    db_path: str, vault_path: str, question: str, limit: int = 5, session_id: str | None = None
+) -> dict[str, Any]:
     from nina_core.llm.provider import LLMRequest, LLMService
 
     index_notes(db_path, vault_path)
@@ -192,6 +194,7 @@ async def ask_obsidian(db_path: str, vault_path: str, question: str, limit: int 
         LLMRequest(
             purpose="obsidian_ask",
             prompt=_build_ask_prompt(question, sources),
+            session_id=session_id,
         )
     )
     return {

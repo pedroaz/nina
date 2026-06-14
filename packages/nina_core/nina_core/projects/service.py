@@ -94,8 +94,10 @@ class TaskService:
         self.db.commit()
         return task
 
-    def list(self, project_id: str | None = None, status: str | None = None) -> list[Task]:
+    def list(self, project_id: str | None = None, status: str | None = None, include_archived: bool = False) -> list[Task]:
         query = self.db.query(Task).filter(Task.status != "deleted")
+        if not include_archived:
+            query = query.filter(Task.status != "archived")
         if project_id:
             query = query.filter(Task.project_id == project_id)
         if status:
@@ -141,3 +143,23 @@ class TaskService:
         self.db.commit()
         self.obsidian.delete_task_note(task)
         return True
+
+    def archive(self, task_id: str) -> Task | None:
+        task = self.get(task_id)
+        if not task:
+            return None
+        task.status = "archived"
+        task.updated_at = _now()
+        self.db.commit()
+        self.obsidian.archive_task_note(task)
+        return task
+
+    def unarchive(self, task_id: str) -> Task | None:
+        task = self.get(task_id)
+        if not task:
+            return None
+        task.status = "todo"
+        task.updated_at = _now()
+        self.db.commit()
+        self.obsidian.unarchive_task_note(task)
+        return task

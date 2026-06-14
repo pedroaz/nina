@@ -22,7 +22,7 @@ Nina is not intended to replace the user, own projects autonomously, or become a
 - Scheduler: jobs should run while the TUI is closed.
 - Workflow language: Python.
 - First workflow: summarize last day.
-- LLM provider: OpenAI first, with prompts and outputs logged.
+- LLM provider: Codex auth/token by default, with explicit OpenAI API-key support for opt-in API use.
 
 ## Corrected V1 Scope
 

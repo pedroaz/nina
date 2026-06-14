@@ -105,9 +105,8 @@ Provider config:
 
 ```yaml
 llm:
-  provider: openai
+  provider: codex
   model: gpt-5
-  api_key: "..."
 ```
 
 Important implementation note:

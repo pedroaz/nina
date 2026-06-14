@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, Request
@@ -8,16 +9,138 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from nina_core.config import (
+    NinaConfig,
+    ensure_vault_structure,
+    get_config_dir,
+    get_config_path,
+    load_effective_config,
+    merge_config,
+)
+from nina_core.db import create_database
+from nina_core.llm.provider import LLMRequest, LLMService
 from nina_core.obsidian.service import ObsidianService
 from nina_core.projects.kanban import get_kanban_board, move_task
 from nina_core.projects.service import ProjectService, TaskService
-from nina_core.search.indexer import ask_obsidian, index_notes, search
-from nina_core.sessions.service import SessionService
-from nina_core.llm.provider import LLMRequest, LLMService
 from nina_core.scheduler.service import SchedulerService
+from nina_core.search.indexer import ask_obsidian, index_notes, search, create_fts_table
+from nina_core.sessions.service import SessionService
+import nina_core
 from nina_core.workflows.runner import WorkflowRunner
 
-app = FastAPI(title="Nina Daemon", version="0.1.0")
+app = FastAPI(title="Nina Daemon", version=nina_core.__version__)
+
+
+class LLMConfigResponse(BaseModel):
+    provider: str
+    model: str
+
+
+class SchedulerConfigResponse(BaseModel):
+    daily_summary_time: str
+
+
+class ConfigResponse(BaseModel):
+    profile: str
+    config_dir: str
+    config_path: str
+    vault_path: str
+    database_path: str
+    daemon_host: str
+    daemon_port: int
+    llm: LLMConfigResponse
+    scheduler: SchedulerConfigResponse
+    log_level: str
+
+
+class LLMConfigUpdate(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+
+
+class SchedulerConfigUpdate(BaseModel):
+    daily_summary_time: str | None = None
+
+
+class ConfigUpdate(BaseModel):
+    vault_path: str | None = None
+    database_path: str | None = None
+    daemon_host: str | None = None
+    daemon_port: int | None = None
+    log_level: str | None = None
+    llm: LLMConfigUpdate | None = None
+    scheduler: SchedulerConfigUpdate | None = None
+
+
+def _request_config_dir(request: Request) -> Path:
+    config_dir = getattr(request.app.state, "config_dir", None)
+    if config_dir is not None:
+        return Path(config_dir)
+    profile = getattr(request.app.state, "profile", os.environ.get("NINA_PROFILE", "default"))
+    return get_config_dir(str(profile))
+
+
+def _request_config(request: Request) -> NinaConfig:
+    config = getattr(request.app.state, "config", None)
+    if isinstance(config, NinaConfig):
+        return config
+    config_dir = _request_config_dir(request)
+    return load_effective_config(config_dir)
+
+
+def _config_response(config_dir: Path, config: NinaConfig) -> ConfigResponse:
+    return ConfigResponse(
+        profile=config.profile,
+        config_dir=str(config_dir),
+        config_path=str(get_config_path(config_dir)),
+        vault_path=config.vault_path,
+        database_path=config.database_path,
+        daemon_host=config.daemon_host,
+        daemon_port=config.daemon_port,
+        llm=LLMConfigResponse(provider=config.llm.provider, model=config.llm.model),
+        scheduler=SchedulerConfigResponse(daily_summary_time=config.scheduler.daily_summary_time),
+        log_level=config.log_level,
+    )
+
+
+def apply_runtime_config(app: FastAPI, config_dir: Path, config: NinaConfig) -> NinaConfig:
+    resolved = config.with_resolved_paths(config_dir)
+    os.environ["NINA_PROFILE"] = resolved.profile
+    os.environ["NINA_CONFIG_DIR"] = str(config_dir)
+    os.environ["NINA_VAULT_PATH"] = resolved.vault_path
+    os.environ["NINA_DATABASE_PATH"] = resolved.database_path
+    os.environ["NINA_DAEMON_HOST"] = resolved.daemon_host
+    os.environ["NINA_DAEMON_PORT"] = str(resolved.daemon_port)
+    os.environ["NINA_LLM_PROVIDER"] = resolved.llm.provider
+    os.environ["NINA_LLM_MODEL"] = resolved.llm.model
+    os.environ["NINA_LOG_LEVEL"] = resolved.log_level
+    os.environ["NINA_DAILY_SUMMARY_TIME"] = resolved.scheduler.daily_summary_time
+    app.state.profile = resolved.profile
+    app.state.config_dir = config_dir
+    app.state.config_path = get_config_path(config_dir)
+    app.state.config = resolved
+    return resolved
+
+
+def _changed_config_fields(previous: NinaConfig, updated: NinaConfig) -> list[str]:
+    changed: list[str] = []
+    if previous.vault_path != updated.vault_path:
+        changed.append("vault_path")
+    if previous.database_path != updated.database_path:
+        changed.append("database_path")
+    if previous.daemon_host != updated.daemon_host:
+        changed.append("daemon_host")
+    if previous.daemon_port != updated.daemon_port:
+        changed.append("daemon_port")
+    if previous.llm.provider != updated.llm.provider:
+        changed.append("llm.provider")
+    if previous.llm.model != updated.llm.model:
+        changed.append("llm.model")
+    if previous.scheduler.daily_summary_time != updated.scheduler.daily_summary_time:
+        changed.append("scheduler.daily_summary_time")
+    if previous.log_level != updated.log_level:
+        changed.append("log_level")
+    return changed
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):
@@ -36,10 +159,57 @@ app.add_middleware(TokenAuthMiddleware)
 
 @app.get("/health")
 async def health(request: Request) -> dict[str, Any]:
+    config = _request_config(request)
     return {
         "status": "ok",
-        "profile": "default",
-        "vault_path": os.environ.get("NINA_VAULT_PATH", ""),
+        "profile": config.profile,
+        "vault_path": config.vault_path,
+    }
+
+
+@app.get("/config")
+async def get_config(request: Request) -> ConfigResponse:
+    config_dir = _request_config_dir(request)
+    config = _request_config(request)
+    return _config_response(config_dir, config)
+
+
+@app.patch("/config")
+async def update_config(request: Request, data: ConfigUpdate) -> dict[str, Any]:
+    config_dir = _request_config_dir(request)
+    current = _request_config(request)
+    patch = data.model_dump(exclude_unset=True, exclude_none=True)
+    if not patch:
+        return {
+            "config": _config_response(config_dir, current).model_dump(),
+            "changed_fields": [],
+            "restart_required": False,
+        }
+
+    updated = merge_config(current, patch, config_dir)
+    updated.save(get_config_path(config_dir))
+    changed_fields = _changed_config_fields(current, updated)
+    apply_runtime_config(request.app, config_dir, updated)
+
+    if current.vault_path != updated.vault_path:
+        ensure_vault_structure(Path(updated.vault_path))
+    if current.database_path != updated.database_path:
+        create_database(updated.database_path)
+        create_fts_table(updated.database_path)
+        scheduler = getattr(request.app.state, "scheduler", None)
+        if scheduler is not None:
+            scheduler.shutdown()
+        new_scheduler = SchedulerService(updated.database_path)
+        request.app.state.scheduler = new_scheduler
+        new_scheduler.start()
+
+    restart_required = any(
+        field in {"daemon_host", "daemon_port", "log_level"} for field in changed_fields
+    )
+    return {
+        "config": _config_response(config_dir, updated).model_dump(),
+        "changed_fields": changed_fields,
+        "restart_required": restart_required,
     }
 
 
@@ -382,6 +552,50 @@ async def delete_task(request: Request, task_id: str) -> dict[str, bool]:
     return {"deleted": True}
 
 
+@app.post("/tasks/{task_id}/archive")
+async def archive_task(request: Request, task_id: str) -> TaskResponse:
+    db = get_db()
+    obsidian = get_obsidian()
+    service = TaskService(db, obsidian)
+    task = service.archive(task_id)
+    if not task:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return TaskResponse(
+        id=task.id,
+        project_id=task.project_id,
+        title=task.title,
+        description=task.description,
+        status=task.status,
+        kanban_column=task.kanban_column,
+        kanban_position=task.kanban_position,
+        note_path=task.note_path,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+
+
+@app.post("/tasks/{task_id}/unarchive")
+async def unarchive_task(request: Request, task_id: str) -> TaskResponse:
+    db = get_db()
+    obsidian = get_obsidian()
+    service = TaskService(db, obsidian)
+    task = service.unarchive(task_id)
+    if not task:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return TaskResponse(
+        id=task.id,
+        project_id=task.project_id,
+        title=task.title,
+        description=task.description,
+        status=task.status,
+        kanban_column=task.kanban_column,
+        kanban_position=task.kanban_position,
+        note_path=task.note_path,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+
+
 @app.get("/kanban")
 async def get_kanban(request: Request) -> dict[str, Any]:
     db = get_db()
@@ -503,7 +717,9 @@ async def get_session(request: Request, session_id: str) -> dict[str, Any]:
 
 
 @app.post("/sessions/{session_id}/messages")
-async def send_session_message(request: Request, session_id: str, data: SessionMessageCreate) -> dict[str, Any]:
+async def send_session_message(
+    request: Request, session_id: str, data: SessionMessageCreate
+) -> dict[str, Any]:
     service = get_session_service(request)
     try:
         return await service.send_message(session_id, data.content)

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Nina README Architecture"
+  short_description: "Update Mermaid README architecture charts"
+  default_prompt: "Use $nina-readme-architecture to refresh the README architecture section with Mermaid charts showing CLI, TUI, and daemon communication."
+
+policy:
+  allow_implicit_invocation: true

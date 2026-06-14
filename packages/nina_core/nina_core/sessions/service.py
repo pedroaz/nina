@@ -64,7 +64,9 @@ def _strip_commands(text: str) -> str:
 
 
 def _extract_ticket_title(message: str) -> str:
-    clause_verb = r"(?:put|move|set|assign|mention|add|include|note|describe|document|capture|track)"
+    clause_verb = (
+        r"(?:put|move|set|assign|mention|add|include|note|describe|document|capture|track)"
+    )
     patterns = [
         rf"create\s+(?:a\s+)?(?:ticket|task)\s*(?:to|for)?\s*(?P<title>.*?)(?:\s+(?:and|then)\s+{clause_verb}\b|;|\.|$)",
         rf"(?:ticket|task)\s*[:\-]\s*(?P<title>.*?)(?:\s+(?:and|then)\s+{clause_verb}\b|;|\.|$)",
@@ -72,11 +74,23 @@ def _extract_ticket_title(message: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, message, flags=re.IGNORECASE)
         if match:
-            title = re.sub(rf"\b(?:and|then)\s+{clause_verb}\b.*$", "", match.group("title"), flags=re.IGNORECASE).strip()
+            title = re.sub(
+                rf"\b(?:and|then)\s+{clause_verb}\b.*$",
+                "",
+                match.group("title"),
+                flags=re.IGNORECASE,
+            ).strip()
             if title:
                 return title
-    fallback = re.split(rf"\b(?:and|then)\s+{clause_verb}\b", message, maxsplit=1, flags=re.IGNORECASE)[0]
-    fallback = re.sub(r"^(?:create\s+(?:a\s+)?(?:ticket|task)\s*(?:to|for)?\s*)", "", fallback, flags=re.IGNORECASE).strip()
+    fallback = re.split(
+        rf"\b(?:and|then)\s+{clause_verb}\b", message, maxsplit=1, flags=re.IGNORECASE
+    )[0]
+    fallback = re.sub(
+        r"^(?:create\s+(?:a\s+)?(?:ticket|task)\s*(?:to|for)?\s*)",
+        "",
+        fallback,
+        flags=re.IGNORECASE,
+    ).strip()
     return fallback[:80] or "Untitled ticket"
 
 
@@ -102,7 +116,9 @@ class AgentPlan:
 
 
 class SessionService:
-    def __init__(self, db_path: str, vault_path: str, command_runner: NinaCommandRunner | None = None) -> None:
+    def __init__(
+        self, db_path: str, vault_path: str, command_runner: NinaCommandRunner | None = None
+    ) -> None:
         self.db_path = db_path
         self.vault_path = Path(vault_path)
         self.command_runner = command_runner or NinaCommandRunner()
@@ -154,7 +170,9 @@ class SessionService:
         db.close()
         return result
 
-    def add_message(self, session_id: str, role: str, content: str, metadata: Any | None = None) -> ConversationMessage:
+    def add_message(
+        self, session_id: str, role: str, content: str, metadata: Any | None = None
+    ) -> ConversationMessage:
         db = self._session()
         message = ConversationMessage(
             id=str(uuid.uuid4()),
@@ -193,7 +211,7 @@ class SessionService:
         raise RuntimeError(f"Unsupported session mode: {mode}")
 
     async def _send_chat(self, session_id: str, content: str) -> dict[str, Any]:
-        answer = await ask_obsidian(self.db_path, str(self.vault_path), content, limit=5)
+        answer = await ask_obsidian(self.db_path, str(self.vault_path), content, limit=5, session_id=session_id)
         assistant = self.add_message(
             session_id,
             "assistant",
@@ -218,7 +236,9 @@ class SessionService:
         for command in plan.commands:
             resolved = command.replace(LAST_CREATED_ID_PLACEHOLDER, last_created_id or "")
             if LAST_CREATED_ID_PLACEHOLDER in command and not last_created_id:
-                raise RuntimeError("Agent plan referenced a created ID before any creation command succeeded")
+                raise RuntimeError(
+                    "Agent plan referenced a created ID before any creation command succeeded"
+                )
             result = self.command_runner.run(resolved)
             if result.created_id:
                 last_created_id = result.created_id
@@ -346,7 +366,9 @@ class SessionService:
             parts.extend(["Stderr:", stderr])
         return "\n".join(parts)
 
-    def _serialize_session(self, session: ConversationSession, messages: list[ConversationMessage]) -> dict[str, Any]:
+    def _serialize_session(
+        self, session: ConversationSession, messages: list[ConversationMessage]
+    ) -> dict[str, Any]:
         return {
             "id": session.id,
             "mode": session.mode,

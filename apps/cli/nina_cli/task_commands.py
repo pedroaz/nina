@@ -101,3 +101,17 @@ def task_done(task_id: str) -> None:
     )
     task = resp.json()
     console.print(f"Completed task {task['id']}")
+
+
+@task_app.command("archive")
+def task_archive(task_id: str) -> None:
+    resp = request("POST", f"/tasks/{task_id}/archive")
+    task = resp.json()
+    console.print(f"Archived task {task['id']} -> {task['status']}")
+
+
+@task_app.command("unarchive")
+def task_unarchive(task_id: str) -> None:
+    resp = request("POST", f"/tasks/{task_id}/unarchive")
+    task = resp.json()
+    console.print(f"Unarchived task {task['id']} -> {task['status']}")

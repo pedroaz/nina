@@ -4,7 +4,6 @@ import sys
 from dataclasses import dataclass
 
 import pytest
-
 from nina_core.cli.runner import NinaCommandRunner, build_nina_command, extract_created_id
 
 
@@ -16,7 +15,9 @@ class FakeCompleted:
 
 
 def test_build_nina_command_quotes_arguments() -> None:
-    command = build_nina_command(["ticket", "create", "Fix daemon stop", "--description", "Needs follow up"])
+    command = build_nina_command(
+        ["ticket", "create", "Fix daemon stop", "--description", "Needs follow up"]
+    )
 
     assert command == "nina ticket create 'Fix daemon stop' --description 'Needs follow up'"
 
@@ -41,7 +42,14 @@ def test_runner_executes_allowed_ticket_command(monkeypatch: pytest.MonkeyPatch)
     command = build_nina_command(["ticket", "create", "Fix daemon stop"])
     result = runner.run(command)
 
-    assert captured["cmd"] == [sys.executable, "-m", "nina_cli.main", "ticket", "create", "Fix daemon stop"]
+    assert captured["cmd"] == [
+        sys.executable,
+        "-m",
+        "nina_cli.main",
+        "ticket",
+        "create",
+        "Fix daemon stop",
+    ]
     assert result.command == command
     assert result.exit_code == 0
     assert result.created_id == "abc-123"

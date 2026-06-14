@@ -17,7 +17,7 @@ It is designed for one person's workflow, not a multi-user SaaS.
 ## Current Surface
 
 - **Daemon**: FastAPI server that owns SQLite, Obsidian writes, LLM calls, workflows, jobs, and session state.
-- **CLI**: Typer-based commands for `project`, `task`, `ticket`, `job`, `research`, `workflow`, `ask`, and `daemon`.
+- **CLI**: Typer-based commands for `project`, `task`, `ticket`, `job`, `research`, `workflow`, `ask`, `status`, and `daemon`.
 - **TUI**: OpenTUI terminal interface with dedicated `Tickets`, `Chat`, `Agent`, `Research`, `Jobs`, and `Config` tabs.
 - **Core**: Shared models, database, search, Obsidian, LLM, research, session, and workflow services.
 
@@ -72,12 +72,68 @@ The generated note lands under `Research/YYYY-MM-DD - <topic>.md`.
 
 ## Architecture
 
+Nina is a local client-server app. The daemon is the source of truth for state and writes, and the CLI and TUI only talk to it over localhost.
+
+```mermaid
+flowchart TB
+  User[User]
+
+  subgraph Clients[Client surfaces]
+    CLI["CLI<br/>nina ..."]
+    TUI["TUI<br/>nina tui"]
+  end
+
+  subgraph Runtime[Local runtime]
+    Daemon["Daemon<br/>FastAPI on 127.0.0.1:8765"]
+    SQLite[(SQLite)]
+    Vault[(Obsidian vault)]
+    Search[Search index]
+    Jobs[Workflows and jobs]
+    Events[(Event log)]
+    LLM[LLM providers]
+  end
+
+  User --> CLI
+  User --> TUI
+  CLI -->|REST| Daemon
+  TUI -->|REST| Daemon
+  TUI -->|SSE /events/stream| Daemon
+  CLI -.->|may auto-start| Daemon
+
+  Daemon -->|owns writes| SQLite
+  Daemon -->|writes Markdown| Vault
+  Daemon -->|updates| Search
+  Daemon -->|runs| Jobs
+  Daemon -->|logs| Events
+  Daemon -->|calls| LLM
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant CLI as nina cli
+  participant TUI as nina tui
+  participant D as daemon
+
+  User->>CLI: nina ticket create "Write the README"
+  CLI->>D: POST /tasks
+  D-->>CLI: created task id
+
+  User->>TUI: open dashboard
+  TUI->>D: GET /kanban
+  D-->>TUI: board snapshot
+  TUI->>D: POST /kanban/move
+  D-->>TUI: updated board state
+  D-->>TUI: SSE updates on /events/stream
+```
+
 - `apps/server`: FastAPI daemon that owns the runtime and exposes the local API.
 - `apps/cli`: Typer CLI that talks to the daemon over HTTP.
-- `apps/tui`: OpenTUI client that talks to the daemon over HTTP.
+- `apps/tui`: OpenTUI client that talks to the daemon over HTTP and SSE.
 - `packages/nina_core`: shared application logic, models, services, and workflows.
 
-The daemon is the source of truth for state. The CLI and TUI are clients.
+The daemon is the source of truth for state. The CLI and TUI are clients, and the TUI keeps a live stream open for updates.
 
 ## Installation
 
@@ -87,18 +143,17 @@ The daemon is the source of truth for state. The CLI and TUI are clients.
 - `uv`
 - `bun`
 - An Obsidian vault path
-- Codex CLI auth for chat and agent mode
+- Codex auth file for chat and agent mode
 - An OpenAI API key for research mode
 
 ### Setup
 
 ```bash
-uv sync
-cd apps/tui && bun install
-uv run nina init
+make build
+nina init
 ```
 
-That creates the local Nina profile, SQLite database, token, and vault structure.
+That builds and installs the local Nina runtime and launcher, then creates the local Nina profile, SQLite database, token, and vault structure. Make sure `~/.local/bin` is on your PATH before running `nina init`.
 
 ## Quick Start
 
@@ -108,11 +163,13 @@ Start the daemon:
 uv run nina daemon start
 ```
 
-Check health:
+Check status:
 
 ```bash
-uv run nina daemon status
+uv run nina status
 ```
+
+`nina status` shows daemon health plus whether Codex OAuth is connected.
 
 Create a ticket:
 
@@ -138,6 +195,8 @@ Launch the TUI:
 uv run nina tui
 ```
 
+Short aliases: `uv run nina d` for `uv run nina daemon`, `uv run nina d r` for `uv run nina daemon restart`, and `uv run nina t` for `uv run nina tui`.
+
 ## Configuration
 
 Nina uses `NINA_CONFIG_DIR` to point at a profile directory. If it is not set, the default profile lives under `~/.nina/default`.
@@ -146,14 +205,15 @@ Useful environment variables:
 
 - `NINA_CONFIG_DIR`: profile directory used by the CLI, daemon, and TUI.
 - `NINA_LLM_PROVIDER`: LLM provider for chat and agent mode. Default: `codex`.
-- `NINA_CODEX_COMMAND`: command used by the Codex provider.
-- `NINA_CODEX_TIMEOUT_SECONDS`: timeout for Codex CLI calls.
-- `OPENAI_API_KEY`: required for research mode.
+- `CODEX_AUTH_FILE`: path to the Codex auth JSON used by the `codex` provider. Default: `~/.codex/auth.json`.
+- `OPENAI_API_KEY`: required for the explicit `openai` LLM provider and research mode.
 - `NINA_RESEARCH_PROVIDER`: research backend. Default: `openai_web`.
 - `NINA_RESEARCH_MODEL`: model used for research requests.
 - `NINA_LLM_MODEL`: model used for general LLM calls.
 
-The generated config file currently records paths and default settings, but runtime provider selection is primarily environment-driven.
+The default chat/agent path is `codex`, which uses the Codex auth file directly; `openai` and research remain API-key-only.
+
+Saved config now covers the vault path, database path, daemon host/port, log level, LLM provider/model, and daily summary schedule. Inspect it with `nina config show`, change it with `nina config vault`, `nina config database`, `nina config daemon-host`, `nina config daemon-port`, `nina config log-level`, `nina config llm-provider`, `nina config llm-model`, and `nina config daily-summary-time`, or edit the same fields from the TUI Settings tab. The daemon writes a small `daemon.json` runtime file in the config directory so CLI and TUI clients keep talking to the live host and port until the next restart.
 
 ## Obsidian Integration
 
@@ -186,7 +246,8 @@ Useful Make targets:
 
 ```bash
 make help
-make install
+make build
+make doctor
 make dev
 make smoke
 make check

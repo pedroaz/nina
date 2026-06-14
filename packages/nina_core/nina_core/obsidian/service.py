@@ -114,6 +114,22 @@ class ObsidianService:
             deleted_dir.mkdir(parents=True, exist_ok=True)
             os.rename(path, deleted_dir / path.name)
 
+    def archive_task_note(self, task: Task) -> None:
+        path = self._task_path(task)
+        if path.exists():
+            archived_dir = self.vault_path / "System" / "Archived"
+            archived_dir.mkdir(parents=True, exist_ok=True)
+            os.rename(path, archived_dir / path.name)
+            task.note_path = str((archived_dir / path.name).relative_to(self.vault_path))
+
+    def unarchive_task_note(self, task: Task) -> None:
+        archived_path = self.vault_path / "System" / "Archived" / f"{task.title.replace(' ', '-').lower()}.md"
+        if archived_path.exists():
+            task_path = self._task_path(task)
+            task_path.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(archived_path, task_path)
+            task.note_path = str(task_path.relative_to(self.vault_path))
+
     def create_research_note(
         self,
         topic: str,
@@ -125,9 +141,13 @@ class ObsidianService:
         created_date = created_at[:10]
         relative_path = Path("Research") / f"{created_date} - {_slugify(topic)}.md"
         source_list = list(sources)
-        source_lines = "\n".join(
-            f"- [{source.get('title') or source['url']}]({source['url']})" for source in source_list
-        ) or "- No external sources were captured."
+        source_lines = (
+            "\n".join(
+                f"- [{source.get('title') or source['url']}]({source['url']})"
+                for source in source_list
+            )
+            or "- No external sources were captured."
+        )
         body = "\n".join(
             [
                 f"# Research - {topic}",

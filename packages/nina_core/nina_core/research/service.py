@@ -90,7 +90,9 @@ class OpenAIWebResearchProvider(ResearchProvider):
                     sources.append(ResearchSource(title=url, url=url))
         if not sources:
             sources.append(ResearchSource(title=topic, url="https://openai.com"))
-        return ResearchReport(topic=topic, summary=(response.output_text or "").strip(), sources=sources)
+        return ResearchReport(
+            topic=topic, summary=(response.output_text or "").strip(), sources=sources
+        )
 
 
 class ResearchService:
@@ -114,7 +116,9 @@ class ResearchService:
             return OpenAIWebResearchProvider()
         raise RuntimeError(f"Unsupported research provider: {provider}")
 
-    def run(self, topic: str, workflow_run_id: str | None = None, created_at: str | None = None) -> dict[str, Any]:
+    def run(
+        self, topic: str, workflow_run_id: str | None = None, created_at: str | None = None
+    ) -> dict[str, Any]:
         report = self.provider.research(topic)
         created_at = created_at or report.created_at or _now()
         note_path = self.obsidian.create_research_note(

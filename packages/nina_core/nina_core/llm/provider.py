@@ -1,11 +1,15 @@
+from __future__ import annotations
+
+import base64
 import json
 import os
-import shlex
-import subprocess
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
+import httpx
 from openai import OpenAI
 from pydantic import BaseModel
 from sqlalchemy import create_engine
@@ -13,44 +17,27 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from nina_core.models.models import LLMInteraction
 
+CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+CODEX_ISSUER = "https://auth.openai.com"
+CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+CODEX_AUTH_FILE_DEFAULT = "~/.codex/auth.json"
+CODEX_REFRESH_LEEWAY_MS = 5 * 60 * 1000
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _load_codex_auth() -> dict[str, Any]:
-    path = os.path.expanduser(os.environ.get("CODEX_AUTH_FILE", "~/.codex/auth.json"))
-    if not os.path.exists(path):
-        return {}
-    with open(path) as f:
-        return json.load(f)
-
-
-def _get_api_key() -> str | None:
-    env_key = os.environ.get("OPENAI_API_KEY", "")
-    if env_key:
-        return env_key
-    auth = _load_codex_auth()
-    auth_mode = auth.get("auth_mode", "")
-    if auth_mode == "apiKey":
-        return auth.get("OPENAI_API_KEY", "")
-    return None
-
-
-def _has_codex_oauth_session() -> bool:
-    auth = _load_codex_auth()
-    auth_mode = auth.get("auth_mode", "")
-    if auth_mode in ("chatgpt", "chatgptAuthTokens"):
-        tokens = auth.get("tokens", {})
-        return bool(tokens.get("access_token"))
-    return False
+def _now_millis() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 class LLMRequest(BaseModel):
     purpose: str
     prompt: str
-    model: str = "gpt-5"
+    model: str | None = None
     workflow_run_id: str | None = None
+    session_id: str | None = None
 
 
 class LLMResponse(BaseModel):
@@ -64,13 +51,252 @@ class LLMProvider:
         raise NotImplementedError
 
 
+@dataclass
+class CodexAuth:
+    path: Path
+    raw: dict[str, Any]
+    access_token: str
+    refresh_token: str | None
+    expires_at: int | None
+    account_id: str | None
+
+    def is_expired(self) -> bool:
+        if self.expires_at is None:
+            return False
+        return self.expires_at <= _now_millis() + CODEX_REFRESH_LEEWAY_MS
+
+
+@dataclass
+class CodexAuthStatus:
+    connected: bool
+    account_id: str | None
+    expires_at: int | None
+    detail: str | None = None
+
+
+def codex_auth_status() -> CodexAuthStatus:
+    try:
+        auth = _load_codex_auth()
+    except Exception as exc:
+        return CodexAuthStatus(connected=False, account_id=None, expires_at=None, detail=str(exc))
+    return CodexAuthStatus(connected=True, account_id=auth.account_id, expires_at=auth.expires_at)
+
+
+def _load_codex_auth() -> CodexAuth:
+    path = Path(os.path.expanduser(os.environ.get("CODEX_AUTH_FILE", CODEX_AUTH_FILE_DEFAULT)))
+    if not path.exists():
+        raise RuntimeError(f"Codex auth file not found: {path}")
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Failed to read Codex auth file: {path}") from exc
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"Invalid Codex auth file: {path}")
+
+    auth = _parse_codex_auth(path, raw)
+    if auth.access_token and auth.refresh_token and auth.is_expired():
+        refreshed = _refresh_codex_auth(auth.refresh_token)
+        auth = _store_codex_auth(auth, refreshed)
+    return auth
+
+
+def _parse_codex_auth(path: Path, raw: dict[str, Any]) -> CodexAuth:
+    has_tokens = isinstance(raw.get("tokens"), dict)
+    tokens = raw.get("tokens") if has_tokens else {}
+    if raw.get("auth_mode") in {"chatgpt", "chatgptAuthTokens"} or has_tokens:
+        access_token = _string_or_none(tokens.get("access_token"))
+        refresh_token = _string_or_none(tokens.get("refresh_token"))
+        expires_at = _int_or_none(tokens.get("expires_at") or tokens.get("expires"))
+        account_id = _string_or_none(tokens.get("account_id") or tokens.get("accountId"))
+    elif raw.get("type") == "oauth":
+        access_token = _string_or_none(raw.get("access") or raw.get("access_token"))
+        refresh_token = _string_or_none(raw.get("refresh") or raw.get("refresh_token"))
+        expires_at = _int_or_none(raw.get("expires") or raw.get("expires_at"))
+        account_id = _string_or_none(raw.get("account_id") or raw.get("accountId"))
+    else:
+        raise RuntimeError(f"Unsupported Codex auth file format: {path}")
+
+    if not access_token:
+        raise RuntimeError(f"Codex auth file does not contain an access token: {path}")
+    if account_id is None:
+        account_id = _extract_account_id(access_token)
+    return CodexAuth(
+        path=path,
+        raw=raw,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_at=expires_at,
+        account_id=account_id,
+    )
+
+
+def _store_codex_auth(auth: CodexAuth, tokens: dict[str, Any]) -> CodexAuth:
+    raw = dict(auth.raw)
+    if raw.get("auth_mode") in {"chatgpt", "chatgptAuthTokens"} or isinstance(raw.get("tokens"), dict):
+        current = dict(raw.get("tokens") or {})
+        current["access_token"] = tokens["access_token"]
+        current["refresh_token"] = tokens["refresh_token"]
+        current["expires_at"] = tokens["expires_at"]
+        if tokens.get("account_id") is not None:
+            current["account_id"] = tokens["account_id"]
+        raw["tokens"] = current
+    else:
+        raw["type"] = "oauth"
+        raw["access"] = tokens["access_token"]
+        raw["refresh"] = tokens["refresh_token"]
+        raw["expires"] = tokens["expires_at"]
+        if tokens.get("account_id") is not None:
+            raw["accountId"] = tokens["account_id"]
+    auth.path.write_text(json.dumps(raw, indent=2, sort_keys=False))
+    return CodexAuth(
+        path=auth.path,
+        raw=raw,
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+        expires_at=tokens["expires_at"],
+        account_id=tokens.get("account_id") or auth.account_id,
+    )
+
+
+def _refresh_codex_auth(refresh_token: str) -> dict[str, Any]:
+    response = httpx.post(
+        f"{CODEX_ISSUER}/oauth/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": CODEX_CLIENT_ID,
+        },
+        timeout=30,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Codex token refresh failed: {response.status_code}")
+    payload = response.json()
+    access_token = _string_or_none(payload.get("access_token"))
+    refresh_token = _string_or_none(payload.get("refresh_token")) or refresh_token
+    expires_in = _int_or_none(payload.get("expires_in")) or 3600
+    if not access_token:
+        raise RuntimeError("Codex token refresh response did not include an access token")
+    account_id = _extract_account_id(access_token)
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": _now_millis() + (expires_in * 1000),
+        "account_id": account_id,
+    }
+
+
+def _string_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _extract_account_id(token: str) -> str | None:
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        payload = json.loads(_base64url_decode(parts[1]))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    account_id = payload.get("chatgpt_account_id")
+    if isinstance(account_id, str) and account_id:
+        return account_id
+    api_auth = payload.get("https://api.openai.com/auth")
+    if isinstance(api_auth, dict):
+        account_id = api_auth.get("chatgpt_account_id")
+        if isinstance(account_id, str) and account_id:
+            return account_id
+    organizations = payload.get("organizations")
+    if isinstance(organizations, list) and organizations:
+        first = organizations[0]
+        if isinstance(first, dict):
+            account_id = first.get("id")
+            if isinstance(account_id, str) and account_id:
+                return account_id
+    return None
+
+
+def _base64url_decode(value: str) -> str:
+    remainder = len(value) % 4
+    if remainder:
+        value += "=" * (4 - remainder)
+    return base64.urlsafe_b64decode(value.encode()).decode()
+
+
+class CodexAuthProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.model = os.environ.get("NINA_LLM_MODEL", "gpt-5")
+        self.auth = _load_codex_auth()
+        self.client = OpenAI(
+            api_key=self.auth.access_token,
+            base_url=CODEX_BASE_URL,
+            default_headers=self._default_headers(),
+        )
+
+    def _default_headers(self, session_id: str | None = None) -> dict[str, str]:
+        headers = {"originator": "nina"}
+        if self.auth.account_id:
+            headers["ChatGPT-Account-Id"] = self.auth.account_id
+        if session_id:
+            headers["session-id"] = session_id
+        return headers
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        model = request.model or self.model
+        response = None
+        parts: list[str] = []
+        with self.client.responses.stream(
+            model=model,
+            store=False,
+            extra_headers=self._default_headers(request.session_id),
+            instructions=(
+                "You are Nina, a local-first assistant for notes, tasks, and workflows. "
+                "Answer clearly and concisely."
+            ),
+            input=[
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": request.prompt}],
+                }
+            ],
+        ) as stream:
+            for event in stream:
+                event_type = getattr(event, "type", None)
+                if event_type == "response.output_text.delta":
+                    delta = getattr(event, "delta", None)
+                    if isinstance(delta, str) and delta:
+                        parts.append(delta)
+                elif event_type == "response.completed":
+                    response = getattr(event, "response", None)
+        content = "".join(parts)
+        if not content and response is not None:
+            content = getattr(response, "output_text", "") or ""
+        if not content and response is not None:
+            content = _extract_response_text(response)
+        return LLMResponse(response=content, model=model, provider="codex")
+
+
+CodexCliProvider = CodexAuthProvider
+
+
 class OpenAIProvider(LLMProvider):
     def __init__(self, api_key: str | None = None) -> None:
-        self.api_key = api_key or _get_api_key()
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
-            raise RuntimeError(
-                "OpenAI API key not found. Set OPENAI_API_KEY or run codex login --api-key."
-            )
+            raise RuntimeError("OPENAI_API_KEY is required for the OpenAI provider")
         self.client = OpenAI(api_key=self.api_key)
         self.model = os.environ.get("NINA_LLM_MODEL", "gpt-5")
 
@@ -82,32 +308,6 @@ class OpenAIProvider(LLMProvider):
         )
         content = response.choices[0].message.content or ""
         return LLMResponse(response=content, model=model, provider="openai")
-
-
-class CodexCliProvider(LLMProvider):
-    def __init__(self) -> None:
-        self.model = os.environ.get("NINA_LLM_MODEL", "gpt-5")
-        self.command = shlex.split(
-            os.environ.get("NINA_CODEX_COMMAND", "codex exec --skip-git-repo-check --sandbox read-only")
-        )
-
-    async def complete(self, request: LLMRequest) -> LLMResponse:
-        timeout = int(os.environ.get("NINA_CODEX_TIMEOUT_SECONDS", "120"))
-        completed = subprocess.run(
-            [*self.command, request.prompt],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-        if completed.returncode != 0:
-            error = completed.stderr.strip() or completed.stdout.strip()
-            raise RuntimeError(f"Codex CLI failed: {error}")
-        return LLMResponse(
-            response=completed.stdout.strip(),
-            model=request.model or self.model,
-            provider="codex",
-        )
 
 
 class FakeProvider(LLMProvider):
@@ -133,7 +333,7 @@ class LLMService:
         if provider == "openai":
             return OpenAIProvider()
         if provider == "codex":
-            return CodexCliProvider()
+            return CodexAuthProvider()
         raise RuntimeError(f"Unsupported LLM provider: {provider}")
 
     def _session(self) -> Session:
@@ -149,7 +349,7 @@ class LLMService:
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         provider_name = os.environ.get("NINA_LLM_PROVIDER", "codex")
-        model = getattr(self.provider, "model", request.model)
+        model = request.model or getattr(self.provider, "model", request.model)
         interaction = LLMInteraction(
             id=str(uuid.uuid4()),
             provider=provider_name,
@@ -175,3 +375,17 @@ class LLMService:
             raise
         self.log_interaction(interaction)
         return response
+
+
+def _extract_response_text(response: Any) -> str:
+    parts: list[str] = []
+    for item in getattr(response, "output", []) or []:
+        if getattr(item, "type", None) != "message":
+            continue
+        for content in getattr(item, "content", []) or []:
+            if getattr(content, "type", None) != "output_text":
+                continue
+            text = getattr(content, "text", None)
+            if isinstance(text, str) and text:
+                parts.append(text)
+    return "".join(parts)

@@ -134,15 +134,16 @@ Actions:
 
 ## Settings
 
-Shows read-only V1 config:
+Shows the current config and lets the user edit saved values:
 
 - vault path.
 - database path.
-- daemon URL.
+- daemon host/port.
 - LLM provider/model.
 - daily summary schedule.
+- log level.
 
-Editing settings can come later.
+The TUI reads `GET /config`, edits one field at a time, and saves through `PATCH /config`. Host, port, and log level changes should surface that a daemon restart is required.
 
 ## Streaming
 

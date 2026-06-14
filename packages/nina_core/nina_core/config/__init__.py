@@ -1,28 +1,36 @@
-from .init import initialize
+from .init import ensure_vault_structure, initialize
 from .paths import (
+    DEFAULT_PROFILE,
     get_config_dir,
     get_config_path,
     get_database_path,
     get_log_path,
     get_pid_path,
     get_token_path,
+    get_runtime_path,
     get_vault_path,
+    load_effective_config,
 )
-from .settings import LLMConfig, NinaConfig, SchedulerConfig
+from .settings import LLMConfig, NinaConfig, SchedulerConfig, merge_config
 from .token import generate_token, read_token, write_token
 
 __all__ = [
+    "DEFAULT_PROFILE",
+    "ensure_vault_structure",
     "initialize",
+    "load_effective_config",
     "get_config_dir",
     "get_config_path",
     "get_database_path",
     "get_log_path",
     "get_pid_path",
     "get_token_path",
+    "get_runtime_path",
     "get_vault_path",
     "NinaConfig",
     "LLMConfig",
     "SchedulerConfig",
+    "merge_config",
     "generate_token",
     "read_token",
     "write_token",

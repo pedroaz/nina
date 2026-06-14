@@ -25,8 +25,17 @@ nina init
 nina daemon start
 nina daemon stop
 nina daemon status
+nina status
 nina tui
 ```
+
+Short aliases:
+
+- `nina d` for `nina daemon`
+- `nina d r` for `nina daemon restart`
+- `nina t` for `nina tui`
+
+`nina status` reports daemon health, Codex OAuth status, and the resolved config paths.
 
 `nina init` creates:
 
@@ -102,6 +111,22 @@ nina llm test "Summarize the current kanban board."
 nina llm logs
 nina llm show <interaction-id>
 ```
+
+## Config Commands
+
+```text
+nina config show
+nina config vault <path>
+nina config database <path>
+nina config daemon-host <host>
+nina config daemon-port <port>
+nina config log-level <level>
+nina config llm-provider <provider>
+nina config llm-model <model>
+nina config daily-summary-time <HH:MM>
+```
+
+`nina config show` prints the resolved config values. Mutating config commands update the file on disk and, when possible, sync the running daemon. Host, port, and log level changes still require a daemon restart to take effect on the live listener.
 
 ## Output Rules
 

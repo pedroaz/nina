@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Mapping, Self
 
 import yaml
 from pydantic import BaseModel, Field
@@ -38,8 +38,31 @@ class NinaConfig(BaseModel):
         )
 
     def with_resolved_paths(self, config_dir: Path) -> Self:
-        if not self.vault_path:
-            self.vault_path = str(config_dir / "vault")
-        if not self.database_path:
-            self.database_path = str(config_dir / "nina.db")
+        self.vault_path = _normalize_path(self.vault_path, config_dir / "vault", config_dir)
+        self.database_path = _normalize_path(
+            self.database_path,
+            config_dir / "nina.db",
+            config_dir,
+        )
         return self
+
+
+def _normalize_path(value: str, default: Path, config_dir: Path) -> str:
+    path = Path(value).expanduser() if value else default
+    if not path.is_absolute():
+        path = config_dir / path
+    return str(path)
+
+
+def _deep_update(target: dict[str, Any], patch: Mapping[str, Any]) -> None:
+    for key, value in patch.items():
+        if isinstance(value, Mapping) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value
+
+
+def merge_config(config: NinaConfig, patch: Mapping[str, Any], config_dir: Path) -> NinaConfig:
+    data = config.model_dump()
+    _deep_update(data, patch)
+    return NinaConfig(**data).with_resolved_paths(config_dir)

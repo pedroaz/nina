@@ -21,7 +21,8 @@ The implementation should add a root `Makefile` with these targets.
 
 ```makefile
 make help              # list available commands
-make install           # install Python and TUI dependencies
+make build             # build and install the local Nina runtime
+make doctor            # check local Nina launcher and PATH setup
 make format            # format all code
 make lint              # static lint checks
 make typecheck         # type checking
@@ -292,7 +293,7 @@ Every feature should include an acceptance block in the implementing PR or task 
 
 Required before more features:
 
-- `make install`
+- `make build`
 - `make test`
 - `make check`
 - `nina version`

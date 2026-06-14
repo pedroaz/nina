@@ -1,15 +1,30 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from nina_cli import config_commands as config_module
 from nina_cli import main as main_module
+from nina_cli.api import api_base
 from nina_cli.main import app
+from nina_core.config import load_effective_config
 from typer.testing import CliRunner
 
 
 class FakeResponse:
     def __init__(self, payload: Any) -> None:
         self.payload = payload
+
+    def json(self) -> Any:
+        return self.payload
+
+
+class FakeHealthResponse:
+    def __init__(self, payload: Any) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
 
     def json(self) -> Any:
         return self.payload
@@ -114,6 +129,215 @@ def test_ask_calls_ask_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped
     assert "Research/codex.md" in result.stdout
 
 
+def test_llm_test_calls_complete_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
+        calls.append((method, path, kwargs))
+        return FakeResponse({"provider": "openai", "model": "gpt-5.4-mini", "response": "auth ok"})
+
+    monkeypatch.setattr("nina_cli.llm_commands.request", fake_request)
+
+    result = runner.invoke(app, ["llm", "test", "Reply with auth ok", "--model", "gpt-5.4-mini"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/llm/complete",
+            {"json": {"purpose": "cli_test", "prompt": "Reply with auth ok", "model": "gpt-5.4-mini"}},
+        )
+    ]
+    assert "Provider: openai" in result.stdout
+    assert "Model: gpt-5.4-mini" in result.stdout
+    assert "auth ok" in result.stdout
+
+
+def test_chat_test_uses_session_create_and_message_flow(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
+        calls.append((method, path, kwargs))
+        if path == "/sessions?mode=chat":
+            return FakeResponse([])
+        if path == "/sessions":
+            return FakeResponse({"id": "session-1", "mode": "chat", "title": "Chat", "messages": []})
+        if path == "/sessions/session-1/messages":
+            return FakeResponse(
+                {
+                    "session": {"id": "session-1", "mode": "chat", "title": "Chat", "messages": []},
+                    "assistant": {"content": "chat ok"},
+                    "sources": [{"title": "Note", "path": "Research/note.md"}],
+                }
+            )
+        raise AssertionError(f"unexpected path: {path}")
+
+    monkeypatch.setattr("nina_cli.chat_commands.request", fake_request)
+
+    result = runner.invoke(app, ["chat", "test", "Reply with chat ok"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("GET", "/sessions?mode=chat", {}),
+        ("POST", "/sessions", {"json": {"mode": "chat", "title": "Chat"}}),
+        ("POST", "/sessions/session-1/messages", {"json": {"content": "Reply with chat ok"}}),
+    ]
+    assert "Session: session-1" in result.stdout
+    assert "chat ok" in result.stdout
+    assert "Sources:" in result.stdout
+    assert "Research/note.md" in result.stdout
+
+
+def test_status_reports_running_daemon_and_configuration_paths(
+    monkeypatch, isolated_config
+) -> None:  # type: ignore[no-untyped-def]
+    (isolated_config / "daemon.pid").write_text("4321")
+    monkeypatch.setattr(main_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(
+        main_module.httpx,
+        "get",
+        lambda *args, **kwargs: FakeHealthResponse({"status": "ok"}),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "codex_auth_status",
+        lambda: type(
+            "AuthStatus",
+            (),
+            {
+                "connected": True,
+                "account_id": "acc-123",
+                "expires_at": 1893456000000,
+                "detail": None,
+            },
+        )(),
+    )
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0
+    assert "Daemon running (pid 4321)" in result.stdout
+    assert "Health: ok" in result.stdout
+    assert "LLM auth: Codex OAuth connected, account acc-123" in result.stdout
+    assert "Configuration paths:" in result.stdout
+    assert "Config dir:" in result.stdout
+    assert "Config file:" in result.stdout
+    assert "Token:" in result.stdout
+    assert "Database:" in result.stdout
+    assert "Vault:" in result.stdout
+    assert "Log:" in result.stdout
+    assert "PID:" in result.stdout
+
+
+def test_logs_reads_daemon_log_file(isolated_config) -> None:  # type: ignore[no-untyped-def]
+    log_path = isolated_config / "logs" / "daemon.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("first line\nsecond line\nthird line\n")
+
+    result = runner.invoke(app, ["logs"])
+
+    assert result.exit_code == 0
+    assert f"Log file: {log_path}" in result.stdout
+    assert "first line" in result.stdout
+    assert "second line" in result.stdout
+    assert "third line" in result.stdout
+
+
+def test_status_reports_offline_daemon_and_configuration_paths(
+    monkeypatch, isolated_config
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        main_module.httpx,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("health should not be called")
+        ),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "codex_auth_status",
+        lambda: type(
+            "AuthStatus",
+            (),
+            {
+                "connected": False,
+                "account_id": None,
+                "expires_at": None,
+                "detail": "Codex auth file not found",
+            },
+        )(),
+    )
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0
+    assert "Daemon not running" in result.stdout
+    assert "Health: offline" in result.stdout
+    assert "LLM auth: disconnected (Codex auth file not found)" in result.stdout
+    assert "Configuration paths:" in result.stdout
+    assert "Config dir:" in result.stdout
+
+
+def test_api_base_prefers_runtime_state(monkeypatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
+    (isolated_config / "daemon.json").write_text(
+        json.dumps(
+            {
+                "profile": "default",
+                "config_dir": str(isolated_config),
+                "daemon_host": "10.0.0.5",
+                "daemon_port": 9123,
+            }
+        )
+    )
+
+    assert api_base() == "http://10.0.0.5:9123"
+
+
+def test_config_vault_command_updates_config_and_vault_structure(
+    monkeypatch, isolated_config
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        config_module.httpx, "patch", lambda *args, **kwargs: FakeHealthResponse({})
+    )
+    custom_vault = isolated_config.parent / "custom-vault"
+
+    result = runner.invoke(app, ["config", "vault", str(custom_vault)])
+
+    assert result.exit_code == 0
+    config = load_effective_config(isolated_config)
+    assert config.vault_path == str(custom_vault)
+    assert (custom_vault / "Projects").exists()
+    assert (custom_vault / "System" / "Deleted").exists()
+    assert "Vault path:" in result.stdout
+
+
+def test_config_database_command_updates_config_and_creates_storage(
+    monkeypatch, isolated_config
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        config_module.httpx, "patch", lambda *args, **kwargs: FakeHealthResponse({})
+    )
+    custom_db = isolated_config.parent / "custom-nina.db"
+
+    result = runner.invoke(app, ["config", "database", str(custom_db)])
+
+    assert result.exit_code == 0
+    config = load_effective_config(isolated_config)
+    assert config.database_path == str(custom_db)
+    assert custom_db.exists()
+    assert "Database path:" in result.stdout
+
+
+def test_config_show_json_lists_config_values(isolated_config) -> None:  # type: ignore[no-untyped-def]
+    result = runner.invoke(app, ["config", "show", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["config_dir"] == str(isolated_config)
+    assert payload["vault_path"] == str(isolated_config / "vault")
+    assert payload["daemon_host"] == "127.0.0.1"
+
+
 def test_tui_binary_resolution_prefers_env(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     tui_bin = tmp_path / "nina-tui"
     tui_bin.write_text("binary")
@@ -122,11 +346,46 @@ def test_tui_binary_resolution_prefers_env(monkeypatch, tmp_path) -> None:  # ty
     assert main_module._resolve_tui_binary() == tui_bin
 
 
+def test_tui_alias_invokes_the_tui_command(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    tui_bin = tmp_path / "nina-tui"
+    tui_bin.write_text("binary")
+    monkeypatch.setattr(main_module, "_resolve_tui_binary", lambda: tui_bin)
+    captured: dict[str, Any] = {}
+
+    def fake_execv(path: str, args: list[str]) -> None:
+        captured["path"] = path
+        captured["args"] = args
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_module.os, "execv", fake_execv)
+
+    result = runner.invoke(app, ["t"])
+
+    assert result.exit_code == 0
+    assert captured == {"path": str(tui_bin), "args": [str(tui_bin)]}
+
+
+def test_daemon_restart_alias_invokes_restart_command(monkeypatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
+    (isolated_config / "daemon.pid").write_text("1234")
+    monkeypatch.setattr(main_module, "_process_exists", lambda pid: pid == 1234)
+    monkeypatch.setattr(main_module, "_terminate_process", lambda pid: None)
+
+    class FakeProcess:
+        pid = 5678
+
+    monkeypatch.setattr(main_module.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    result = runner.invoke(app, ["d", "r"])
+
+    assert result.exit_code == 0
+    assert "Daemon stopped" in result.stdout
+    assert "Daemon restarted (pid 5678)" in result.stdout
+
+
 def test_server_command_prefers_installed_entrypoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(main_module.shutil, "which", lambda name: "/opt/nina/nina-server")
 
     assert main_module._server_command() == ["/opt/nina/nina-server"]
-
 
 
 def test_ticket_create_calls_ticket_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]

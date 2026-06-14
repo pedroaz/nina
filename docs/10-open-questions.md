@@ -16,14 +16,11 @@ Default decision until validated:
 
 ## OpenAI And Codex Auth
 
-- Should Nina use OpenAI API keys, Codex CLI/session integration, or both?
-- If using Codex specifically, what user-visible workflow should that unlock in V1?
+Resolved:
 
-Default decision until validated:
-
-- Implement a normal OpenAI provider boundary first.
-- Do not make V1 depend on Codex-specific auth.
-- Keep OpenCode/Codex coding-work tracking as later work.
+- Nina uses the Codex auth file as the default subscription-backed path for chat and agent calls.
+- The explicit `openai` provider and research mode stay API-key-only.
+- Do not treat a Codex/ChatGPT login as a substitute for `OPENAI_API_KEY`.
 
 ## Delete Semantics
 

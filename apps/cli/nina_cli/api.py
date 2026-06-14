@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Any
 
@@ -5,13 +6,31 @@ import httpx
 import typer
 from rich.console import Console
 
-from nina_core.config import get_config_dir, get_token_path, read_token
+from nina_core.config import (
+    get_config_dir,
+    get_runtime_path,
+    get_token_path,
+    load_effective_config,
+    read_token,
+)
 
 console = Console()
 
 
 def api_base() -> str:
-    return "http://127.0.0.1:8765"
+    config_dir = get_config_dir(os.environ.get("NINA_PROFILE", "default"))
+    runtime_path = get_runtime_path(config_dir)
+    if runtime_path.exists():
+        try:
+            data = json.loads(runtime_path.read_text())
+            host = data.get("daemon_host")
+            port = data.get("daemon_port")
+            if host and port:
+                return f"http://{host}:{port}"
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+    config = load_effective_config(config_dir)
+    return f"http://{config.daemon_host}:{config.daemon_port}"
 
 
 def headers() -> dict[str, str]:

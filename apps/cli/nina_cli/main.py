@@ -1,29 +1,38 @@
+import json
 import os
 import shutil
 import signal
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 import typer
 from rich.console import Console
 
 from nina_core.config import (
+    NinaConfig,
     get_config_dir,
     get_config_path,
-    get_database_path,
     get_log_path,
     get_pid_path,
+    get_runtime_path,
     get_token_path,
     get_vault_path,
     initialize,
+    load_effective_config,
     read_token,
 )
+from nina_core.llm.provider import codex_auth_status
 
-from .api import request
+from .api import api_base, request
+from .chat_commands import chat_app
+from .config_commands import config_app
 from .job_commands import job_app
 from .kanban_commands import kanban_app
+from .llm_commands import llm_app
 from .project_commands import project_app
 from .research_commands import research_app
 from .task_commands import task_app
@@ -36,11 +45,15 @@ app = typer.Typer(help="Nina CLI - local-first personal operations platform")
 
 daemon_app = typer.Typer(help="Daemon commands")
 app.add_typer(daemon_app, name="daemon")
+app.add_typer(daemon_app, name="d")
+app.add_typer(chat_app, name="chat")
+app.add_typer(config_app, name="config")
 app.add_typer(project_app, name="project")
 app.add_typer(task_app, name="task")
 app.add_typer(ticket_app, name="ticket")
 app.add_typer(kanban_app, name="kanban")
 app.add_typer(job_app, name="job")
+app.add_typer(llm_app, name="llm")
 app.add_typer(research_app, name="research")
 
 
@@ -112,6 +125,88 @@ def _terminate_process(pid: int) -> None:
         os.kill(pid, signal.SIGKILL)
 
 
+def _read_pid(pid_path: Path) -> int | None:
+    try:
+        pid = int(pid_path.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _daemon_status(profile: str) -> tuple[str, bool]:
+    pid_path = _resolve_pid_path(profile)
+    if not pid_path.exists():
+        return "Daemon not running", False
+    pid = _read_pid(pid_path)
+    if pid is None:
+        pid_path.unlink(missing_ok=True)
+        return "Daemon not running (stale pid)", False
+    if _process_exists(pid):
+        return f"Daemon running (pid {pid})", True
+    pid_path.unlink(missing_ok=True)
+    return "Daemon not running (stale pid)", False
+
+
+def _write_runtime_state(config_dir: Path, config: NinaConfig) -> None:
+    runtime_path = get_runtime_path(config_dir)
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "profile": config.profile,
+                "config_dir": str(config_dir),
+                "daemon_host": config.daemon_host,
+                "daemon_port": config.daemon_port,
+            },
+            indent=2,
+        )
+    )
+
+
+def _daemon_health() -> str:
+    try:
+        resp = httpx.get(f"{api_base()}/health", timeout=2)
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError, TypeError):
+        return "offline"
+    status = data.get("status", "unknown")
+    return str(status) if status is not None else "unknown"
+
+
+def _configuration_entries(config_dir: Path, config: NinaConfig) -> list[tuple[str, str]]:
+    return [
+        ("Config dir", str(config_dir)),
+        ("Config file", str(get_config_path(config_dir))),
+        ("Token", str(get_token_path(config_dir))),
+        ("Database", config.database_path),
+        ("Vault", config.vault_path),
+        ("Daemon host", config.daemon_host),
+        ("Daemon port", str(config.daemon_port)),
+        ("Daemon URL", api_base()),
+        ("LLM provider", config.llm.provider),
+        ("LLM model", config.llm.model),
+        ("Daily summary", config.scheduler.daily_summary_time),
+        ("Log level", config.log_level),
+        ("Log", str(get_log_path(config_dir))),
+        ("PID", str(get_pid_path(config_dir))),
+    ]
+
+
+def _format_codex_auth_status() -> str:
+    status = codex_auth_status()
+    if status.connected:
+        parts = ["Codex OAuth connected"]
+        if status.account_id:
+            parts.append(f"account {status.account_id}")
+        if status.expires_at:
+            expires = datetime.fromtimestamp(status.expires_at / 1000, tz=timezone.utc).astimezone()
+            parts.append(f"expires {expires.isoformat(timespec='seconds')}")
+        return "LLM auth: " + ", ".join(parts)
+    detail = status.detail or "unknown error"
+    return f"LLM auth: disconnected ({detail})"
+
+
 @app.command("ask")
 def ask(
     question: str,
@@ -127,6 +222,7 @@ def ask(
             console.print("- {}".format(source["path"]))
 
 
+@app.command("t")
 @app.command()
 def tui() -> None:
     tui_bin = _resolve_tui_binary()
@@ -161,20 +257,64 @@ def version() -> None:
     console.print(f"Nina {__version__}")
 
 
-def _get_env(profile: str) -> dict[str, str]:
+@app.command()
+def status(
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    config_dir = get_config_dir(profile)
+    config = load_effective_config(config_dir)
+
+    daemon_state, running = _daemon_status(profile)
+    console.print(daemon_state)
+    console.print(f"Health: {_daemon_health() if running else 'offline'}")
+    console.print(_format_codex_auth_status())
+    console.print()
+    console.print("Configuration paths:")
+    for name, value in _configuration_entries(config_dir, config):
+        console.print(f"  {name}: {value}")
+
+
+@app.command()
+def logs(
+    profile: str = typer.Option("default", help="Profile name"),
+    tail: int | None = typer.Option(None, help="Show only the last N lines"),
+) -> None:
+    config_dir = get_config_dir(profile)
+    log_path = get_log_path(config_dir)
+    if not log_path.exists():
+        console.print(f"Log file not found: {log_path}")
+        raise typer.Exit(1)
+
+    lines = log_path.read_text().splitlines()
+    if tail is not None and tail >= 0:
+        lines = lines[-tail:]
+
+    console.print(f"Log file: {log_path}", soft_wrap=True)
+    if lines:
+        console.print("\n".join(lines))
+
+
+def _get_env(profile: str) -> tuple[dict[str, str], NinaConfig]:
     config_dir = get_config_dir(profile)
     token_path = get_token_path(config_dir)
     config_path = get_config_path(config_dir)
     if not config_path.exists():
         console.print("Run 'nina init' first.")
         raise typer.Exit(1)
+    config = load_effective_config(config_dir)
     env = os.environ.copy()
     env["NINA_PROFILE"] = profile
     env["NINA_CONFIG_DIR"] = str(config_dir)
     env["NINA_TOKEN"] = read_token(token_path)
-    env["NINA_VAULT_PATH"] = str(get_vault_path(config_dir))
-    env["NINA_DATABASE_PATH"] = str(get_database_path(config_dir))
-    return env
+    env["NINA_VAULT_PATH"] = config.vault_path
+    env["NINA_DATABASE_PATH"] = config.database_path
+    env["NINA_DAEMON_HOST"] = config.daemon_host
+    env["NINA_DAEMON_PORT"] = str(config.daemon_port)
+    env["NINA_LLM_PROVIDER"] = config.llm.provider
+    env["NINA_LLM_MODEL"] = config.llm.model
+    env["NINA_LOG_LEVEL"] = config.log_level
+    env["NINA_DAILY_SUMMARY_TIME"] = config.scheduler.daily_summary_time
+    return env, config
 
 
 def _resolve_pid_path(profile: str) -> Path:
@@ -187,12 +327,13 @@ def daemon_start(
 ) -> None:
     pid_path = _resolve_pid_path(profile)
     if pid_path.exists():
-        pid = int(pid_path.read_text())
-        if _process_exists(pid):
+        pid = _read_pid(pid_path)
+        if pid is not None and _process_exists(pid):
             console.print(f"Daemon already running (pid {pid})")
             return
-        pid_path.unlink()
-    env = _get_env(profile)
+        pid_path.unlink(missing_ok=True)
+    env, config = _get_env(profile)
+    _write_runtime_state(get_config_dir(profile), config)
     log_path = get_log_path(get_config_dir(profile))
     log_path.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.Popen(
@@ -214,27 +355,56 @@ def daemon_stop(
     if not pid_path.exists():
         console.print("Daemon not running")
         return
-    pid = int(pid_path.read_text())
+    pid = _read_pid(pid_path)
+    if pid is None:
+        pid_path.unlink(missing_ok=True)
+        console.print("Daemon not running")
+        return
     _terminate_process(pid)
-    pid_path.unlink()
+    pid_path.unlink(missing_ok=True)
     console.print("Daemon stopped")
+
+
+@daemon_app.command("r")
+@daemon_app.command("restart")
+def daemon_restart(
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    pid_path = _resolve_pid_path(profile)
+    if pid_path.exists():
+        pid = _read_pid(pid_path)
+        if pid is not None and _process_exists(pid):
+            _terminate_process(pid)
+            pid_path.unlink(missing_ok=True)
+            console.print("Daemon stopped")
+        else:
+            pid_path.unlink(missing_ok=True)
+    env, config = _get_env(profile)
+    _write_runtime_state(get_config_dir(profile), config)
+    log_path = get_log_path(get_config_dir(profile))
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen(
+        _server_command(),
+        env=env,
+        stdout=log_path.open("a"),
+        stderr=subprocess.STDOUT,
+        **_daemon_popen_kwargs(),
+    )
+    pid_path.write_text(str(proc.pid))
+    console.print(f"Daemon restarted (pid {proc.pid})")
 
 
 @daemon_app.command("status")
 def daemon_status(
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
-    pid_path = _resolve_pid_path(profile)
-    if not pid_path.exists():
-        console.print("Daemon not running")
-        return
-    pid = int(pid_path.read_text())
-    if _process_exists(pid):
-        console.print(f"Daemon running (pid {pid})")
-    else:
-        pid_path.unlink()
-        console.print("Daemon not running (stale pid)")
+    daemon_state, _ = _daemon_status(profile)
+    console.print(daemon_state)
 
 
 def main() -> None:
     app()
+
+
+if __name__ == "__main__":
+    main()

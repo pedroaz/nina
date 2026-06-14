@@ -28,6 +28,12 @@ VAULT_FOLDERS = [
 ]
 
 
+def ensure_vault_structure(vault_path: Path) -> None:
+    vault_path.mkdir(parents=True, exist_ok=True)
+    for folder in VAULT_FOLDERS:
+        (vault_path / folder).mkdir(parents=True, exist_ok=True)
+
+
 def initialize(
     profile: str = "default",
     config_dir: Path | None = None,
@@ -51,10 +57,7 @@ def initialize(
         token = generate_token()
         write_token(token_path, token)
 
-    vault_path = get_vault_path(config_dir)
-    vault_path.mkdir(parents=True, exist_ok=True)
-    for folder in VAULT_FOLDERS:
-        (vault_path / folder).mkdir(parents=True, exist_ok=True)
+    ensure_vault_structure(Path(get_vault_path(config_dir)))
 
     db_path = get_database_path(config_dir)
     if force and db_path.exists():

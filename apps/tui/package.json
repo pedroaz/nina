@@ -1,6 +1,6 @@
 {
   "name": "nina-tui",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Nina TUI (OpenTUI)",
   "type": "module",
   "scripts": {

@@ -136,7 +136,6 @@ class Event(Base):
     created_at = Column(Text, nullable=False, default=now_utc)
 
 
-
 class ConversationSession(Base):
     __tablename__ = "conversation_sessions"
     id = Column(Text, primary_key=True)
