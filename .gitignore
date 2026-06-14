@@ -1,0 +1,15 @@
+/.tmp/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.uv/
+.venv/
+*.db
+*.db-journal
+*.log
+.DS_Store
+node_modules/
+.sisyphus/

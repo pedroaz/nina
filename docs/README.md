@@ -22,6 +22,18 @@ The current target is a Linux-first monorepo. WSL support is acceptable later. M
 - [10-open-questions.md](10-open-questions.md): remaining decisions that should be resolved before or during implementation.
 - [11-agentic-development.md](11-agentic-development.md): validation harness, Make targets, test layers, and agent workflow.
 
+## Validation
+
+The test and validation commands are:
+
+- `make test` for the default Python suite.
+- `make test-unit` for the fastest checks.
+- `make test-integration` for daemon/API integration against isolated temp data.
+- `make smoke` for the temp-data end-to-end path.
+- `NINA_RUN_DAEMON_TESTS=1 uv run pytest tests/integration/test_cli_daemon_smoke.py` for the optional real CLI + daemon acceptance test.
+
+See [tests/README.md](../tests/README.md) for the test-layer breakdown.
+
 ## V1 Summary
 
 V1 should prove the whole product loop with a narrow but real slice:

@@ -28,18 +28,19 @@ make typecheck         # type checking
 make test              # unit tests and fast integration tests
 make test-unit         # pure unit tests
 make test-integration  # API, DB, Obsidian, CLI integration tests
-make test-e2e          # daemon plus CLI plus selected TUI flows
 make check             # format check, lint, typecheck, tests
-make smoke             # fast end-to-end local smoke test
+make smoke             # fast temp-data end-to-end smoke test
 
 make dev-init          # initialize isolated dev config and vault
 make dev-reset         # delete isolated dev config, DB, and vault
-make daemon-start      # start daemon using isolated dev config
-make daemon-stop       # stop daemon using isolated dev config
-make daemon-status     # check daemon health
-make daemon-logs       # tail daemon logs
+make dev               # initialize temp data and start daemon
+make dev-start         # initialize temp data and start daemon
+make dev-stop          # stop daemon using temp data
+make dev-status        # check daemon health
+make dev-logs          # tail daemon logs
 make cli ARGS=...      # run CLI against isolated dev daemon
 make tui               # run TUI against isolated dev daemon
+make promote           # copy temp data to real data with backup
 ```
 
 Recommended local paths for dev data:
@@ -87,20 +88,23 @@ The dev targets must not write to `~/.nina` unless explicitly configured.
 
 `make smoke`
 
-Runs a short proof that the whole app loop works:
+Runs the fast, default end-to-end validation path:
 
-1. reset dev data.
-2. initialize dev config.
+1. stop any leftover temp daemon.
+2. initialize temp config.
 3. start daemon.
-4. assert `/health` is OK.
-5. create a project through CLI.
-6. create a task through CLI.
-7. move the task on the kanban board.
-8. reindex search.
-9. search for the task.
-10. run `summarize-last-day` with fake LLM.
-11. assert a daily note exists.
-12. stop daemon.
+4. assert `/health` is OK for the temp vault.
+5. create a task through CLI.
+6. list tasks through CLI to verify the API path.
+7. verify the TUI package still typechecks.
+8. stop daemon.
+
+The optional real CLI + daemon acceptance test is:
+
+```text
+NINA_RUN_DAEMON_TESTS=1 uv run pytest tests/integration/test_cli_daemon_smoke.py
+```
+
 
 ## Test Layers
 
@@ -291,7 +295,7 @@ Required before more features:
 - `make install`
 - `make test`
 - `make check`
-- `nina --version`
+- `nina version`
 
 ### Phase 1 Gate
 
@@ -352,18 +356,10 @@ make check
 make smoke
 ```
 
-Live LLM tests must be opt-in and excluded from normal CI.
-
-Recommended opt-in command:
+The optional real CLI + daemon acceptance test should be opt-in and excluded from normal CI:
 
 ```text
-make test-live-llm
-```
-
-This command should skip unless an explicit environment variable is set, for example:
-
-```text
-NINA_RUN_LIVE_LLM_TESTS=1
+NINA_RUN_DAEMON_TESTS=1 uv run pytest tests/integration/test_cli_daemon_smoke.py
 ```
 
 ## Agent Workflow
