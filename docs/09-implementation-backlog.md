@@ -188,8 +188,31 @@ Acceptance:
 - GitHub plugin.
 - Jira plugin.
 - Meeting transcription.
-- Research workflow.
-- Semantic search.
-- File watcher indexing.
 - Hard delete support.
 - Backup/export/import.
+
+## Tool-Calling Chat And Agent
+
+The chat and agent features use a shared LLM tool loop. See
+[`docs/12-llm-tools.md`](12-llm-tools.md) for the full design.
+
+12. Add `nina_core/llm/tools.py` with `ToolSpec`, `ToolContext`, `ToolRegistry`.
+13. Extend `LLMRequest` / `LLMResponse` with `messages`, `tools`, `tool_choice`, `tool_calls`, `finish_reason`.
+14. Update `CodexAuthProvider` and `OpenAIProvider` to translate tool calls; extend `FakeProvider` for tests.
+15. Register the read tool set: `obsidian_search`, `obsidian_get_note`, `obsidian_list_notes`, `kanban_get`, `tickets_*`, `projects_*`, `jobs_*`, `job_runs`, `llm_logs`.
+16. Register the write tool set: `tickets_*`, `projects_*`, `notes_*`, `research_run`, `workflows_run`, `jobs_*`, `search_reindex`, `obsidian_open`.
+17. Refactor `SessionService._send_chat` and `_send_agent` to a shared `_run_tool_loop` that carries the last N messages.
+18. Add `POST /sessions/{id}/cancel` and `POST /sessions/{id}/clear-cancel`; honor the flag between tool-loop iterations.
+19. Add `GET /notes`, `GET /notes/{path:path}`, `POST /notes`, `PATCH /notes/{path:path}` with vault-path safety.
+20. Add `nina note list/show/create/append/update/open` CLI subcommands.
+21. TUI: render tool and source cards; support `@path/to/note.md` mentions in chat input; bind `Ctrl+.` to cancel.
+
+## Semantic Search And Live Indexing
+
+22. Add `note_embeddings(note_id, path, title, nina_type, model, dim, embedding BLOB, ...)` to the schema.
+23. Add `nina_core/search/embeddings.py` with `FastembedEmbeddingService`, `FakeEmbeddingService`, and `OpenAIEmbeddingService`.
+24. Wire `obsidian_semantic_search` and `obsidian_hybrid_search` (RRF) tools into the default registry.
+25. Embed new/changed notes during `index_notes` and on note writes via `NoteService`.
+26. Add `nina search reindex-embeddings` and the `reindex-vault` scheduled workflow as a backstop.
+27. Add `nina_core/search/watcher.py` using `watchdog`; start in the daemon lifespan; debounce per-path; skip refused prefixes.
+28. Expose `search.live_indexing: bool` and `search.reindex_cron: str` in `NinaConfig`; show in the TUI Settings tab.

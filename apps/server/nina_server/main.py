@@ -16,6 +16,7 @@ from nina_core.config import (
 from nina_core.db import create_database
 from nina_core.search.indexer import create_fts_table
 from nina_core.scheduler.service import SchedulerService
+from nina_core.search.watcher import make_watcher_if_enabled
 
 from .app import app, apply_runtime_config
 
@@ -56,6 +57,11 @@ def main() -> None:
     scheduler = SchedulerService(config.database_path)
     app.state.scheduler = scheduler
     scheduler.start()
+    watcher = None
+    if config.search.live_indexing:
+        watcher = make_watcher_if_enabled(config.database_path, config.vault_path)
+        if watcher is not None:
+            watcher.start()
     try:
         uvicorn.run(
             app,
@@ -65,6 +71,8 @@ def main() -> None:
         )
     finally:
         scheduler.shutdown()
+        if watcher is not None:
+            watcher.stop()
 
 
 if __name__ == "__main__":

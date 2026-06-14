@@ -228,6 +228,84 @@ def test_research_run_writes_summary_and_sources_note(
     assert "Fake research summary" in note.content
 
 
+def test_notes_endpoints_round_trip(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+) -> None:
+    body = "---\ntitle: Hello Note\nnina_type: note\n---\n\n# Hello\n\nbody"
+    created = api_client.post(
+        "/notes",
+        headers=auth_headers,
+        json={"path": "Research/hello.md", "body": body, "nina_type": "note"},
+    )
+    assert created.status_code == 200
+    assert created.json()["path"] == "Research/hello.md"
+
+    fetched = api_client.get("/notes/Research/hello.md", headers=auth_headers)
+    assert fetched.status_code == 200
+    payload = fetched.json()
+    assert "body" in payload and "Hello" in payload["body"]
+    assert payload["frontmatter"].get("title") == "Hello Note"
+
+    # Append
+    patched = api_client.patch(
+        "/notes/Research/hello.md",
+        headers=auth_headers,
+        json={"append": "more"},
+    )
+    assert patched.status_code == 200
+    fetched2 = api_client.get("/notes/Research/hello.md", headers=auth_headers)
+    assert "more" in fetched2.json()["body"]
+
+    # List
+    listed = api_client.get("/notes?nina_type=note", headers=auth_headers)
+    assert listed.status_code == 200
+    paths = {n["path"] for n in listed.json()["notes"]}
+    assert "Research/hello.md" in paths
+
+
+def test_notes_endpoint_rejects_unsafe_path(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    bad = api_client.post(
+        "/notes",
+        headers=auth_headers,
+        json={"path": "../escape.md", "body": "x", "nina_type": "note"},
+    )
+    assert bad.status_code == 400
+
+    bad2 = api_client.post(
+        "/notes",
+        headers=auth_headers,
+        json={"path": "System/Indexes/x.md", "body": "x", "nina_type": "note"},
+    )
+    assert bad2.status_code == 400
+
+
+def test_session_cancel_endpoint(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    created = api_client.post(
+        "/sessions",
+        headers=auth_headers,
+        json={"mode": "chat", "title": "Chat"},
+    )
+    session_id = created.json()["id"]
+
+    cancel = api_client.post(f"/sessions/{session_id}/cancel", headers=auth_headers)
+    assert cancel.status_code == 200
+    fetched = api_client.get(f"/sessions/{session_id}", headers=auth_headers)
+    assert fetched.json()["cancel_requested"] is True
+
+    clear = api_client.post(f"/sessions/{session_id}/clear-cancel", headers=auth_headers)
+    assert clear.status_code == 200
+    fetched = api_client.get(f"/sessions/{session_id}", headers=auth_headers)
+    assert fetched.json()["cancel_requested"] is False
+
+
 def test_config_endpoint_updates_runtime_and_reports_restart_requirement(
     api_client: TestClient,
     auth_headers: dict[str, str],

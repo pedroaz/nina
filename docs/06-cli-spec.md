@@ -80,10 +80,31 @@ nina kanban move <task-id> --to Doing --position 2
 ```text
 nina search "supplier onboarding"
 nina search reindex
+nina search reindex-embeddings
 nina search open <result-id>
 ```
 
 For plain output, search results should show a numbered list. With `--json`, return structured result objects.
+
+`nina search reindex-embeddings` walks the vault and re-embeds any note
+whose `content_hash` changed since the last successful embed. It uses the
+embedding provider configured by `NINA_EMBEDDING_PROVIDER` (`fastembed` by
+default).
+
+## Note Commands
+
+```text
+nina note list [--folder ...] [--type ...] [--limit N] [--json]
+nina note show <path> [--json]
+nina note create <path> --body "..." [--type ...] [--from-file FILE]
+nina note append <path> --body "..." [--from-file FILE]
+nina note update <path> --body "..." [--from-file FILE]
+nina note open <path>
+```
+
+These are convenience wrappers around `GET /notes*` and `POST/PATCH /notes`.
+The same handlers are also exposed as LLM tools to the agent session
+(`notes_create`, `notes_append`, `notes_update`).
 
 ## Workflow Commands
 

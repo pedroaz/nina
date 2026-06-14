@@ -729,6 +729,102 @@ async def send_session_message(
         return JSONResponse(status_code=status, content={"detail": message})
 
 
+@app.post("/sessions/{session_id}/cancel")
+async def cancel_session(request: Request, session_id: str) -> dict[str, Any]:
+    service = get_session_service(request)
+    ok = service.request_cancel(session_id)
+    if not ok:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return {"cancelled": True}
+
+
+@app.post("/sessions/{session_id}/clear-cancel")
+async def clear_session_cancel(request: Request, session_id: str) -> dict[str, Any]:
+    service = get_session_service(request)
+    service.clear_cancel(session_id)
+    return {"cleared": True}
+
+
+class NotesQuery(BaseModel):
+    folder: str | None = None
+    nina_type: str | None = None
+    limit: int = 20
+
+
+class NoteCreate(BaseModel):
+    path: str
+    body: str
+    nina_type: str | None = None
+    frontmatter_patch: dict[str, Any] | None = None
+
+
+class NoteUpdate(BaseModel):
+    body: str | None = None
+    append: str | None = None
+    frontmatter_patch: dict[str, Any] | None = None
+
+
+def get_note_service(request: Request):
+    from nina_core.notes.service import NoteService
+
+    return NoteService(
+        os.environ.get("NINA_DATABASE_PATH", ""),
+        os.environ.get("NINA_VAULT_PATH", ""),
+    )
+
+
+@app.get("/notes")
+async def list_notes_endpoint(
+    request: Request,
+    folder: str | None = None,
+    nina_type: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    return {"notes": get_note_service(request).list_notes(folder=folder, nina_type=nina_type, limit=limit)}
+
+
+@app.get("/notes/{path:path}")
+async def get_note_endpoint(request: Request, path: str) -> dict[str, Any]:
+    from nina_core.notes.service import NotePathError
+
+    try:
+        note = get_note_service(request).get_note(path)
+    except NotePathError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+    if note is None:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return note
+
+
+@app.post("/notes")
+async def create_note_endpoint(request: Request, data: NoteCreate) -> dict[str, Any]:
+    from nina_core.notes.service import NotePathError
+
+    try:
+        return get_note_service(request).create_note(
+            data.path, data.body, nina_type=data.nina_type, frontmatter_patch=data.frontmatter_patch
+        )
+    except NotePathError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.patch("/notes/{path:path}")
+async def update_note_endpoint(request: Request, path: str, data: NoteUpdate) -> dict[str, Any]:
+    from nina_core.notes.service import NotePathError
+
+    service = get_note_service(request)
+    try:
+        if data.append is not None:
+            return service.append_note(path, data.append)
+        if data.body is not None:
+            return service.update_note(path, data.body, frontmatter_patch=data.frontmatter_patch)
+        if data.frontmatter_patch is not None:
+            return service.update_note(path, service.get_note(path)["body"] if service.get_note(path) else "", frontmatter_patch=data.frontmatter_patch)
+    except NotePathError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+    return JSONResponse(status_code=400, content={"detail": "Provide body, append, or frontmatter_patch"})
+
+
 @app.post("/research/run")
 async def run_research(request: Request, data: ResearchRunInput) -> dict[str, Any]:
     db_path = os.environ.get("NINA_DATABASE_PATH", "")

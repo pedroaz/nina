@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from nina_core.llm import provider as provider_module
 from nina_core.llm.provider import CodexAuthProvider, LLMRequest, LLMService, OpenAIProvider
 
@@ -13,13 +12,24 @@ from nina_core.llm.provider import CodexAuthProvider, LLMRequest, LLMService, Op
 class FakeChatCompletions:
     def __init__(self, captured: dict[str, object]) -> None:
         self.captured = captured
+        self.captured["chat_tool_calls"] = []
 
-    def create(self, model: str, messages: list[dict[str, str]]):
+    def create(self, model: str, messages: list[dict[str, str]], **kwargs: object):
         self.captured["chat_model"] = model
         self.captured["chat_messages"] = messages
+        self.captured["chat_kwargs"] = kwargs
+        outer = self
+
+        class Message:
+            content = "ok"
+            tool_calls = outer.captured.get("chat_tool_calls") or []
+
+        class Choice:
+            message = Message()
+            finish_reason = "tool_calls" if outer.captured.get("chat_tool_calls") else "stop"
 
         class Response:
-            choices = [type("Choice", (), {"message": type("Message", (), {"content": "ok"})()})()]
+            choices = [Choice()]
 
         return Response()
 
@@ -95,6 +105,136 @@ async def test_openai_provider_uses_explicit_api_key_and_configured_model(monkey
     assert response.model == "gpt-5.4-mini"
     assert response.provider == "openai"
     assert response.response == "ok"
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_passes_tools_and_parses_tool_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-api-key")
+    monkeypatch.setattr(provider_module, "OpenAI", FakeOpenAI)
+
+    provider = OpenAIProvider()
+    request = LLMRequest(
+        purpose="chat",
+        messages=[{"role": "user", "content": "Find auth docs"}],
+        tools=[
+            provider_module.ToolDefinition(
+                name="obsidian_search",
+                description="Search the vault",
+                parameters={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            )
+        ],
+        tool_choice="auto",
+    )
+    provider.client.captured["chat_tool_calls"] = [
+        type(
+            "Call",
+            (),
+            {
+                "id": "call-1",
+                "function": type(
+                    "Fn",
+                    (),
+                    {"name": "obsidian_search", "arguments": '{"query": "codex"}'},
+                )(),
+            },
+        )()
+    ]
+    response = await provider.complete(request)
+
+    kwargs = provider.client.captured["chat_kwargs"]
+    assert kwargs["tool_choice"] == "auto"
+    assert kwargs["tools"][0]["function"]["name"] == "obsidian_search"
+    assert provider.client.captured["chat_messages"] == [
+        {"role": "user", "content": "Find auth docs"}
+    ]
+    assert response.tool_calls[0].name == "obsidian_search"
+    assert response.tool_calls[0].arguments == {"query": "codex"}
+
+
+@pytest.mark.asyncio
+async def test_codex_provider_passes_tools_and_translates_messages(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgptAuthTokens",
+                "tokens": {
+                    "access_token": _jwt({"chatgpt_account_id": "acc-123"}),
+                    "refresh_token": "refresh-old",
+                    "expires_at": 9999999999999,
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("CODEX_AUTH_FILE", str(auth_path))
+    monkeypatch.setattr(provider_module, "OpenAI", FakeOpenAI)
+
+    request = LLMRequest(
+        purpose="chat",
+        prompt="",
+        messages=[
+            {"role": "system", "content": "be terse"},
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "function": {
+                            "name": "obsidian_search",
+                            "arguments": '{"query": "x"}',
+                        },
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call-1", "content": '{"results":[]}'},
+        ],
+        tools=[
+            provider_module.ToolDefinition(
+                name="obsidian_search",
+                description="Search",
+                parameters={"type": "object", "properties": {"query": {"type": "string"}}},
+            )
+        ],
+    )
+
+    provider = CodexAuthProvider()
+    await provider.complete(request)
+
+    stream_kwargs = provider.client.captured["responses_stream"]
+    assert stream_kwargs["tools"][0]["name"] == "obsidian_search"
+    assert stream_kwargs["tool_choice"] == "auto"
+    items = stream_kwargs["input"]
+    # system is dropped; user message present; function_call and function_call_output present
+    assert any(
+        item.get("type") == "message" and item.get("role") == "user" for item in items
+    )
+    assert any(item.get("type") == "function_call" for item in items)
+    assert any(item.get("type") == "function_call_output" for item in items)
+
+
+@pytest.mark.asyncio
+async def test_fake_provider_returns_queued_tool_calls() -> None:
+    provider = provider_module.FakeProvider()
+    call = provider_module.ToolCall(id="c1", name="echo", arguments={"value": "hi"})
+    provider.queue_tool_calls([call], "done")
+    provider.queue_text("plain")
+    response1 = await provider.complete(LLMRequest(purpose="chat", prompt="x"))
+    response2 = await provider.complete(LLMRequest(purpose="chat", prompt="x"))
+    assert response1.tool_calls[0].name == "echo"
+    assert response1.finish_reason == "tool_calls"
+    assert response2.tool_calls == []
+    assert response2.finish_reason == "stop"
 
 
 def test_openai_provider_requires_api_key_even_with_codex_auth(

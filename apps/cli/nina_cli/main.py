@@ -33,8 +33,10 @@ from .config_commands import config_app
 from .job_commands import job_app
 from .kanban_commands import kanban_app
 from .llm_commands import llm_app
+from .notes_commands import note_app
 from .project_commands import project_app
 from .research_commands import research_app
+from .search_commands import search_app
 from .task_commands import task_app
 from .ticket_commands import ticket_app
 
@@ -48,6 +50,7 @@ app.add_typer(daemon_app, name="daemon")
 app.add_typer(daemon_app, name="d")
 app.add_typer(chat_app, name="chat")
 app.add_typer(config_app, name="config")
+app.add_typer(note_app, name="note")
 app.add_typer(project_app, name="project")
 app.add_typer(task_app, name="task")
 app.add_typer(ticket_app, name="ticket")
@@ -55,6 +58,7 @@ app.add_typer(kanban_app, name="kanban")
 app.add_typer(job_app, name="job")
 app.add_typer(llm_app, name="llm")
 app.add_typer(research_app, name="research")
+app.add_typer(search_app, name="search")
 
 
 def _resolve_tui_binary() -> Path | None:

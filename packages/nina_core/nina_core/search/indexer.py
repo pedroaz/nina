@@ -86,26 +86,78 @@ def index_notes(db_path: str, vault_path: str) -> None:
                 continue
             path = Path(root) / filename
             rel_path = str(path.relative_to(vault))
-            content = path.read_text()
-            post = frontmatter.loads(content)
-            note_id = post.metadata.get("nina_id", "")
-            nina_type = post.metadata.get("nina_type", "note")
-            title = post.metadata.get("title", path.stem)
-            body = post.content
-            with engine.connect() as conn:
-                conn.execute(
-                    text(
-                        "INSERT INTO note_search (note_id, title, body, path, nina_type) VALUES (:note_id, :title, :body, :path, :nina_type)"
-                    ),
-                    {
-                        "note_id": note_id,
-                        "title": title,
-                        "body": body,
-                        "path": rel_path,
-                        "nina_type": nina_type,
-                    },
-                )
-                conn.commit()
+            _index_single_note(db_path, vault, rel_path, path)
+
+
+def _index_single_note(db_path: str, vault: Path, rel_path: str, path: Path) -> None:
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
+    content = path.read_text()
+    post = frontmatter.loads(content)
+    note_id = post.metadata.get("nina_id", "")
+    nina_type = post.metadata.get("nina_type", "note")
+    title = post.metadata.get("title", path.stem)
+    body = post.content
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO note_search (note_id, title, body, path, nina_type) VALUES (:note_id, :title, :body, :path, :nina_type)"
+            ),
+            {
+                "note_id": note_id,
+                "title": title,
+                "body": body,
+                "path": rel_path,
+                "nina_type": nina_type,
+            },
+        )
+        conn.commit()
+
+
+def index_note(
+    db_path: str,
+    vault_path: str | Path,
+    rel_path: str,
+    *,
+    nina_type: str | None = None,
+    frontmatter_patch: dict[str, Any] | None = None,
+) -> None:
+    """Upsert a single note into the FTS index.
+
+    `frontmatter_patch` is currently unused by the FTS path but is kept for
+    symmetry with the embeddings indexer, which uses it to set nina_type.
+    """
+
+    vault = Path(vault_path)
+    create_fts_table(db_path)
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
+    full_path = vault / rel_path
+    if not full_path.is_file():
+        with engine.connect() as conn:
+            conn.execute(text("DELETE FROM note_search WHERE path = :path"), {"path": rel_path})
+            conn.commit()
+        return
+    content = full_path.read_text()
+    post = frontmatter.loads(content)
+    if frontmatter_patch:
+        post.metadata.update(frontmatter_patch)
+    resolved_nina_type = nina_type or post.metadata.get("nina_type", "note")
+    resolved_title = post.metadata.get("title", full_path.stem)
+    note_id = post.metadata.get("nina_id", "")
+    with engine.connect() as conn:
+        conn.execute(text("DELETE FROM note_search WHERE path = :path"), {"path": rel_path})
+        conn.execute(
+            text(
+                "INSERT INTO note_search (note_id, title, body, path, nina_type) VALUES (:note_id, :title, :body, :path, :nina_type)"
+            ),
+            {
+                "note_id": note_id,
+                "title": resolved_title,
+                "body": post.content,
+                "path": rel_path,
+                "nina_type": resolved_nina_type,
+            },
+        )
+        conn.commit()
 
 
 def search(db_path: str, query: str, limit: int = 20) -> list[dict[str, Any]]:

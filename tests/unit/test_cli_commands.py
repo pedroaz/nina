@@ -435,3 +435,110 @@ def test_research_run_calls_research_endpoint(monkeypatch) -> None:  # type: ign
     assert "Research note: Research/2026-06-13-openai-web-search.md" in result.stdout
     assert "Summary: Summary" in result.stdout
     assert "Example" in result.stdout
+
+
+def test_note_show_uses_get_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        if path == "/notes/Research/note.md":
+            return FakeResponse(
+                {
+                    "path": "Research/note.md",
+                    "title": "Note",
+                    "nina_type": "note",
+                    "frontmatter": {"title": "Note"},
+                    "body": "Hello world",
+                }
+            )
+        raise AssertionError(f"Unexpected path: {path}")
+
+    monkeypatch.setattr("nina_cli.notes_commands.request", fake_request)
+    result = runner.invoke(app, ["note", "show", "Research/note.md"])
+    assert result.exit_code == 0, result.output
+    assert calls == [("GET", "/notes/Research/note.md", {})]
+    assert "Note" in result.stdout
+    assert "Hello world" in result.stdout
+
+
+def test_note_create_posts_body(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return FakeResponse({"path": "Research/new.md"})
+
+    monkeypatch.setattr("nina_cli.notes_commands.request", fake_request)
+    result = runner.invoke(
+        app,
+        ["note", "create", "Research/new.md", "--body", "hello", "--type", "note"],
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        (
+            "POST",
+            "/notes",
+            {"json": {"path": "Research/new.md", "body": "hello", "nina_type": "note"}},
+        )
+    ]
+    assert "Created" in result.stdout
+
+
+def test_note_list_supports_filters(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return FakeResponse(
+            {
+                "notes": [
+                    {
+                        "path": "Research/a.md",
+                        "title": "A",
+                        "nina_type": "note",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("nina_cli.notes_commands.request", fake_request)
+    result = runner.invoke(
+        app,
+        ["note", "list", "--folder", "Research", "--type", "note", "--limit", "5", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == [("GET", "/notes?limit=5&folder=Research&nina_type=note", {})]
+    assert "Research/a.md" in result.stdout
+
+
+def test_note_append_patches(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return FakeResponse({"path": "Daily/today.md"})
+
+    monkeypatch.setattr("nina_cli.notes_commands.request", fake_request)
+    result = runner.invoke(
+        app,
+        ["note", "append", "Daily/today.md", "--body", "second"],
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == [("PATCH", "/notes/Daily/today.md", {"json": {"append": "second"}})]
+
+
+def test_note_update_patches_body(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return FakeResponse({"path": "Research/x.md"})
+
+    monkeypatch.setattr("nina_cli.notes_commands.request", fake_request)
+    result = runner.invoke(
+        app,
+        ["note", "update", "Research/x.md", "--body", "new"],
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == [("PATCH", "/notes/Research/x.md", {"json": {"body": "new"}})]

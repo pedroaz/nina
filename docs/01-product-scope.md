@@ -57,6 +57,7 @@ The V1 feature set is:
 - Scheduler inside the daemon.
 - Daily summary workflow.
 - Job/workflow log view in the TUI.
+- Tool-calling chat and agent sessions over the vault (see `docs/12-llm-tools.md`).
 
 ## V1 Non-Goals
 

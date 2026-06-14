@@ -13,6 +13,13 @@ class LLMConfig(BaseModel):
 
 class SchedulerConfig(BaseModel):
     daily_summary_time: str = "07:00"
+    reindex_cron: str = "*/15 * * * *"
+
+
+class SearchConfig(BaseModel):
+    live_indexing: bool = True
+    embedding_provider: str = "fastembed"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
 
 
 class NinaConfig(BaseModel):
@@ -23,6 +30,7 @@ class NinaConfig(BaseModel):
     daemon_port: int = 8765
     llm: LLMConfig = Field(default_factory=LLMConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
     log_level: str = "INFO"
 
     @classmethod

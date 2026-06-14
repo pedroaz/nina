@@ -44,6 +44,8 @@ class WorkflowRunner:
                 output = self._run_summarize(db, run)
             elif workflow_name == "research-topic":
                 output = self._run_research(db, run, input_data)
+            elif workflow_name == "reindex-vault":
+                output = self._run_reindex(db, run)
             else:
                 raise ValueError(f"Unknown workflow '{workflow_name}'")
             run.output_json = json.dumps(output)
@@ -133,3 +135,21 @@ class WorkflowRunner:
         run.updated_at = _now()
         db.commit()
         return report
+
+    def _run_reindex(self, db: Session, run: WorkflowRun) -> dict[str, Any]:
+        from nina_core.search.embeddings import reindex_embeddings
+        from nina_core.search.indexer import index_notes
+
+        vault_path = os.environ.get("NINA_VAULT_PATH", "")
+        if not vault_path:
+            raise RuntimeError("NINA_VAULT_PATH is required for the reindex-vault workflow")
+
+        step = self._create_step(db, run, "reindex_fts")
+        index_notes(self.db_path, vault_path)
+        self._complete_step(db, step, {"vault": vault_path})
+
+        step = self._create_step(db, run, "reindex_embeddings")
+        embedded = reindex_embeddings(self.db_path, vault_path)
+        self._complete_step(db, step, {"embedded": embedded})
+
+        return {"vault": vault_path, "embedded": embedded}

@@ -11,7 +11,7 @@ from .paths import (
     get_vault_path,
     load_effective_config,
 )
-from .settings import LLMConfig, NinaConfig, SchedulerConfig, merge_config
+from .settings import LLMConfig, NinaConfig, SchedulerConfig, SearchConfig, merge_config
 from .token import generate_token, read_token, write_token
 
 __all__ = [
@@ -30,6 +30,7 @@ __all__ = [
     "NinaConfig",
     "LLMConfig",
     "SchedulerConfig",
+    "SearchConfig",
     "merge_config",
     "generate_token",
     "read_token",

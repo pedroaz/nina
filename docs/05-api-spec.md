@@ -167,6 +167,55 @@ Run request:
 }
 ```
 
+## Notes
+
+The `/notes` family exposes raw vault reads and writes. The LLM chat and
+agent tools use these endpoints under the hood.
+
+```http
+GET /notes?folder=&nina_type=&limit=20
+GET /notes/{path:path}
+POST /notes
+PATCH /notes/{path:path}
+```
+
+`POST /notes` body:
+
+```json
+{
+  "path": "Research/new.md",
+  "body": "# Title\n\nbody",
+  "nina_type": "note"
+}
+```
+
+`PATCH /notes/{path:path}` body (one of):
+
+```json
+{ "body": "new body", "frontmatter_patch": { "title": "New" } }
+```
+
+```json
+{ "append": "extra paragraph" }
+```
+
+Path safety:
+
+- No absolute paths.
+- No `..` traversal.
+- Paths under `System/Indexes/`, `System/Logs/`, `System/Deleted/`, or `Templates/` are refused.
+
+## Session Cancellation
+
+```http
+POST /sessions/{session_id}/cancel
+POST /sessions/{session_id}/clear-cancel
+```
+
+The daemon checks the cancel flag between tool-loop iterations and on the
+next LLM call. The assistant message metadata records
+`finish_reason: "cancelled"`.
+
 ## Jobs
 
 ```http

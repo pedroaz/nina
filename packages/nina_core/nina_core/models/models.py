@@ -144,6 +144,7 @@ class ConversationSession(Base):
     created_at = Column(Text, nullable=False, default=now_utc)
     updated_at = Column(Text, nullable=False, default=now_utc)
     completed_at = Column(Text)
+    cancel_requested = Column(Integer, nullable=False, default=0)
 
 
 class ConversationMessage(Base):
@@ -154,3 +155,18 @@ class ConversationMessage(Base):
     content = Column(Text, nullable=False)
     metadata_json = Column(Text, nullable=False, default="{}")
     created_at = Column(Text, nullable=False, default=now_utc)
+
+
+class NoteEmbedding(Base):
+    __tablename__ = "note_embeddings"
+    id = Column(Text, primary_key=True)
+    note_id = Column(Text, nullable=False)
+    path = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    nina_type = Column(Text, nullable=False, default="note")
+    model = Column(Text, nullable=False)
+    dim = Column(Integer, nullable=False)
+    embedding_blob = Column(Text, nullable=False)
+    content_hash = Column(Text, nullable=False)
+    created_at = Column(Text, nullable=False, default=now_utc)
+    updated_at = Column(Text, nullable=False, default=now_utc)

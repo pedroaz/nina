@@ -78,7 +78,8 @@ interface SessionRecord {
 interface SessionSendResponse {
   session: SessionRecord;
   assistant: SessionMessage;
-  sources?: ResearchSource[];
+  sources?: VaultSource[];
+  tools_used?: ToolInvocation[];
   commands?: Array<{
     command: string;
     exit_code: number;
@@ -91,6 +92,20 @@ interface SessionSendResponse {
 interface ResearchSource {
   title: string;
   url: string;
+}
+
+interface VaultSource {
+  path: string;
+  title?: string;
+  nina_type?: string;
+  snippet?: string;
+}
+
+interface ToolInvocation {
+  id: string;
+  name: string;
+  preview?: string;
+  arguments?: Record<string, unknown>;
 }
 
 interface ResearchRunResult {
@@ -185,17 +200,17 @@ const PAGE_ACCENTS: Record<PageName, string> = {
   Config: "#94a3b8",
 };
 const PAGE_HELP: Record<PageName, string> = {
-  Tickets: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Ctrl+Up/Down selects a ticket. Ctrl+Left/Right moves the selected ticket between columns. Ctrl+E toggles the detail view. Enter creates a ticket. Ctrl+D deletes a ticket. Ctrl+A archives a ticket. Ctrl+R refreshes the page.",
-  Chat: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt. Ctrl+Q clears the chat and starts a new context. Ctrl+R refreshes the page.",
-  Agent: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt and may execute Nina commands automatically.",
-  Research: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter runs OpenAI web research and writes a note into Obsidian.",
-  Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it. F6 toggles between the history and the tab strip. Arrow keys, PageUp/PageDown, Home, and End scroll when the history is focused. Ctrl+R refreshes the page.",
+  Tickets: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Ctrl+Up/Down selects a ticket. Ctrl+Left/Right moves the selected ticket between columns. Ctrl+E toggles the detail view. Enter creates a ticket. Ctrl+D deletes a ticket. Ctrl+A archives a ticket. PageUp/PageDown scroll the kanban. Ctrl+R refreshes the page.",
+  Chat: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt. Use @path/to/note.md in the prompt to attach a note. While waiting, a loading card shows elapsed time. Ctrl+Q clears the chat and starts a new context. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom. Ctrl+R refreshes the page.",
+  Agent: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt and may execute tool calls automatically. While waiting, a loading card shows elapsed time. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom.",
+  Research: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter runs OpenAI web research and writes a note into Obsidian. While waiting, a loading card shows elapsed time. PageUp/PageDown scroll the report.",
+  Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it. F6 toggles between the history and the tab strip. PageUp/PageDown and Home/End scroll the history. Ctrl+R refreshes the page.",
   Config: "Esc returns to the tab strip. Click a tab to switch pages. Click the list or the value field to focus it. F6 toggles between the editable list and the value field. Up and Down change the selected setting. Enter saves the current value. Tab and Shift+Tab change pages. Ctrl+R refreshes the page. Ctrl+C quits.",
 };
 const PAGE_INTRO: Record<PageName, string> = {
   Tickets: "Tickets are first-class aliases over Nina tasks. Use the prompt below for quick ticket creation, or use Agent mode for natural language and command execution.",
-  Chat: "Chat mode answers questions with LLM-backed Obsidian context. It does not run commands.",
-  Agent: "Agent mode can plan and auto-run Nina commands only. It is intended for natural-language task creation and other safe Nina operations.",
+  Chat: "Chat mode answers questions with LLM-backed Obsidian context via tool calls. Use @path/to/note.md in the prompt to attach a note. It does not run commands or write to the vault.",
+  Agent: "Agent mode can plan and execute tool calls (read + write) against the vault, kanban, and jobs. It is intended for natural-language task creation and other safe Nina operations.",
   Research: "Research mode uses OpenAI web search and writes a summary-plus-links note into your Obsidian vault.",
   Jobs: "Jobs execute Nina workflows on a schedule and keep their run history in SQLite.",
   Config: "This view lets you inspect and edit the config file that the daemon and CLI read.",
@@ -552,8 +567,8 @@ async function main(): Promise<void> {
     exitOnCtrlC: true,
     screenMode: "alternate-screen",
     backgroundColor: THEME.background,
-    useMouse: false,
-    enableMouseMovement: false,
+    useMouse: true,
+    enableMouseMovement: true,
     useKittyKeyboard: null,
   });
 
@@ -618,6 +633,10 @@ async function main(): Promise<void> {
     pageReturnFocus: Record<PageName, MainPageFocusTarget>;
     pendingAction: { type: "delete" | "archive"; ticket: Ticket } | null;
     detailTicket: Ticket | null;
+    chatPending: { text: string; startedAt: number; lastRender: number } | null;
+    agentPending: { text: string; startedAt: number; lastRender: number } | null;
+    chatAbort: AbortController | null;
+    agentAbort: AbortController | null;
   } = {
     currentPage: "Tickets",
     banner: health.status === "offline" ? { kind: "error", text: "Daemon is offline. Start it with `nina daemon start` or `make dev`." } : null,
@@ -635,7 +654,13 @@ async function main(): Promise<void> {
     pageReturnFocus: { ...PAGE_DEFAULT_FOCUS },
     pendingAction: null,
     detailTicket: null,
+    chatPending: null,
+    agentPending: null,
+    chatAbort: null,
+    agentAbort: null,
   };
+
+  const pendingTickers: Partial<Record<"chat" | "agent", ReturnType<typeof setInterval>>> = {};
 
   function getKanbanTickets(): { ticket: Ticket; column: string; index: number }[] {
     if (!state.kanban) return [];
@@ -833,7 +858,7 @@ async function main(): Promise<void> {
     );
   }
 
-  function makeScrollArea(pageRoot: BoxRenderable, accent: string): ScrollBoxRenderable {
+  function makeScrollArea(pageRoot: BoxRenderable, accent: string, title?: string): ScrollBoxRenderable {
     const page = state.currentPage;
     const scroll = new ScrollBoxRenderable(renderer, {
       flexGrow: 1,
@@ -846,16 +871,95 @@ async function main(): Promise<void> {
       viewportCulling: true,
       padding: 1,
       scrollY: true,
+      scrollX: false,
+      title,
+      titleColor: accent,
+      verticalScrollbarOptions: {
+        trackOptions: {
+          backgroundColor: THEME.panel,
+          foregroundColor: THEME.accent,
+        },
+        arrowOptions: {
+          foregroundColor: THEME.subtle,
+          backgroundColor: THEME.panel,
+        },
+      },
     });
     scroll.onMouseDown = () => {
       setPageFocus(page, "scroll");
       scroll.focus();
     };
     pageRoot.add(scroll);
-    if (scroll.verticalScrollBar) {
-      scroll.verticalScrollBar.visible = false;
-    }
     return scroll;
+  }
+
+  function isScrollAtBottom(scroll: ScrollBoxRenderable): boolean {
+    return scroll.scrollTop + scroll.viewport.height >= scroll.scrollHeight - 2;
+  }
+
+  function scrollToBottom(scroll: ScrollBoxRenderable): void {
+    scroll.scrollTo(scroll.scrollHeight);
+  }
+
+  function handleScrollKey(name: string, ctrl: boolean): void {
+    const scroll = activeScrollArea;
+    if (!scroll) {
+      return;
+    }
+    setPageFocus(state.currentPage, "scroll");
+    scroll.focus();
+    switch (name) {
+      case "home":
+        if (ctrl) {
+          scroll.scrollTo(0);
+        } else {
+          scroll.scrollBy(-scroll.scrollHeight, "absolute");
+        }
+        break;
+      case "end":
+        if (ctrl) {
+          scrollToBottom(scroll);
+        } else {
+          scroll.scrollBy(scroll.scrollHeight, "absolute");
+        }
+        break;
+      case "pageup":
+        if (ctrl) {
+          scroll.scrollBy(-scroll.scrollHeight, "absolute");
+        } else {
+          scroll.scrollBy(-scroll.viewport.height, "viewport");
+        }
+        break;
+      case "pagedown":
+        if (ctrl) {
+          scrollToBottom(scroll);
+        } else {
+          scroll.scrollBy(scroll.viewport.height, "viewport");
+        }
+        break;
+    }
+  }
+
+  function renderNewMessagesIndicator(scroll: ScrollBoxRenderable, page: PageName): void {
+    if (isScrollAtBottom(scroll)) {
+      return;
+    }
+    const indicator = new BoxRenderable(renderer, {
+      border: true,
+      borderColor: THEME.accent,
+      backgroundColor: THEME.panelAlt,
+      padding: 1,
+      flexDirection: "row",
+      gap: 1,
+    });
+    indicator.add(
+      new TextRenderable(renderer, {
+        content: "↓ New messages below — press Ctrl+End or End to jump to the bottom",
+        fg: THEME.accent,
+        wrapMode: "word",
+      }),
+    );
+    scroll.add(indicator);
   }
 
   function makeInputSection(
@@ -996,7 +1100,7 @@ async function main(): Promise<void> {
   }
 
   function renderChatPage(pageRoot: BoxRenderable): void {
-    const scroll = makeScrollArea(pageRoot, accentForPage("Chat"));
+    const scroll = makeScrollArea(pageRoot, accentForPage("Chat"), "Chat history (scrollable)");
     activeScrollArea = scroll;
     if (!state.chatSession) {
       scroll.add(buildCard(renderer, "No session", accentForPage("Chat"), "Open the page again or send a prompt to create a chat session."));
@@ -1007,6 +1111,16 @@ async function main(): Promise<void> {
         scroll.add(renderMessageCard(message, "Chat"));
       }
     }
+    if (state.chatPending) {
+      scroll.add(
+        buildLoadingCard(
+          state.chatPending.text,
+          state.chatPending.startedAt,
+          `You • ${formatElapsed(Date.now() - state.chatPending.startedAt)}`,
+        ),
+      );
+    }
+    renderNewMessagesIndicator(scroll, "Chat");
 
     const input = makeInputSection(pageRoot, "Chat prompt", "Ask Nina a question about your vault", accentForPage("Chat"));
     activeInput = input;
@@ -1016,7 +1130,7 @@ async function main(): Promise<void> {
   }
 
   function renderAgentPage(pageRoot: BoxRenderable): void {
-    const scroll = makeScrollArea(pageRoot, accentForPage("Agent"));
+    const scroll = makeScrollArea(pageRoot, accentForPage("Agent"), "Agent history (scrollable)");
     activeScrollArea = scroll;
     if (!state.agentSession) {
       scroll.add(buildCard(renderer, "No session", accentForPage("Agent"), "Send a prompt to create an agent session."));
@@ -1027,6 +1141,16 @@ async function main(): Promise<void> {
         scroll.add(renderMessageCard(message, "Agent"));
       }
     }
+    if (state.agentPending) {
+      scroll.add(
+        buildLoadingCard(
+          state.agentPending.text,
+          state.agentPending.startedAt,
+          `You • ${formatElapsed(Date.now() - state.agentPending.startedAt)}`,
+        ),
+      );
+    }
+    renderNewMessagesIndicator(scroll, "Agent");
 
     const input = makeInputSection(
       pageRoot,
@@ -1200,18 +1324,44 @@ async function main(): Promise<void> {
     let body = normalizeLines(message.content);
     const metadata = message.metadata;
     if (page === "Chat" && message.role === "assistant") {
-      const sources = Array.isArray(metadata.sources) ? (metadata.sources as ResearchSource[]) : [];
+      const sources = Array.isArray(metadata.sources) ? (metadata.sources as VaultSource[]) : [];
       if (sources.length > 0) {
-        body += `\n\nSources:\n${sources.map((source) => `- ${source.title} -> ${source.url}`).join("\n")}`;
+        body += `\n\nSources:\n${sources.map(formatSourceLine).join("\n")}`;
       }
+      const toolsUsed = Array.isArray(metadata.tools_used) ? (metadata.tools_used as ToolInvocation[]) : [];
+      if (toolsUsed.length > 0) {
+        body += `\n\nTools used:\n${toolsUsed.map(formatToolLine).join("\n")}`;
+      }
+    }
+    if (message.role === "tool") {
+      const name = typeof metadata.name === "string" ? metadata.name : "tool";
+      const summary = metadata.result_summary && typeof metadata.result_summary === "object"
+        ? JSON.stringify(metadata.result_summary)
+        : "";
+      body = `name: ${name}\n${summary || body}`;
     }
     if (page === "Agent" && message.role === "assistant") {
       const results = Array.isArray(metadata.results) ? (metadata.results as Array<{ command: string; exit_code: number }>) : [];
       if (results.length > 0) {
         body += `\n\nExecuted ${results.length} Nina command(s).`;
       }
+      const toolsUsed = Array.isArray(metadata.tools_used) ? (metadata.tools_used as ToolInvocation[]) : [];
+      if (toolsUsed.length > 0) {
+        body += `\n\nTools used:\n${toolsUsed.map(formatToolLine).join("\n")}`;
+      }
     }
     return buildCard(renderer, roleTitle(message.role), accent, body, message.role === "tool" ? THEME.subtle : THEME.text);
+  }
+
+  function formatSourceLine(source: VaultSource): string {
+    const title = source.title || source.path;
+    const path = source.path || "";
+    return `- ${title} (${path})`;
+  }
+
+  function formatToolLine(tool: ToolInvocation): string {
+    const preview = tool.preview ? ` ${tool.preview}` : "";
+    return `- ${tool.name}${preview}`;
   }
 
   async function createConversationSession(mode: "chat" | "agent", title: string): Promise<SessionRecord> {
@@ -1263,16 +1413,160 @@ async function main(): Promise<void> {
       state.lastError = null;
       input.value = "";
       state.chatSession = await loadConversationSession("chat", state.chatSession, "Chat");
-      const response = await apiFetch<SessionSendResponse>(token, `/sessions/${state.chatSession.id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ content: prompt }),
-      });
-      state.chatSession = response.session;
+      const expanded = await expandMentions(prompt);
+      startPending("chat", expanded);
+      try {
+        const response = await apiFetch<SessionSendResponse>(
+          token,
+          `/sessions/${state.chatSession.id}/messages`,
+          {
+            method: "POST",
+            body: JSON.stringify({ content: expanded }),
+            signal: state.chatAbort?.signal,
+          },
+        );
+        state.chatSession = response.session;
+      } finally {
+        stopPending("chat");
+      }
       renderPage("Chat");
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       state.lastError = error instanceof Error ? error.message : String(error);
       renderPage("Chat");
     }
+  }
+
+  function startPending(kind: "chat" | "agent", text: string): void {
+    // Abort any in-flight request of the same kind to avoid races.
+    if (kind === "chat") {
+      state.chatAbort?.abort();
+      state.chatAbort = new AbortController();
+    } else {
+      state.agentAbort?.abort();
+      state.agentAbort = new AbortController();
+    }
+    const now = Date.now();
+    if (kind === "chat") {
+      state.chatPending = { text, startedAt: now, lastRender: now };
+    } else {
+      state.agentPending = { text, startedAt: now, lastRender: now };
+    }
+    const page: PageName = kind === "chat" ? "Chat" : "Agent";
+    const interval = setInterval(() => {
+      const pending = kind === "chat" ? state.chatPending : state.agentPending;
+      if (!pending) {
+        stopPending(kind);
+        return;
+      }
+      const last = pending.lastRender;
+      const nowMs = Date.now();
+      if (nowMs - last < 250) {
+        return;
+      }
+      pending.lastRender = nowMs;
+      if (state.currentPage === page) {
+        renderPage(page);
+      }
+    }, 250);
+    pendingTickers[kind] = interval;
+    renderPage(page);
+  }
+
+  function stopPending(kind: "chat" | "agent"): void {
+    const interval = pendingTickers[kind];
+    if (interval) {
+      clearInterval(interval);
+      delete pendingTickers[kind];
+    }
+    if (kind === "chat") {
+      state.chatPending = null;
+      state.chatAbort = null;
+    } else {
+      state.agentPending = null;
+      state.agentAbort = null;
+    }
+  }
+
+  function isAbortError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+    const name = (error as { name?: string }).name;
+    return name === "AbortError" || name === "CanceledError";
+  }
+
+  function formatElapsed(ms: number): string {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    if (totalSeconds < 60) {
+      return `${totalSeconds}s`;
+    }
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+  }
+
+  const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+  function buildLoadingCard(
+    text: string,
+    startedAt: number,
+    label: string,
+  ): BoxRenderable {
+    const elapsed = formatElapsed(Date.now() - startedAt);
+    const card = new BoxRenderable(renderer, {
+      border: true,
+      borderColor: THEME.subtle,
+      title: `${label} • ${elapsed}`,
+      titleColor: THEME.subtle,
+      backgroundColor: THEME.panel,
+      flexDirection: "column",
+      padding: 1,
+      gap: 1,
+    });
+    card.add(
+      new TextRenderable(renderer, {
+        content: text,
+        fg: THEME.subtle,
+        wrapMode: "word",
+      }),
+    );
+    const status = new TextRenderable(renderer, {
+      content: `${SPINNER_FRAMES[Math.floor(Date.now() / 100) % SPINNER_FRAMES.length]} waiting for response…`,
+      fg: THEME.accent,
+      wrapMode: "word",
+    });
+    card.add(status);
+    return card;
+  }
+
+  async function expandMentions(prompt: string): Promise<string> {
+    const matches = Array.from(prompt.matchAll(/@((?:[\w./-]+\.md)|(?:[\w./-]+))/g));
+    if (matches.length === 0 || !token) {
+      return prompt;
+    }
+    const blocks: string[] = [];
+    for (const match of matches) {
+      const path = match[1];
+      try {
+        const note = await apiFetch<{ path: string; body: string; frontmatter: Record<string, unknown> }>(
+          token,
+          `/notes/${encodeURI(path)}`,
+        );
+        const title = (note.frontmatter && note.frontmatter.title) || note.path;
+        const excerpt = note.body.length > 2000 ? `${note.body.slice(0, 2000)}\n...` : note.body;
+        blocks.push(`Note: ${title} (${note.path})\n${excerpt}`);
+      } catch (error) {
+        // Surface but don't block the prompt.
+        blocks.push(`Note: ${path} (failed to load: ${error instanceof Error ? error.message : String(error)})`);
+      }
+    }
+    if (blocks.length === 0) {
+      return prompt;
+    }
+    return `${prompt}\n\nAttached notes:\n${blocks.join("\n\n---\n\n")}`;
   }
 
   async function clearChatSession(): Promise<void> {
@@ -1280,6 +1574,42 @@ async function main(): Promise<void> {
     state.lastError = null;
     state.chatSession = await createConversationSession("chat", "Chat");
     renderPage("Chat");
+  }
+
+  async function cancelCurrentSession(): Promise<void> {
+    if (!token) {
+      return;
+    }
+    const target =
+      state.currentPage === "Chat"
+        ? state.chatSession
+        : state.currentPage === "Agent"
+        ? state.agentSession
+        : null;
+    if (!target && !state.chatPending && !state.agentPending) {
+      state.banner = { kind: "info", text: "No active session to cancel." };
+      renderPage(state.currentPage);
+      return;
+    }
+    // Abort the in-flight client request immediately.
+    if (state.currentPage === "Chat") {
+      state.chatAbort?.abort();
+    } else if (state.currentPage === "Agent") {
+      state.agentAbort?.abort();
+    }
+    if (target) {
+      try {
+        await apiFetch(token, `/sessions/${target.id}/cancel`, { method: "POST" });
+        state.banner = { kind: "info", text: "Cancellation requested." };
+      } catch (error) {
+        if (!isAbortError(error)) {
+          state.lastError = error instanceof Error ? error.message : String(error);
+        }
+      }
+    } else {
+      state.banner = { kind: "info", text: "Cancellation requested." };
+    }
+    renderPage(state.currentPage);
   }
 
   async function sendAgentPrompt(value: string, input: InputRenderable): Promise<void> {
@@ -1292,14 +1622,31 @@ async function main(): Promise<void> {
       state.lastError = null;
       input.value = "";
       state.agentSession = await loadConversationSession("agent", state.agentSession, "Agent");
-      const response = await apiFetch<SessionSendResponse>(token, `/sessions/${state.agentSession.id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ content: prompt }),
-      });
-      state.agentSession = response.session;
-      state.banner = { kind: "success", text: response.assistant.content };
+      startPending("agent", prompt);
+      let response: SessionSendResponse | null = null;
+      try {
+        response = await apiFetch<SessionSendResponse>(
+          token,
+          `/sessions/${state.agentSession.id}/messages`,
+          {
+            method: "POST",
+            body: JSON.stringify({ content: prompt }),
+            signal: state.agentAbort?.signal,
+          },
+        );
+      } finally {
+        stopPending("agent");
+      }
+      if (response) {
+        state.agentSession = response.session;
+        state.banner = { kind: "success", text: response.assistant.content };
+      }
       renderPage("Agent");
     } catch (error) {
+      if (isAbortError(error)) {
+        renderPage("Agent");
+        return;
+      }
       state.lastError = error instanceof Error ? error.message : String(error);
       renderPage("Agent");
     }
@@ -1452,8 +1799,36 @@ async function main(): Promise<void> {
       key.stopPropagation();
       return;
     }
+    if (key.ctrl && key.name === ".") {
+      void cancelCurrentSession();
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
     if (key.ctrl && key.name === "r") {
       void switchPage(state.currentPage);
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
+    if (key.name === "pageup" || key.name === "pagedown" || key.name === "home" || key.name === "end") {
+      handleScrollKey(key.name, key.ctrl);
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
+    if (
+      key.ctrl &&
+      (key.name === "up" || key.name === "down") &&
+      state.currentPage !== "Tickets"
+    ) {
+      const delta = key.name === "up" ? -1 : 1;
+      handleScrollKey("pagedown", false);
+      const scroll = activeScrollArea;
+      if (scroll) {
+        const lineDelta = delta * 3;
+        scroll.scrollBy(lineDelta, "absolute");
+      }
       key.preventDefault();
       key.stopPropagation();
       return;

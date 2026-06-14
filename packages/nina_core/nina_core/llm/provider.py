@@ -7,11 +7,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -32,18 +32,36 @@ def _now_millis() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
+class ToolDefinition(BaseModel):
+    name: str
+    description: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolCall(BaseModel):
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class LLMRequest(BaseModel):
     purpose: str
-    prompt: str
+    prompt: str = ""
+    messages: list[dict[str, Any]] | None = None
+    tools: list[ToolDefinition] | None = None
+    tool_choice: Literal["auto", "required", "none"] | None = "auto"
     model: str | None = None
     workflow_run_id: str | None = None
     session_id: str | None = None
+    max_tool_iterations: int = 5
 
 
 class LLMResponse(BaseModel):
     response: str
     model: str
     provider: str
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    finish_reason: str | None = None
 
 
 class LLMProvider:
@@ -253,40 +271,120 @@ class CodexAuthProvider(LLMProvider):
             headers["session-id"] = session_id
         return headers
 
+    def _build_input(self, request: LLMRequest) -> Any:
+        if request.messages:
+            return _messages_to_responses_input(request.messages, request.prompt)
+        return [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": request.prompt or ""}],
+            }
+        ]
+
+    def _build_tools(self, request: LLMRequest) -> list[dict[str, Any]] | None:
+        if not request.tools:
+            return None
+        return [
+            {
+                "type": "function",
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters or {"type": "object", "properties": {}},
+            }
+            for tool in request.tools
+        ]
+
     async def complete(self, request: LLMRequest) -> LLMResponse:
         model = request.model or self.model
-        response = None
         parts: list[str] = []
-        with self.client.responses.stream(
-            model=model,
-            store=False,
-            extra_headers=self._default_headers(request.session_id),
-            instructions=(
+        tool_calls: dict[str, dict[str, Any]] = {}
+        finish_reason: str | None = None
+        stream_kwargs: dict[str, Any] = {
+            "model": model,
+            "store": False,
+            "extra_headers": self._default_headers(request.session_id),
+            "instructions": (
                 "You are Nina, a local-first assistant for notes, tasks, and workflows. "
                 "Answer clearly and concisely."
             ),
-            input=[
-                {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": request.prompt}],
-                }
-            ],
-        ) as stream:
+            "input": self._build_input(request),
+        }
+        tools = self._build_tools(request)
+        if tools:
+            stream_kwargs["tools"] = tools
+            stream_kwargs["tool_choice"] = request.tool_choice or "auto"
+        with self.client.responses.stream(**stream_kwargs) as stream:
             for event in stream:
                 event_type = getattr(event, "type", None)
                 if event_type == "response.output_text.delta":
                     delta = getattr(event, "delta", None)
                     if isinstance(delta, str) and delta:
                         parts.append(delta)
+                elif event_type == "response.output_item.added":
+                    item = getattr(event, "item", None)
+                    if item is not None and getattr(item, "type", None) == "function_call":
+                        call_id = getattr(item, "call_id", None) or getattr(item, "id", None) or ""
+                        tool_calls[call_id] = {
+                            "id": call_id,
+                            "name": getattr(item, "name", "") or "",
+                            "arguments": "",
+                        }
+                elif event_type == "response.function_call_arguments.delta":
+                    call_id = getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
+                    delta = getattr(event, "delta", None)
+                    if call_id in tool_calls and isinstance(delta, str):
+                        tool_calls[call_id]["arguments"] = (
+                            tool_calls[call_id].get("arguments", "") + delta
+                        )
+                elif event_type == "response.function_call_arguments.done":
+                    call_id = getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
+                    final_args = getattr(event, "arguments", None)
+                    if call_id in tool_calls and isinstance(final_args, str):
+                        tool_calls[call_id]["arguments"] = final_args
                 elif event_type == "response.completed":
                     response = getattr(event, "response", None)
+                    if response is not None:
+                        finish_reason = getattr(response, "status", None) or getattr(
+                            response, "finish_reason", None
+                        )
+                        if not parts and response is not None:
+                            fallback = getattr(response, "output_text", "") or ""
+                            if fallback:
+                                parts.append(fallback)
+                            else:
+                                extracted = _extract_response_text(response)
+                                if extracted:
+                                    parts.append(extracted)
+                        for item in getattr(response, "output", []) or []:
+                            if getattr(item, "type", None) != "function_call":
+                                continue
+                            call_id = getattr(item, "call_id", None) or getattr(item, "id", None) or ""
+                            arguments = getattr(item, "arguments", "")
+                            if call_id in tool_calls:
+                                if isinstance(arguments, str):
+                                    tool_calls[call_id]["arguments"] = arguments
+                                tool_calls[call_id]["name"] = (
+                                    getattr(item, "name", "") or tool_calls[call_id]["name"]
+                                )
         content = "".join(parts)
-        if not content and response is not None:
-            content = getattr(response, "output_text", "") or ""
-        if not content and response is not None:
-            content = _extract_response_text(response)
-        return LLMResponse(response=content, model=model, provider="codex")
+        parsed_calls: list[ToolCall] = []
+        for raw in tool_calls.values():
+            args = raw.get("arguments") or ""
+            try:
+                parsed = json.loads(args) if isinstance(args, str) and args else {}
+            except json.JSONDecodeError:
+                parsed = {"_raw": args}
+            parsed_calls.append(
+                ToolCall(id=str(raw.get("id") or ""), name=str(raw.get("name") or ""), arguments=parsed)
+            )
+        return LLMResponse(
+            response=content,
+            model=model,
+            provider="codex",
+            tool_calls=parsed_calls,
+            finish_reason=finish_reason,
+        )
 
 
 CodexCliProvider = CodexAuthProvider
@@ -302,22 +400,82 @@ class OpenAIProvider(LLMProvider):
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         model = request.model or self.model
-        response = self.client.chat.completions.create(
+        messages = request.messages or [
+            {"role": "user", "content": request.prompt or ""}
+        ]
+        kwargs: dict[str, Any] = {"model": model, "messages": messages}
+        if request.tools:
+            kwargs["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters or {"type": "object", "properties": {}},
+                    },
+                }
+                for tool in request.tools
+            ]
+            kwargs["tool_choice"] = request.tool_choice or "auto"
+        response = self.client.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        tool_calls: list[ToolCall] = []
+        for call in getattr(choice.message, "tool_calls", None) or []:
+            arguments: Any = {}
+            raw = getattr(call.function, "arguments", "") or ""
+            try:
+                arguments = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                arguments = {"_raw": raw}
+            tool_calls.append(
+                ToolCall(
+                    id=str(getattr(call, "id", "") or ""),
+                    name=str(getattr(call.function, "name", "") or ""),
+                    arguments=arguments,
+                )
+            )
+        finish_reason = getattr(choice, "finish_reason", None)
+        return LLMResponse(
+            response=content,
             model=model,
-            messages=[{"role": "user", "content": request.prompt}],
+            provider="openai",
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
         )
-        content = response.choices[0].message.content or ""
-        return LLMResponse(response=content, model=model, provider="openai")
 
 
 class FakeProvider(LLMProvider):
     model = "fake"
 
+    def __init__(self) -> None:
+        self.queued_tool_calls: list[list[ToolCall]] = []
+        self.queued_responses: list[str] = []
+        self.call_count = 0
+
+    def queue_tool_calls(self, tool_calls: list[ToolCall], final_text: str) -> None:
+        self.queued_tool_calls.append(tool_calls)
+        self.queued_responses.append(final_text)
+
+    def queue_text(self, text: str) -> None:
+        self.queued_tool_calls.append([])
+        self.queued_responses.append(text)
+
     async def complete(self, request: LLMRequest) -> LLMResponse:
+        index = min(self.call_count, max(len(self.queued_tool_calls), len(self.queued_responses)) - 1)
+        tool_calls = self.queued_tool_calls[index] if self.queued_tool_calls else []
+        response_text = (
+            self.queued_responses[index]
+            if self.queued_responses
+            else f"Fake response for: {(request.prompt or '')[:50]}..."
+        )
+        self.call_count += 1
         return LLMResponse(
-            response=f"Fake response for: {request.prompt[:50]}...",
+            response=response_text,
             model="fake",
             provider="fake",
+            tool_calls=list(tool_calls),
+            finish_reason="tool_calls" if tool_calls else "stop",
         )
 
 
@@ -389,3 +547,89 @@ def _extract_response_text(response: Any) -> str:
             if isinstance(text, str) and text:
                 parts.append(text)
     return "".join(parts)
+
+
+def _messages_to_responses_input(
+    messages: list[dict[str, Any]], fallback_prompt: str
+) -> list[dict[str, Any]]:
+    """Translate OpenAI chat-style messages into the Responses API input shape.
+
+    System messages are dropped (Responses uses the `instructions` argument).
+    Assistant tool_calls are converted into the Responses function_call items
+    with the matching call_id, and role=tool messages are converted into
+    function_call_output items referencing the call_id.
+    """
+
+    converted: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "system":
+            continue
+        if role == "user":
+            content = message.get("content", "")
+            if isinstance(content, list):
+                converted.append({"type": "message", "role": "user", "content": content})
+            else:
+                converted.append(
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": str(content)}],
+                    }
+                )
+        elif role == "assistant":
+            tool_calls = message.get("tool_calls") or []
+            if tool_calls:
+                for call in tool_calls:
+                    function = call.get("function", {}) if isinstance(call, dict) else {}
+                    call_id = call.get("id") or call.get("call_id") or ""
+                    name = function.get("name", "") if isinstance(function, dict) else ""
+                    arguments = function.get("arguments", "") if isinstance(function, dict) else ""
+                    if isinstance(arguments, dict):
+                        arguments = json.dumps(arguments)
+                    converted.append(
+                        {
+                            "type": "function_call",
+                            "name": name,
+                            "arguments": arguments or "",
+                            "call_id": call_id,
+                        }
+                    )
+            content = message.get("content", "")
+            if content:
+                if isinstance(content, list):
+                    converted.append({"type": "message", "role": "assistant", "content": content})
+                else:
+                    converted.append(
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{"type": "output_text", "text": str(content)}],
+                        }
+                    )
+        elif role == "tool":
+            call_id = (
+                message.get("tool_call_id")
+                or message.get("call_id")
+                or message.get("id")
+                or ""
+            )
+            output = message.get("content", "")
+            if not isinstance(output, str):
+                output = json.dumps(output)
+            converted.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                }
+            )
+    if not converted and fallback_prompt:
+        converted.append(
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": fallback_prompt}],
+            }
+        )
+    return converted
