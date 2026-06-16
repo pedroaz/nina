@@ -252,6 +252,9 @@ def test_status_reports_running_daemon_and_configuration_paths(
     assert "Daemon running (pid 4321)" in result.stdout
     assert "Health: ok" in result.stdout
     assert "LLM auth: Codex OAuth connected, account acc-123" in result.stdout
+    assert "LLM provider: codex" in result.stdout
+    assert "Transcription:" in result.stdout
+    assert "Meeting pipeline:" in result.stdout
     assert "Configuration paths:" in result.stdout
     assert "Config dir:" in result.stdout
     assert "Config file:" in result.stdout
@@ -260,6 +263,7 @@ def test_status_reports_running_daemon_and_configuration_paths(
     assert "Vault:" in result.stdout
     assert "Log:" in result.stdout
     assert "PID:" in result.stdout
+    assert "LLM base URL:" in result.stdout
 
 
 def test_logs_reads_daemon_log_file(isolated_config) -> None:  # type: ignore[no-untyped-def]
@@ -274,6 +278,62 @@ def test_logs_reads_daemon_log_file(isolated_config) -> None:  # type: ignore[no
     assert "first line" in result.stdout
     assert "second line" in result.stdout
     assert "third line" in result.stdout
+
+
+def test_setup_python_prints_sys_executable() -> None:
+    result = runner.invoke(app, ["setup", "python"])
+    assert result.exit_code == 0
+    # The test runner uses the same Python as the pytest process.
+    import sys as _sys
+
+    assert _sys.executable in result.stdout
+
+
+def test_setup_transcription_calls_uv_pip_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`nina setup transcription` shells out to `uv pip install` against the
+    Python the nina shim is running on, and verifies the module is importable
+    afterwards. Mock both the subprocess call and the import check.
+    """
+    from nina_cli import setup_commands as setup_module
+
+    called: dict[str, object] = {}
+
+    def fake_call(cmd: list[str]) -> int:
+        called["cmd"] = cmd
+        return 0
+
+    monkeypatch.setattr(setup_module.shutil, "which", lambda name: "/usr/bin/uv")
+    monkeypatch.setattr(setup_module.subprocess, "call", fake_call)
+    # The success path imports faster_whisper; ensure it looks installed.
+    monkeypatch.setitem(__import__("sys").modules, "faster_whisper", object())
+
+    result = runner.invoke(app, ["setup", "transcription"])
+
+    assert result.exit_code == 0, result.stdout
+    cmd = called["cmd"]
+    assert isinstance(cmd, list)
+    # The command must pin --python to the nina Python (sys.executable).
+    assert "--python" in cmd
+    assert cmd[cmd.index("--python") + 1] == __import__("sys").executable
+    assert "faster-whisper" in cmd
+    assert "ready" in result.stdout
+
+
+def test_setup_transcription_surfaces_install_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nina_cli import setup_commands as setup_module
+
+    monkeypatch.setattr(setup_module.shutil, "which", lambda name: "/usr/bin/uv")
+    # Simulate `uv pip install` returning a non-zero exit code.
+    monkeypatch.setattr(setup_module.subprocess, "call", lambda cmd: 1)
+
+    result = runner.invoke(app, ["setup", "transcription"])
+    assert result.exit_code != 0
+    assert "Install failed" in result.stdout
+    assert "uv pip install" in result.stdout
 
 
 def test_status_reports_offline_daemon_and_configuration_paths(
@@ -307,6 +367,7 @@ def test_status_reports_offline_daemon_and_configuration_paths(
     assert "Daemon not running" in result.stdout
     assert "Health: offline" in result.stdout
     assert "LLM auth: disconnected (Codex auth file not found)" in result.stdout
+    assert "LLM provider: codex" in result.stdout
     assert "Configuration paths:" in result.stdout
     assert "Config dir:" in result.stdout
 

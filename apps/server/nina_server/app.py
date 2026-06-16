@@ -34,6 +34,7 @@ app = FastAPI(title="Nina Daemon", version=nina_core.__version__)
 class LLMConfigResponse(BaseModel):
     provider: str
     model: str
+    base_url: str | None = None
 
 
 class ResearchConfigResponse(BaseModel):
@@ -85,6 +86,7 @@ class ConfigResponse(BaseModel):
 class LLMConfigUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
+    base_url: str | None = None
 
 
 class ResearchConfigUpdate(BaseModel):
@@ -155,7 +157,11 @@ def _config_response(config_dir: Path, config: NinaConfig) -> ConfigResponse:
         database_path=config.database_path,
         daemon_host=config.daemon_host,
         daemon_port=config.daemon_port,
-        llm=LLMConfigResponse(provider=config.llm.provider, model=config.llm.model),
+        llm=LLMConfigResponse(
+            provider=config.llm.provider,
+            model=config.llm.model,
+            base_url=config.llm.base_url,
+        ),
         research=ResearchConfigResponse(
             provider=config.research.provider,
             model=config.research.model,
@@ -215,6 +221,8 @@ def _changed_config_fields(previous: NinaConfig, updated: NinaConfig) -> list[st
         changed.append("llm.provider")
     if previous.llm.model != updated.llm.model:
         changed.append("llm.model")
+    if previous.llm.base_url != updated.llm.base_url:
+        changed.append("llm.base_url")
     if previous.scheduler.daily_summary_time != updated.scheduler.daily_summary_time:
         changed.append("scheduler.daily_summary_time")
     if previous.log_level != updated.log_level:
@@ -1016,6 +1024,7 @@ async def list_workflows(request: Request) -> list[str]:
         "reindex-vault",
         "transcribe-meeting",
         "summarize-meeting",
+        "meeting-pipeline",
     ]
 
 
@@ -1267,6 +1276,33 @@ async def summarize_meeting(request: Request, meeting_id: str) -> dict[str, Any]
     def _run() -> dict[str, Any]:
         runner = WorkflowRunner(db_path, config=_request_config(request))
         return runner.run("summarize-meeting", {"meeting_id": meeting_id, "input": {}})
+
+    loop = asyncio.get_running_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        result = await loop.run_in_executor(executor, _run)
+    if result.get("status") != "completed":
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.post("/meetings/{meeting_id}/pipeline")
+async def pipeline_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
+    """Run transcribe + summarize back-to-back for an existing meeting.
+
+    This is the endpoint the TUI's `Ctrl+E` hotkey hits. The two stages run
+    sequentially inside one workflow run so progress events stream out in
+    order over `/events/stream`.
+    """
+    import asyncio
+    import concurrent.futures
+
+    from nina_core.workflows.runner import WorkflowRunner
+
+    db_path = _active_config_path()
+
+    def _run() -> dict[str, Any]:
+        runner = WorkflowRunner(db_path, config=_request_config(request))
+        return runner.run("meeting-pipeline", {"meeting_id": meeting_id, "input": {}})
 
     loop = asyncio.get_running_loop()
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:

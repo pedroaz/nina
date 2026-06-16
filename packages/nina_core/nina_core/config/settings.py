@@ -9,6 +9,9 @@ class LLMConfig(BaseModel):
     provider: str = "codex"
     model: str = "gpt-5"
     api_key: str | None = None
+    # Used by ollama and openai_compatible (llama.cpp, vLLM, LM Studio).
+    # Ignored by codex and openai.
+    base_url: str | None = None
 
 
 class ResearchConfig(BaseModel):

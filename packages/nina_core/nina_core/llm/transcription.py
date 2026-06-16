@@ -203,6 +203,123 @@ def build_transcription_provider(
     raise RuntimeError(f"Unsupported transcription backend: {cfg.backend}")
 
 
+@dataclass
+class TranscriptionStatus:
+    """Snapshot of the configured transcription backend's health.
+
+    Used by `nina status` so the user can see whether the audio pipeline is
+    actually ready (faster-whisper installed, whisper CLI on PATH, etc.) before
+    triggering a long transcription run.
+    """
+
+    backend: str
+    model: str
+    device: str
+    compute_type: str
+    available: bool
+    detail: str | None = None
+    provider_class: str | None = None
+
+
+def check_transcription_status(
+    config: TranscriptionConfig | None = None,
+) -> TranscriptionStatus:
+    """Probe the configured transcription backend without running a model.
+
+    Cheap: just imports / PATH checks. Never raises.
+    """
+    cfg = config or TranscriptionConfig()
+    backend = (cfg.backend or "").lower()
+    if backend in {"null", "fake"}:
+        return TranscriptionStatus(
+            backend=backend,
+            model=cfg.model,
+            device=cfg.device,
+            compute_type=cfg.compute_type,
+            available=True,
+            detail="null backend returns a fixed transcript (tests/CI)",
+            provider_class=NullTranscriptionProvider.__name__,
+        )
+    if backend in {"local_whisper", "faster_whisper"}:
+        try:
+            import faster_whisper  # type: ignore[import-untyped]  # noqa: F401
+
+            return TranscriptionStatus(
+                backend=backend,
+                model=cfg.model,
+                device=cfg.device,
+                compute_type=cfg.compute_type,
+                available=True,
+                detail=(
+                    f"faster-whisper will pull {cfg.model!r} on first run "
+                    f"({cfg.device}/{cfg.compute_type})"
+                ),
+                provider_class=FasterWhisperProvider.__name__,
+            )
+        except ImportError:
+            binary = shutil.which("whisper")
+            if binary is not None:
+                return TranscriptionStatus(
+                    backend=backend,
+                    model=cfg.model,
+                    device=cfg.device,
+                    compute_type=cfg.compute_type,
+                    available=True,
+                    detail=(
+                        "faster-whisper is not installed; falling back to the "
+                        f"`whisper` CLI at {binary}"
+                    ),
+                    provider_class=WhisperCliProvider.__name__,
+                )
+            return TranscriptionStatus(
+                backend=backend,
+                model=cfg.model,
+                device=cfg.device,
+                compute_type=cfg.compute_type,
+                available=False,
+                detail=(
+                    "faster-whisper is not installed and the `whisper` CLI is "
+                    "not on PATH. Run `nina setup transcription` or "
+                    "`uv pip install --python <nina-python> faster-whisper`."
+                ),
+                provider_class=None,
+            )
+    if backend in {"whisper_cli", "whisper"}:
+        binary = shutil.which("whisper")
+        if binary is not None:
+            return TranscriptionStatus(
+                backend=backend,
+                model=cfg.model,
+                device=cfg.device,
+                compute_type=cfg.compute_type,
+                available=True,
+                detail=f"`whisper` CLI found at {binary}",
+                provider_class=WhisperCliProvider.__name__,
+            )
+        return TranscriptionStatus(
+            backend=backend,
+            model=cfg.model,
+            device=cfg.device,
+            compute_type=cfg.compute_type,
+            available=False,
+            detail=(
+                "`whisper` CLI not found on PATH. Install openai-whisper, "
+                "run `nina setup transcription`, or switch the backend to "
+                "`local_whisper`."
+            ),
+            provider_class=None,
+        )
+    return TranscriptionStatus(
+        backend=backend,
+        model=cfg.model,
+        device=cfg.device,
+        compute_type=cfg.compute_type,
+        available=False,
+        detail=f"Unknown transcription backend: {cfg.backend!r}",
+        provider_class=None,
+    )
+
+
 def _interaction_id() -> str:
     return "li_" + uuid.uuid4().hex[:24]
 

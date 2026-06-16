@@ -65,6 +65,8 @@ class MeetingService:
             "channels": meeting.channels,
             "transcript_path": meeting.transcript_path,
             "summary_path": meeting.summary_path,
+            "transcript_note_path": meeting.transcript_note_path,
+            "summary_note_path": meeting.summary_note_path,
             "workflow_run_id": meeting.workflow_run_id,
             "error": meeting.error,
             "note_path": note_path,
@@ -172,6 +174,8 @@ class MeetingService:
         status: str | None = None,
         transcript_path: str | None = None,
         summary_path: str | None = None,
+        transcript_note_path: str | None = None,
+        summary_note_path: str | None = None,
         workflow_run_id: str | None = None,
         error: str | None = None,
     ) -> dict[str, Any] | None:
@@ -187,6 +191,10 @@ class MeetingService:
                 meeting.transcript_path = transcript_path
             if summary_path is not None:
                 meeting.summary_path = summary_path
+            if transcript_note_path is not None:
+                meeting.transcript_note_path = transcript_note_path
+            if summary_note_path is not None:
+                meeting.summary_note_path = summary_note_path
             if workflow_run_id is not None:
                 meeting.workflow_run_id = workflow_run_id
             if error is not None:

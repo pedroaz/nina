@@ -53,18 +53,28 @@ def test_transcribe_meeting_workflow_writes_note_and_logs(
     result = runner.run("transcribe-meeting", {"meeting_id": meeting_id, "input": {}})
 
     assert result["status"] == "completed", result
-    note_path = vault / output_path(result, "note_path")
-    assert note_path.is_file()
-    text = note_path.read_text()
-    assert "hello transcript" in text
+    output = result["output"]
 
-    transcript_path = Path(output_path(result, "transcript_path"))
-    assert transcript_path.is_file()
-    assert transcript_path.read_text().strip() == "hello transcript"
+    hub_path = vault / output["note_path"]
+    transcript_note_path = vault / output["transcript_note_path"]
+    raw_text_path = Path(output["transcript_path"])
+
+    assert hub_path.is_file()
+    assert transcript_note_path.is_file()
+    assert raw_text_path.is_file()
+    assert raw_text_path.read_text().strip() == "hello transcript"
+
+    # The transcript text lives in the dedicated transcript file, not the hub.
+    assert "hello transcript" in transcript_note_path.read_text()
+    hub_text = hub_path.read_text()
+    assert "hello transcript" not in hub_text
+    # Hub links to the transcript file via a wikilink.
+    assert "[[" in hub_text and "Transcript]]" in hub_text
 
     meeting = service.get(meeting_id)
     assert meeting["status"] == "transcribed"
     assert meeting["transcript_path"]
+    assert meeting["transcript_note_path"] == output["transcript_note_path"]
 
     from nina_core.models.models import LLMInteraction
     from sqlalchemy import create_engine
@@ -80,7 +90,7 @@ def test_transcribe_meeting_workflow_writes_note_and_logs(
         assert rows[0].status == "completed"
 
 
-def test_summarize_meeting_workflow_uses_fake_llm(
+def test_summarize_meeting_workflow_writes_summary_note_and_links_hub(
     isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     db_path = get_database_path(isolated_config)
@@ -127,17 +137,91 @@ def test_summarize_meeting_workflow_uses_fake_llm(
     result = runner.run("summarize-meeting", {"meeting_id": meeting_id, "input": {}})
 
     assert result["status"] == "completed", result
-    note_path = vault / output_path(result, "note_path")
-    assert note_path.is_file()
-    text = note_path.read_text()
-    assert "## Summary" in text
-    assert "## Action items" in text
-    assert "## Decisions" in text
+    output = result["output"]
+    hub_path = vault / output["note_path"]
+    summary_note_path = vault / output["summary_note_path"]
+    assert hub_path.is_file()
+    assert summary_note_path.is_file()
+
+    summary_text = summary_note_path.read_text()
+    assert "## Summary" in summary_text
+    assert "## Action items" in summary_text
+    assert "## Decisions" in summary_text
+    assert "[[" in summary_text and "Hub" in summary_text and "]]" in summary_text
+
     meeting = service.get(meeting_id)
     assert meeting["status"] == "summarized"
+    assert meeting["summary_note_path"] == output["summary_note_path"]
 
 
-def output_path(result: dict, key: str) -> str:
-    output = result.get("output", {})
-    value = output.get(key) or ""
-    return str(value)
+def test_meeting_pipeline_writes_all_three_files(
+    isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: pipeline creates hub + transcript + summary, all linked."""
+    db_path = get_database_path(isolated_config)
+    recordings = get_recordings_path(isolated_config)
+    vault = isolated_config / "vault"
+
+    service = MeetingService(str(db_path), recordings, vault)
+    started = service.start(title="Pipeline check")
+    meeting_id = started["id"]
+    audio_path = Path(started["audio_path"])
+    _create_silence_wav(audio_path)
+    service.stop(meeting_id, duration_seconds=10, size_bytes=audio_path.stat().st_size)
+
+    _patch_transcription(monkeypatch)
+
+    from nina_core.llm.provider import FakeProvider, LLMService
+
+    fake = FakeProvider()
+    fake.queue_text(
+        "## Summary\n- Pipeline summary.\n"
+        "## Action items\n- [ ] Follow up.\n"
+        "## Decisions\n- Use the pipeline.\n"
+    )
+
+    def _patched_init(
+        self: LLMService,
+        db_path: str,
+        provider=None,
+        config=None,  # noqa: ARG001
+    ) -> None:  # type: ignore[no-untyped-def]
+        self.db_path = db_path
+        self.config = config or __import__(
+            "nina_core.config.settings", fromlist=["LLMConfig"]
+        ).LLMConfig(provider="fake", model="fake")
+        self.provider = fake
+
+    monkeypatch.setattr(LLMService, "__init__", _patched_init)
+
+    runner = WorkflowRunner(str(db_path))
+    result = runner.run("meeting-pipeline", {"meeting_id": meeting_id, "input": {}})
+
+    assert result["status"] == "completed", result
+    output = result["output"]
+
+    hub_path = vault / output["note_path"]
+    transcript_path = vault / output["transcript_note_path"]
+    summary_path = vault / output["summary_note_path"]
+
+    assert hub_path.is_file()
+    assert transcript_path.is_file()
+    assert summary_path.is_file()
+
+    hub_text = hub_path.read_text()
+    assert "Transcript]]" in hub_text
+    assert "Summary]]" in hub_text
+
+    transcript_text = transcript_path.read_text()
+    assert "hello transcript" in transcript_text
+    assert "Hub" in transcript_text and "[[" in transcript_text
+
+    summary_text = summary_path.read_text()
+    assert "## Summary" in summary_text
+    assert "Hub" in summary_text
+    assert "Transcript" in summary_text
+
+    meeting = service.get(meeting_id)
+    assert meeting["status"] == "summarized"
+    assert meeting["transcript_note_path"]
+    assert meeting["summary_note_path"]

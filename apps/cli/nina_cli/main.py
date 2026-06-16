@@ -26,13 +26,15 @@ from nina_core.config import (
     load_effective_config,
     read_token,
 )
-from nina_core.llm.provider import codex_auth_status
+from nina_core.llm.provider import check_provider_status, codex_auth_status
+from nina_core.llm.transcription import check_transcription_status
 
 from .api import api_base, request
 from .chat_commands import chat_app
 from .config_commands import config_app
 from .job_commands import job_app
 from .kanban_commands import kanban_app
+from .setup_commands import setup_app
 from .llm_commands import llm_app
 from .meeting_commands import meeting_app, record_meeting
 from .notes_commands import note_app
@@ -132,6 +134,7 @@ app.add_typer(research_app, name="research")
 _add_alias(app, research_app, "rch")
 app.add_typer(search_app, name="search")
 _add_alias(app, search_app, "s")
+app.add_typer(setup_app, name="setup")
 
 
 def _resolve_tui_binary() -> Path | None:
@@ -263,6 +266,7 @@ def _configuration_entries(config_dir: Path, config: NinaConfig) -> list[tuple[s
         ("Daemon URL", api_base()),
         ("LLM provider", config.llm.provider),
         ("LLM model", config.llm.model),
+        ("LLM base URL", config.llm.base_url or ""),
         ("Daily summary", config.scheduler.daily_summary_time),
         ("Log level", config.log_level),
         ("Log", str(get_log_path(config_dir))),
@@ -282,6 +286,74 @@ def _format_codex_auth_status() -> str:
         return "LLM auth: " + ", ".join(parts)
     detail = status.detail or "unknown error"
     return f"LLM auth: disconnected ({detail})"
+
+
+def _format_llm_status(config: NinaConfig) -> str:
+    """Show the LLM provider's reachability, used by `nina status`.
+
+    For local runtimes (Ollama, llama.cpp) it pings the server. For Codex
+    and OpenAI it just reports whether credentials are configured. Never
+    burns a real LLM request.
+    """
+    try:
+        status = check_provider_status(config.llm, timeout=2.0)
+    except Exception as exc:  # noqa: BLE001
+        return f"LLM provider: error ({exc})"
+    head = f"LLM provider: {status.provider}"
+    if status.base_url:
+        head += f" @ {status.base_url}"
+    if status.reachable and status.model_present:
+        return f"{head} -> ready (model {status.model!r})"
+    bits: list[str] = []
+    bits.append("reachable" if status.reachable else "unreachable")
+    if status.model:
+        bits.append(f"model {'present' if status.model_present else 'missing'}")
+    line = f"{head} -> {', '.join(bits)}"
+    if status.detail:
+        line += f" ({status.detail})"
+    return line
+
+
+def _format_transcription_status(config: NinaConfig) -> str:
+    """Show the transcription backend's install state, used by `nina status`.
+
+    For `local_whisper`/`faster_whisper` it reports whether the package is
+    installed. For `whisper_cli` it checks the `whisper` binary on PATH.
+    """
+    try:
+        status = check_transcription_status(config.transcription)
+    except Exception as exc:  # noqa: BLE001
+        return f"Transcription: error ({exc})"
+    if status.available:
+        return (
+            f"Transcription: {status.backend} -> ready "
+            f"(model {status.model!r}, {status.device}/{status.compute_type})"
+        )
+    return f"Transcription: {status.backend} -> not available ({status.detail})"
+
+
+def _format_meeting_pipeline_status(config: NinaConfig) -> str:
+    """Show whether the full transcribe + summarize pipeline is wired up.
+
+    Combines the LLM and transcription checks into a single yes/no so the
+    user can tell at a glance whether `Ctrl+E` / `nina meeting pipeline` will
+    work end-to-end.
+    """
+    try:
+        llm = check_provider_status(config.llm, timeout=1.0)
+        tr = check_transcription_status(config.transcription)
+    except Exception as exc:  # noqa: BLE001
+        return f"Meeting pipeline: error ({exc})"
+    if tr.available and llm.reachable and (llm.model_present or not llm.model):
+        return "Meeting pipeline: ready (Ctrl+E / nina meeting pipeline <id>)"
+    issues: list[str] = []
+    if not tr.available:
+        issues.append(f"transcription ({tr.backend}) not ready")
+    if not llm.reachable:
+        issues.append(f"LLM ({llm.provider}) not reachable")
+    elif llm.model and not llm.model_present:
+        issues.append(f"LLM model {llm.model!r} not present")
+    return f"Meeting pipeline: degraded ({'; '.join(issues)})"
 
 
 @app.command("ask", help="Ask a question over the local Obsidian vault.")
@@ -330,18 +402,14 @@ def nina_r(
     device: str | None = typer.Option(
         None, "-d", "--device", help="Fallback audio device name or index"
     ),
-    mic_device: str | None = typer.Option(
-        None, "--mic-device", help="Mic device name or index"
-    ),
+    mic_device: str | None = typer.Option(None, "--mic-device", help="Mic device name or index"),
     system_device: str | None = typer.Option(
         None, "--system-device", help="System/loopback device name or index"
     ),
     sample_rate: int = typer.Option(
         0, "-r", "--sample-rate", help="Sample rate in Hz (default from config)"
     ),
-    channels: int = typer.Option(
-        0, "-c", "--channels", help="Channel count (default from config)"
-    ),
+    channels: int = typer.Option(0, "-c", "--channels", help="Channel count (default from config)"),
     duration: int | None = typer.Option(
         None, "-D", "--duration", help="Auto-stop after this many seconds"
     ),
@@ -433,7 +501,7 @@ def version() -> None:
     _print_version()
 
 
-@app.command("status", help="Show daemon health, Codex auth, and config paths.")
+@app.command("status", help="Show daemon health, LLM status, and config paths.")
 def status(
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
@@ -444,6 +512,10 @@ def status(
     console.print(daemon_state)
     console.print(f"Health: {_daemon_health() if running else 'offline'}")
     console.print(_format_codex_auth_status())
+    console.print()
+    console.print(_format_llm_status(config))
+    console.print(_format_transcription_status(config))
+    console.print(_format_meeting_pipeline_status(config))
     console.print()
     console.print("Configuration paths:")
     for name, value in _configuration_entries(config_dir, config):

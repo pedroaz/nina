@@ -179,47 +179,48 @@ class ObsidianService:
         date = started_at[:10]
         return Path("Meetings") / f"{date} - {_slugify(title)}.md"
 
-    def _meeting_body(
+    def _transcript_path(self, title: str, started_at: str) -> Path:
+        date = started_at[:10]
+        return Path("Meetings") / f"{date} - {_slugify(title)} - Transcript.md"
+
+    def _summary_path(self, title: str, started_at: str) -> Path:
+        date = started_at[:10]
+        return Path("Meetings") / f"{date} - {_slugify(title)} - Summary.md"
+
+    def _hub_body(
         self,
         title: str,
         started_at: str,
         ended_at: str | None,
         duration_seconds: int | None,
         source: str,
-        transcript_section: str,
-        summary_section: str,
-        action_items: str,
-        decisions: str,
+        transcript_note_path: str | None = None,
+        summary_note_path: str | None = None,
     ) -> str:
-        duration_minutes = ""
+        duration_part = ""
         if duration_seconds is not None:
-            duration_minutes = (
-                f" ({int(duration_seconds) // 60}m {int(duration_seconds) % 60:02d}s)"
-            )
+            duration_part = f" ({int(duration_seconds) // 60}m {int(duration_seconds) % 60:02d}s)"
         date_part = started_at[:10]
+        transcript_link = (
+            f"[[{Path(transcript_note_path).stem}]]"
+            if transcript_note_path
+            else "_Transcription pending._"
+        )
+        summary_link = (
+            f"[[{Path(summary_note_path).stem}]]" if summary_note_path else "_Summary pending._"
+        )
         return "\n".join(
             [
                 f"# {title}",
                 "",
                 "## Notes",
                 "",
-                f"Recording captured on {date_part} from `{source}` input{duration_minutes}.",
+                f"Recording captured on {date_part} from `{source}` input{duration_part}.",
                 "",
-                "## Transcript",
+                "## Linked artifacts",
                 "",
-                transcript_section.strip() or "_Transcription pending._",
-                "",
-                "## Summary",
-                "",
-                summary_section.strip() or "_Summary pending._",
-                "",
-                "## Action items",
-                "",
-                action_items.strip() or "- _none yet_",
-                "",
-                "## Decisions",
-                "",
-                decisions.strip() or "- _none yet_",
+                f"- Transcript: {transcript_link}",
+                f"- Summary: {summary_link}",
                 "",
             ]
         )
@@ -238,16 +239,12 @@ class ObsidianService:
         workflow_run_id: str | None = None,
     ) -> str:
         relative_path = self._meeting_path(title, started_at)
-        body = self._meeting_body(
+        body = self._hub_body(
             title=title,
             started_at=started_at,
             ended_at=ended_at,
             duration_seconds=duration_seconds,
             source=source,
-            transcript_section="",
-            summary_section="",
-            action_items="",
-            decisions="",
         )
         metadata = {
             "nina_type": "meeting",
@@ -260,6 +257,102 @@ class ObsidianService:
             "audio_path": audio_path,
             "transcript_status": transcript_status,
             "summary_status": summary_status,
+            "workflow_run_id": workflow_run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.write_note(relative_path, body, metadata)
+        return str(relative_path)
+
+    def write_transcript_note(
+        self,
+        meeting_id: str,
+        title: str,
+        started_at: str,
+        transcript: str,
+        *,
+        language: str | None = None,
+        model: str | None = None,
+        workflow_run_id: str | None = None,
+    ) -> str:
+        """Write the dedicated transcript note. Body is the full transcript
+        text plus a wikilink back to the hub. Returns the vault-relative path.
+        """
+        relative_path = self._transcript_path(title, started_at)
+        hub_stem = self._meeting_path(title, started_at).stem
+        body = "\n".join(
+            [
+                transcript.rstrip(),
+                "",
+                "## Linked artifacts",
+                "",
+                f"- Hub: [[{hub_stem}]]",
+                "",
+            ]
+        )
+        metadata = {
+            "nina_type": "meeting_transcript",
+            "nina_id": meeting_id,
+            "title": f"{title} - Transcript",
+            "meeting_title": title,
+            "started_at": started_at,
+            "language": language,
+            "model": model,
+            "workflow_run_id": workflow_run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.write_note(relative_path, body, metadata)
+        return str(relative_path)
+
+    def write_summary_note(
+        self,
+        meeting_id: str,
+        title: str,
+        started_at: str,
+        *,
+        summary: str,
+        action_items: str,
+        decisions: str,
+        model: str | None = None,
+        provider: str | None = None,
+        workflow_run_id: str | None = None,
+    ) -> str:
+        """Write the dedicated summary note. Body has the three sections plus
+        a wikilink back to the hub. Returns the vault-relative path.
+        """
+        relative_path = self._summary_path(title, started_at)
+        hub_stem = self._meeting_path(title, started_at).stem
+        transcript_stem = self._transcript_path(title, started_at).stem
+        body = "\n".join(
+            [
+                "## Summary",
+                "",
+                summary.strip() or "_No summary available._",
+                "",
+                "## Action items",
+                "",
+                action_items.strip() or "- _none yet_",
+                "",
+                "## Decisions",
+                "",
+                decisions.strip() or "- _none yet_",
+                "",
+                "## Linked artifacts",
+                "",
+                f"- Hub: [[{hub_stem}]]",
+                f"- Transcript: [[{transcript_stem}]]",
+                "",
+            ]
+        )
+        metadata = {
+            "nina_type": "meeting_summary",
+            "nina_id": meeting_id,
+            "title": f"{title} - Summary",
+            "meeting_title": title,
+            "started_at": started_at,
+            "model": model,
+            "provider": provider,
             "workflow_run_id": workflow_run_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -284,28 +377,28 @@ class ObsidianService:
         decisions: str | None = None,
         summary_status: str | None = None,
         workflow_run_id: str | None = None,
+        transcript_note_path: str | None = None,
+        summary_note_path: str | None = None,
     ) -> str | None:
+        """Patch the meeting hub. Transcript and summary bodies now live in
+        their own files; this method only updates the hub's metadata and
+        `## Linked artifacts` wikilink block. Legacy call sites that still pass
+        `transcript=...` / `summary=...` are still accepted but ignored for
+        content (the wikilink is the source of truth).
+        """
         relative_path = self._meeting_path(title, started_at)
         full_path = self.vault_path / relative_path
         if not full_path.is_file():
             return None
         post = frontmatter.loads(full_path.read_text())
-        existing_transcript_section = _extract_section(post.content, "Transcript")
-        existing_summary_section = _extract_section(post.content, "Summary")
-        existing_action_items = _extract_section(post.content, "Action items")
-        existing_decisions = _extract_section(post.content, "Decisions")
-        body = self._meeting_body(
+        body = self._hub_body(
             title=title,
             started_at=started_at,
             ended_at=ended_at,
             duration_seconds=duration_seconds,
             source=source,
-            transcript_section=transcript
-            if transcript is not None
-            else existing_transcript_section,
-            summary_section=summary if summary is not None else existing_summary_section,
-            action_items=action_items if action_items is not None else existing_action_items,
-            decisions=decisions if decisions is not None else existing_decisions,
+            transcript_note_path=transcript_note_path or post.metadata.get("transcript_note_path"),
+            summary_note_path=summary_note_path or post.metadata.get("summary_note_path"),
         )
         post.content = body
         if transcript_status is not None:
@@ -320,11 +413,20 @@ class ObsidianService:
             post.metadata["duration_seconds"] = duration_seconds
         if audio_path:
             post.metadata["audio_path"] = audio_path
+        if transcript_note_path is not None:
+            post.metadata["transcript_note_path"] = transcript_note_path
+        if summary_note_path is not None:
+            post.metadata["summary_note_path"] = summary_note_path
         post.metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
         full_path.write_text(frontmatter.dumps(post))
         return str(relative_path)
 
-    def soft_delete_meeting_note(self, meeting_id: str, title: str, started_at: str) -> str | None:
+    def soft_delete_meeting_note(
+        self,
+        meeting_id: str,  # noqa: ARG002 - kept for API compatibility
+        title: str,
+        started_at: str,
+    ) -> str | None:
         relative_path = self._meeting_path(title, started_at)
         full_path = self.vault_path / relative_path
         if not full_path.is_file():
@@ -332,6 +434,15 @@ class ObsidianService:
         deleted_dir = self.vault_path / "System" / "Deleted"
         deleted_dir.mkdir(parents=True, exist_ok=True)
         os.rename(full_path, deleted_dir / full_path.name)
+        # Best-effort: also move the transcript and summary siblings so the
+        # vault stays consistent.
+        for sibling in (
+            self._transcript_path(title, started_at),
+            self._summary_path(title, started_at),
+        ):
+            sibling_full = self.vault_path / sibling
+            if sibling_full.is_file():
+                os.rename(sibling_full, deleted_dir / sibling_full.name)
         return str((deleted_dir / full_path.name).relative_to(self.vault_path))
 
 

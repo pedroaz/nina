@@ -49,6 +49,7 @@ def _public_snapshot(config_dir: Path, config: NinaConfig) -> dict[str, Any]:
         "llm": {
             "provider": config.llm.provider,
             "model": config.llm.model,
+            "base_url": config.llm.base_url,
         },
         "research": {
             "provider": config.research.provider,
@@ -91,6 +92,7 @@ def _print_snapshot(snapshot: dict[str, Any]) -> None:
     table.add_row("Daemon port", str(snapshot["daemon_port"]))
     table.add_row("LLM provider", str(snapshot["llm"]["provider"]))
     table.add_row("LLM model", str(snapshot["llm"]["model"]))
+    table.add_row("LLM base URL", str(snapshot["llm"]["base_url"] or ""))
     table.add_row("Research provider", str(snapshot["research"]["provider"]))
     table.add_row("Research model", str(snapshot["research"]["model"]))
     table.add_row("Daily summary", str(snapshot["scheduler"]["daily_summary_time"]))
@@ -255,6 +257,23 @@ def llm_model(
 ) -> None:
     updated, synced = _apply_update(profile, {"llm": {"model": model}})
     console.print(f"LLM model: {updated.llm.model}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command(
+    "llm-base-url",
+    help=(
+        "Set the OpenAI-compatible base URL for `llm.provider = ollama` or "
+        "`openai_compatible`. Pass an empty string to clear it."
+    ),
+)
+def llm_base_url(
+    base_url: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    normalized = base_url.strip() or None
+    updated, synced = _apply_update(profile, {"llm": {"base_url": normalized}})
+    console.print(f"LLM base URL: {updated.llm.base_url or '(unset)'}")
     console.print("Applied to the running daemon." if synced else "Saved on disk.")
 
 

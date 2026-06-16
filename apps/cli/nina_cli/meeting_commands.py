@@ -168,6 +168,35 @@ def meeting_summarize(meeting_id: str = typer.Argument(..., help="Meeting id")) 
         raise typer.Exit(1)
 
 
+@meeting_app.command(
+    "pipeline",
+    help=(
+        "Run transcribe and summarize back-to-back for a meeting. Writes the "
+        "transcript to Meetings/<date> - <title> - Transcript.md, the summary "
+        "to Meetings/<date> - <title> - Summary.md, and links both from the "
+        "hub note Meetings/<date> - <title>.md."
+    ),
+)
+def meeting_pipeline(meeting_id: str = typer.Argument(..., help="Meeting id")) -> None:
+    response = request("POST", f"/meetings/{meeting_id}/pipeline", json={})
+    data = response.json()
+    status = data.get("status")
+    output = data.get("output") or {}
+    if status != "completed":
+        _print_json(data)
+        raise typer.Exit(1)
+    hub = output.get("note_path", "")
+    transcript = output.get("transcript_note_path", "")
+    summary = output.get("summary_note_path", "")
+    console.print(f"Pipeline complete for {meeting_id}.")
+    if hub:
+        console.print(f"  Hub:       {hub}")
+    if transcript:
+        console.print(f"  Transcript: {transcript}")
+    if summary:
+        console.print(f"  Summary:   {summary}")
+
+
 @meeting_app.command("delete", help="Soft-delete a meeting (note moves to System/Deleted).")
 def meeting_delete(meeting_id: str = typer.Argument(..., help="Meeting id")) -> None:
     response = request("DELETE", f"/meetings/{meeting_id}")
@@ -342,7 +371,6 @@ def meeting_devices() -> None:
             console.print(f'  [cyan]nina r "title" --source parec --device {first_mic}[/cyan]')
 
 
-
 def record_meeting(
     title: str,
     source: str | None = None,
@@ -425,7 +453,8 @@ def record_meeting(
 
 
 @meeting_app.command(
-    "record", help="Record audio through the daemon and create a meeting note. Stops on Ctrl+C or `--duration`."
+    "record",
+    help="Record audio through the daemon and create a meeting note. Stops on Ctrl+C or `--duration`.",
 )
 def meeting_record(
     title: str = typer.Argument("Untitled", help='Meeting title (or "Untitled" to use the date)'),
@@ -444,14 +473,14 @@ def meeting_record(
         None, "--mic-device", help="Mic device name or index (overrides --device for mic capture)"
     ),
     system_device: str | None = typer.Option(
-        None, "--system-device", help="System/loopback device name or index (overrides --device for system capture)"
+        None,
+        "--system-device",
+        help="System/loopback device name or index (overrides --device for system capture)",
     ),
     sample_rate: int = typer.Option(
         0, "-r", "--sample-rate", help="Sample rate in Hz (default from config)"
     ),
-    channels: int = typer.Option(
-        0, "-c", "--channels", help="Channel count (default from config)"
-    ),
+    channels: int = typer.Option(0, "-c", "--channels", help="Channel count (default from config)"),
     duration: int | None = typer.Option(
         None, "-D", "--duration", help="Auto-stop after this many seconds"
     ),
@@ -510,7 +539,8 @@ def httpx_post(path: str, **kwargs: Any) -> dict[str, Any]:
 
 # Register a handful of compact aliases for the most common meeting subcommands.
 # `nina r` (top-level) is the main shortcut; these short aliases make the
-# `nina mt ...` path less verbose for scripting.
+# `nina mt ...` path less verbose for scripting. The `e` alias matches the
+# TUI's `Ctrl+E` keybind so the muscle memory is the same in both clients.
 _ALIASES: dict[str, str] = {
     "r": "record",
     "ls": "list",
@@ -521,6 +551,7 @@ _ALIASES: dict[str, str] = {
     "o": "open",
     "p": "play",
     "x": "show",
+    "e": "pipeline",
 }
 for _alias, _target in _ALIASES.items():
     _callback = next(

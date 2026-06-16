@@ -80,6 +80,8 @@ class WorkflowRunner:
                 output = self._run_transcribe_meeting(db, run, input_data)
             elif workflow_name == "summarize-meeting":
                 output = self._run_summarize_meeting(db, run, input_data)
+            elif workflow_name == "meeting-pipeline":
+                output = self._run_meeting_pipeline(db, run, input_data)
             else:
                 raise ValueError(f"Unknown workflow '{workflow_name}'")
             run.output_json = json.dumps(output)
@@ -260,7 +262,16 @@ class WorkflowRunner:
 
         step = self._create_step(db, run, "update_note")
         obsidian = ObsidianService(vault_path)
-        vault_rel = obsidian.update_meeting_note_sections(
+        transcript_note_rel = obsidian.write_transcript_note(
+            meeting_id=meeting_id,
+            title=meeting["title"],
+            started_at=meeting["started_at"],
+            transcript=result.text,
+            language=result.language,
+            model=result.model,
+            workflow_run_id=run.id,
+        )
+        hub_rel = obsidian.update_meeting_note_sections(
             meeting_id=meeting_id,
             title=meeting["title"],
             started_at=meeting["started_at"],
@@ -268,23 +279,30 @@ class WorkflowRunner:
             duration_seconds=meeting.get("duration_seconds"),
             source=meeting.get("source") or "mic",
             audio_path=meeting.get("audio_path") or "",
-            transcript=result.text,
             transcript_status="done",
             workflow_run_id=run.id,
+            transcript_note_path=transcript_note_rel,
+            summary_note_path=meeting.get("summary_note_path"),
         )
-        self._complete_step(db, step, {"note_path": vault_rel})
+        self._complete_step(
+            db,
+            step,
+            {"note_path": hub_rel, "transcript_note_path": transcript_note_rel},
+        )
 
         service.update_status(
             meeting_id,
             status="transcribed",
             transcript_path=str(transcript_path),
+            transcript_note_path=transcript_note_rel,
             workflow_run_id=run.id,
         )
 
         return {
             "meeting_id": meeting_id,
             "transcript_path": str(transcript_path),
-            "note_path": vault_rel,
+            "transcript_note_path": transcript_note_rel,
+            "note_path": hub_rel,
             "language": result.language,
             "model": result.model,
             "char_count": len(result.text),
@@ -357,7 +375,18 @@ class WorkflowRunner:
 
         step = self._create_step(db, run, "update_note")
         obsidian = ObsidianService(vault_path)
-        vault_rel = obsidian.update_meeting_note_sections(
+        summary_note_rel = obsidian.write_summary_note(
+            meeting_id=meeting_id,
+            title=meeting["title"],
+            started_at=meeting["started_at"],
+            summary=summary_text,
+            action_items=action_items,
+            decisions=decisions,
+            model=response.model,
+            provider=response.provider,
+            workflow_run_id=run.id,
+        )
+        hub_rel = obsidian.update_meeting_note_sections(
             meeting_id=meeting_id,
             title=meeting["title"],
             started_at=meeting["started_at"],
@@ -365,26 +394,78 @@ class WorkflowRunner:
             duration_seconds=meeting.get("duration_seconds"),
             source=meeting.get("source") or "mic",
             audio_path=meeting.get("audio_path") or "",
-            summary=summary_text,
-            action_items=action_items,
-            decisions=decisions,
             summary_status="done",
             workflow_run_id=run.id,
+            transcript_note_path=meeting.get("transcript_note_path"),
+            summary_note_path=summary_note_rel,
         )
-        self._complete_step(db, step, {"note_path": vault_rel})
+        self._complete_step(
+            db,
+            step,
+            {"note_path": hub_rel, "summary_note_path": summary_note_rel},
+        )
 
         service.update_status(
             meeting_id,
             status="summarized",
-            summary_path=vault_rel,
+            summary_path=summary_note_rel,
+            summary_note_path=summary_note_rel,
             workflow_run_id=run.id,
         )
 
         return {
             "meeting_id": meeting_id,
-            "note_path": vault_rel,
+            "note_path": hub_rel,
+            "summary_note_path": summary_note_rel,
             "model": response.model,
             "provider": response.provider,
+        }
+
+    def _run_meeting_pipeline(
+        self, db: Session, run: WorkflowRun, input_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Run transcribe and summarize back-to-back in a single workflow run.
+
+        Each stage writes its own step on the same WorkflowRun, so the TUI can
+        see the progress via `/events/stream` and a single banner covers both
+        operations. The TUI's `Ctrl+E` hotkey hits this entry point.
+        """
+        # Reuse the existing per-meeting workflows but as steps on the same
+        # run. We delegate by calling the runners directly; they manage their
+        # own DB session and status updates.
+        from nina_core.meetings.service import MeetingService
+
+        meeting_id = self._extract_meeting_id(input_data)
+        service = MeetingService(self.db_path, self.config_dir / "recordings", self.vault_path)
+        meeting = service.get(meeting_id)
+        if meeting is None:
+            raise RuntimeError(f"Meeting not found: {meeting_id}")
+        if not Path(meeting["audio_path"]).is_file():
+            raise RuntimeError(f"Audio file missing: {meeting['audio_path']}")
+
+        step = self._create_step(db, run, "transcribe")
+        try:
+            transcribe_output = self._run_transcribe_meeting(db, run, input_data)
+        except Exception as exc:
+            self._fail_step(db, step, str(exc))
+            raise
+        self._complete_step(db, step, transcribe_output)
+
+        step = self._create_step(db, run, "summarize")
+        try:
+            summarize_output = self._run_summarize_meeting(db, run, input_data)
+        except Exception as exc:
+            self._fail_step(db, step, str(exc))
+            raise
+        self._complete_step(db, step, summarize_output)
+
+        return {
+            "meeting_id": meeting_id,
+            "transcribe": transcribe_output,
+            "summarize": summarize_output,
+            "transcript_note_path": transcribe_output.get("transcript_note_path"),
+            "summary_note_path": summarize_output.get("summary_note_path"),
+            "note_path": summarize_output.get("note_path"),
         }
 
     def _run_async(self, coro: Any) -> Any:

@@ -147,9 +147,15 @@ def test_transcribe_meeting_workflow_writes_note_section(
     payload = transcribe.json()["output"]
     assert payload["char_count"] == len("hello from whisper")
 
+    # Transcript lives in its own dedicated file, not the hub.
+    transcript_note_path = isolated_config / "vault" / payload["transcript_note_path"]
+    assert transcript_note_path.is_file()
+    assert "hello from whisper" in transcript_note_path.read_text()
+
     note = frontmatter.loads(note_path.read_text())
-    assert "hello from whisper" in note.content
+    assert "hello from whisper" not in note.content
     assert note.metadata["transcript_status"] == "done"
+    assert note.metadata["transcript_note_path"] == payload["transcript_note_path"]
 
     transcript = api_client.get(f"/meetings/{meeting_id}/transcript", headers=auth_headers)
     assert transcript.status_code == 200
@@ -212,10 +218,14 @@ def test_summarize_meeting_workflow_uses_fake_llm(
     )
     assert summarize.status_code == 200, summarize.json()
     assert summarize.json()["status"] == "completed"
+    summary_note_path = isolated_config / "vault" / summarize.json()["output"]["summary_note_path"]
+    assert summary_note_path.is_file()
+    summary_text = summary_note_path.read_text()
+    assert "## Summary" in summary_text
+    assert "Q3 dashboard launch" in summary_text
     note = frontmatter.loads(note_path.read_text())
-    assert "## Summary" in note.content
-    assert "Q3 dashboard launch" in note.content
     assert note.metadata["summary_status"] == "done"
+    assert note.metadata["summary_note_path"].endswith("Summary.md")
 
 
 def test_soft_delete_moves_note(
@@ -268,6 +278,81 @@ def test_workflow_list_includes_meetings(
     names = response.json()
     assert "transcribe-meeting" in names
     assert "summarize-meeting" in names
+    assert "meeting-pipeline" in names
+
+
+def test_meeting_pipeline_endpoint_writes_all_three_files(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nina_core.llm import transcription as tr
+    from nina_core.llm.provider import FakeProvider, LLMService
+
+    monkeypatch.setattr(
+        tr,
+        "build_transcription_provider",
+        lambda **kwargs: tr.NullTranscriptionProvider(text="pipeline transcript"),
+    )
+
+    fake = FakeProvider()
+    fake.queue_text(
+        "## Summary\n- Pipeline summary.\n"
+        "## Action items\n- [ ] Follow up.\n"
+        "## Decisions\n- Use the pipeline.\n"
+    )
+
+    def _patched_init(self, db_path, provider=None, config=None) -> None:  # type: ignore[no-untyped-def]
+        self.db_path = db_path
+        from nina_core.config.settings import LLMConfig
+
+        self.config = config or LLMConfig(provider="fake", model="fake")
+        self.provider = fake
+
+    monkeypatch.setattr(LLMService, "__init__", _patched_init)
+
+    started = api_client.post(
+        "/meetings",
+        headers=auth_headers,
+        json={"title": "Pipeline integration"},
+    )
+    assert started.status_code == 200
+    meeting_id = started.json()["id"]
+    audio_path = Path(started.json()["audio_path"])
+    _write_silence_wav(audio_path, seconds=0.2)
+
+    stopped = api_client.post(
+        f"/meetings/{meeting_id}/stop",
+        headers=auth_headers,
+        json={"duration_seconds": 60, "size_bytes": 1024},
+    )
+    assert stopped.status_code == 200
+    hub_rel = stopped.json()["note_path"]
+
+    response = api_client.post(
+        f"/meetings/{meeting_id}/pipeline",
+        headers=auth_headers,
+        json={},
+    )
+    assert response.status_code == 200, response.json()
+    output = response.json()["output"]
+    assert output["transcript_note_path"].endswith("Transcript.md")
+    assert output["summary_note_path"].endswith("Summary.md")
+    assert output["note_path"] == hub_rel
+
+    # The hub still has wikilinks pointing at the new files.
+    hub_text = (isolated_config / "vault" / hub_rel).read_text()
+    assert "Transcript]]" in hub_text
+    assert "Summary]]" in hub_text
+
+    # /meetings/{id} now exposes the new paths in the JSON payload.
+    shown = api_client.get(f"/meetings/{meeting_id}", headers=auth_headers)
+    assert shown.status_code == 200
+    payload = shown.json()
+    assert payload["transcript_note_path"].endswith("Transcript.md")
+    assert payload["summary_note_path"].endswith("Summary.md")
+    assert payload["status"] == "summarized"
 
 
 def test_stop_endpoint_records_error_field(

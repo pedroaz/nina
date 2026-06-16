@@ -25,6 +25,12 @@ dependencies = [
     "selectolax>=0.3.0",
 ]
 
+[project.optional-dependencies]
+# Local audio transcription. The default `transcription.backend = local_whisper`
+# needs this extra; install with `pip install nina-core[transcription]`. From
+# inside an installed nina you can also run `nina setup transcription`.
+transcription = ["faster-whisper>=1.0.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

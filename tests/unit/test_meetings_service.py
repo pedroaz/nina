@@ -117,8 +117,10 @@ def test_meeting_note_has_pending_sections(isolated_config: Path) -> None:
     note_path = vault / "Meetings" / "2026-06-14 - section-demo.md"
     assert note_path.is_file()
     text = note_path.read_text()
-    assert "## Transcript" in text
-    assert "## Summary" in text
-    assert "## Action items" in text
-    assert "## Decisions" in text
+    # Hub layout: a single `## Notes` section plus the `## Linked artifacts`
+    # block with placeholder text. Transcript and summary now live in their
+    # own files.
+    assert "## Notes" in text
+    assert "## Linked artifacts" in text
     assert "_Transcription pending._" in text
+    assert "_Summary pending._" in text

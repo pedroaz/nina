@@ -377,3 +377,200 @@ def _jwt(claims: dict[str, object]) -> str:
     )
     payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
     return f"{header}.{payload}.signature"
+
+
+# --- Local / openai_compatible providers ------------------------------------
+
+
+class _FakeChat:
+    def __init__(self, captured: dict[str, object]) -> None:
+        self.captured = captured
+        self.completions = _FakeCompletions(captured)
+
+
+class _FakeCompletions:
+    def __init__(self, captured: dict[str, object]) -> None:
+        self.captured = captured
+
+    def create(self, model: str, messages: list[dict[str, str]], **kwargs: object):
+        self.captured["model"] = model
+        self.captured["messages"] = messages
+        self.captured["kwargs"] = kwargs
+
+        class _Choice:
+            class message:  # noqa: N801 - mirroring SDK shape
+                content = "ok"
+                tool_calls = None
+
+        class _Resp:
+            choices = [_Choice()]
+
+        return _Resp()
+
+
+def test_ollama_provider_defaults_to_localhost() -> None:
+    from nina_core.llm.provider import OllamaProvider
+
+    provider = OllamaProvider()
+    assert provider.base_url == "http://localhost:11434/v1"
+    assert provider.model == "gemma3:4b"
+
+
+def test_ollama_provider_passes_request_model_through() -> None:
+    from nina_core.llm.provider import OllamaProvider
+
+    captured: dict[str, object] = {}
+    provider = OllamaProvider()
+    provider.client = type(  # type: ignore[assignment]
+        "C",
+        (),
+        {"chat": _FakeChat(captured)},
+    )()
+    import asyncio
+
+    resp = asyncio.run(
+        provider.complete(LLMRequest(purpose="test", prompt="hi", model="custom-7b"))
+    )
+    assert resp.response == "ok"
+    assert resp.provider == "ollama"
+    assert captured["model"] == "custom-7b"
+
+
+def test_openai_compatible_provider_requires_base_url() -> None:
+    from nina_core.llm.provider import OpenAICompatibleProvider
+
+    with pytest.raises(RuntimeError, match="base_url is required"):
+        OpenAICompatibleProvider()
+
+
+def test_llm_service_routes_ollama_to_ollama_provider() -> None:
+    from nina_core.llm.provider import OllamaProvider
+
+    config = __import__("nina_core.config.settings", fromlist=["LLMConfig"]).LLMConfig(
+        provider="ollama", model="gemma3:4b", base_url="http://localhost:9999/v1"
+    )
+    service = LLMService(":memory:", config=config)
+    assert isinstance(service.provider, OllamaProvider)
+    assert service.provider.base_url == "http://localhost:9999/v1"
+
+
+def test_llm_service_routes_openai_compatible_to_generic_provider() -> None:
+    from nina_core.llm.provider import OpenAICompatibleProvider
+
+    config = __import__("nina_core.config.settings", fromlist=["LLMConfig"]).LLMConfig(
+        provider="openai_compatible",
+        model="local",
+        base_url="http://localhost:8080/v1",
+    )
+    service = LLMService(":memory:", config=config)
+    assert isinstance(service.provider, OpenAICompatibleProvider)
+
+
+def test_check_provider_status_reports_ollama_reachable_via_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nina_core.llm.provider import check_provider_status
+
+    def fake_get(url: str, timeout: float = 0.0) -> object:
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"models": [{"name": "gemma3:4b"}, {"name": "llama3.2:3b"}]}
+
+        return _Resp()
+
+    monkeypatch.setattr(provider_module.httpx, "get", fake_get)
+    status = check_provider_status(
+        __import__("nina_core.config.settings", fromlist=["LLMConfig"]).LLMConfig(
+            provider="ollama", model="gemma3:4b"
+        ),
+        timeout=1.0,
+    )
+    assert status.reachable is True
+    assert status.model_present is True
+    assert "gemma3:4b" in (status.available_models or [])
+
+
+def test_check_provider_status_reports_missing_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nina_core.llm.provider import check_provider_status
+
+    def fake_get(url: str, timeout: float = 0.0) -> object:
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"models": [{"name": "some-other-model:7b"}]}
+
+        return _Resp()
+
+    monkeypatch.setattr(provider_module.httpx, "get", fake_get)
+    status = check_provider_status(
+        __import__("nina_core.config.settings", fromlist=["LLMConfig"]).LLMConfig(
+            provider="ollama", model="gemma3:4b"
+        ),
+        timeout=1.0,
+    )
+    assert status.reachable is True
+    assert status.model_present is False
+    assert "ollama pull" in (status.detail or "")
+
+
+def test_check_provider_status_reports_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nina_core.llm.provider import check_provider_status
+
+    def fake_get(url: str, timeout: float = 0.0) -> object:
+        raise ConnectionError("refused")
+
+    monkeypatch.setattr(provider_module.httpx, "get", fake_get)
+    status = check_provider_status(
+        __import__("nina_core.config.settings", fromlist=["LLMConfig"]).LLMConfig(
+            provider="ollama", model="gemma3:4b"
+        ),
+        timeout=1.0,
+    )
+    assert status.reachable is False
+    assert status.model_present is False
+
+
+def test_check_transcription_status_reports_no_faster_whisper() -> None:
+    """If faster-whisper isn't installed, status should say so and point at
+    the install command.
+    """
+    from nina_core.llm.transcription import (
+        FasterWhisperProvider,
+        check_transcription_status,
+    )
+
+    # faster-whisper is not installed in this env, so this should report
+    # unavailable with a useful hint.
+    status = check_transcription_status(
+        __import__(
+            "nina_core.config.settings", fromlist=["TranscriptionConfig"]
+        ).TranscriptionConfig()
+    )
+    if not status.available:
+        assert "faster-whisper" in (status.detail or "")
+    else:  # pragma: no cover - environment-specific
+        assert status.provider_class == FasterWhisperProvider.__name__
+
+
+def test_check_transcription_status_fake_is_available() -> None:
+    from nina_core.llm.transcription import check_transcription_status
+
+    status = check_transcription_status(
+        __import__(
+            "nina_core.config.settings", fromlist=["TranscriptionConfig"]
+        ).TranscriptionConfig(backend="null")
+    )
+    assert status.available is True

@@ -410,48 +410,114 @@ class OpenAIProvider(LLMProvider):
         self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-5")
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        model = request.model or self.model
-        messages = request.messages or [{"role": "user", "content": request.prompt or ""}]
-        kwargs: dict[str, Any] = {"model": model, "messages": messages}
-        if request.tools:
-            kwargs["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": tool.parameters or {"type": "object", "properties": {}},
-                    },
-                }
-                for tool in request.tools
-            ]
-            kwargs["tool_choice"] = request.tool_choice or "auto"
-        response = self.client.chat.completions.create(**kwargs)
-        choice = response.choices[0]
-        content = choice.message.content or ""
-        tool_calls: list[ToolCall] = []
-        for call in getattr(choice.message, "tool_calls", None) or []:
-            arguments: Any = {}
-            raw = getattr(call.function, "arguments", "") or ""
-            try:
-                arguments = json.loads(raw) if raw else {}
-            except json.JSONDecodeError:
-                arguments = {"_raw": raw}
-            tool_calls.append(
-                ToolCall(
-                    id=str(getattr(call, "id", "") or ""),
-                    name=str(getattr(call.function, "name", "") or ""),
-                    arguments=arguments,
-                )
+        return _chat_completions_complete(self.client, self.model, request, provider_name="openai")
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    """Talks to any OpenAI-compatible HTTP server.
+
+    Used for llama.cpp (`llama-server`), vLLM, LM Studio, and any other runtime
+    that exposes the `/v1/chat/completions` shape. Auth is optional: Ollama and
+    llama.cpp both ignore the bearer token, but passing one is harmless.
+    """
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        if not base_url:
+            raise RuntimeError(
+                "base_url is required for the openai_compatible provider. "
+                "Set llm.base_url in config (e.g. http://localhost:11434/v1)."
             )
-        finish_reason = getattr(choice, "finish_reason", None)
-        return LLMResponse(
-            response=content,
-            model=model,
-            provider="openai",
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key or "not-needed"
+        self.model = model or "local-model"
+        self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        return _chat_completions_complete(
+            self.client, self.model, request, provider_name="openai_compatible"
         )
+
+
+class OllamaProvider(OpenAICompatibleProvider):
+    """Convenience subclass for local Ollama. Default base_url is
+    `http://localhost:11434/v1` and default model is `gemma3:4b`. Run
+    `ollama serve` and `ollama pull gemma3:4b` once on this machine.
+    """
+
+    DEFAULT_BASE_URL = "http://localhost:11434/v1"
+    DEFAULT_MODEL = "gemma3:4b"
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        super().__init__(
+            base_url=base_url or self.DEFAULT_BASE_URL,
+            api_key=api_key or "ollama",
+            model=model or self.DEFAULT_MODEL,
+        )
+        self.provider_label = "ollama"
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        return _chat_completions_complete(self.client, self.model, request, provider_name="ollama")
+
+
+def _chat_completions_complete(
+    client: OpenAI,
+    default_model: str,
+    request: LLMRequest,
+    *,
+    provider_name: str,
+) -> LLMResponse:
+    model = request.model or default_model
+    messages = request.messages or [{"role": "user", "content": request.prompt or ""}]
+    kwargs: dict[str, Any] = {"model": model, "messages": messages}
+    if request.tools:
+        kwargs["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters or {"type": "object", "properties": {}},
+                },
+            }
+            for tool in request.tools
+        ]
+        kwargs["tool_choice"] = request.tool_choice or "auto"
+    response = client.chat.completions.create(**kwargs)
+    choice = response.choices[0]
+    content = choice.message.content or ""
+    tool_calls: list[ToolCall] = []
+    for call in getattr(choice.message, "tool_calls", None) or []:
+        arguments: Any = {}
+        raw = getattr(call.function, "arguments", "") or ""
+        try:
+            arguments = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            arguments = {"_raw": raw}
+        tool_calls.append(
+            ToolCall(
+                id=str(getattr(call, "id", "") or ""),
+                name=str(call.function.name or ""),
+                arguments=arguments,
+            )
+        )
+    finish_reason = getattr(choice, "finish_reason", None)
+    return LLMResponse(
+        response=content,
+        model=model,
+        provider=provider_name,
+        tool_calls=tool_calls,
+        finish_reason=finish_reason,
+    )
 
 
 class FakeProvider(LLMProvider):
@@ -506,10 +572,24 @@ class LLMService:
         if provider == "fake":
             return FakeProvider()
         if provider == "openai":
-            return OpenAIProvider(model=self.config.model)
+            return OpenAIProvider(model=self.config.model, api_key=self.config.api_key)
         if provider == "codex":
             return CodexAuthProvider(model=self.config.model)
-        raise RuntimeError(f"Unsupported LLM provider: {provider}")
+        if provider == "ollama":
+            return OllamaProvider(
+                base_url=self.config.base_url,
+                model=self.config.model,
+            )
+        if provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"}:
+            return OpenAICompatibleProvider(
+                base_url=self.config.base_url,
+                api_key=self.config.api_key,
+                model=self.config.model,
+            )
+        raise RuntimeError(
+            f"Unsupported LLM provider: {provider}. "
+            f"Expected one of: codex, openai, ollama, openai_compatible, fake."
+        )
 
     def _session(self) -> Session:
         engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
@@ -643,7 +723,173 @@ def _messages_to_responses_input(
             {
                 "type": "message",
                 "role": "user",
-                "content": [{"type": "input_text", "text": fallback_prompt}],
+                "content": [{"type": "input_text", "text": str(fallback_prompt)}],
             }
         )
     return converted
+
+
+@dataclass
+class LLMProviderStatus:
+    """Snapshot of a configured LLM provider's health, used by `nina status`.
+
+    `reachable` is True when the provider's HTTP endpoint (or local file in the
+    case of codex/openai with no network call) responded within the timeout.
+    `model_present` is True when the configured model appears in the list of
+    available models. For providers that don't expose a model list (codex,
+    openai), `model_present` reflects whether a `model` is configured.
+    """
+
+    provider: str
+    model: str
+    base_url: str | None
+    reachable: bool
+    model_present: bool
+    detail: str | None = None
+    available_models: list[str] | None = None
+
+
+def check_provider_status(
+    config: LLMConfig,
+    *,
+    timeout: float = 3.0,
+) -> LLMProviderStatus:
+    """Probe the configured LLM provider.
+
+    Tries to be cheap and offline-friendly: it never raises. For local servers
+    it pings `/v1/models` (Ollama) or `/models` (llama.cpp) so we can show
+    whether the model the user asked for is actually pulled. For cloud
+    providers it reports `reachable=True` when credentials are configured
+    (we don't burn a request just for a status check).
+    """
+    provider = (config.provider or "").lower()
+    base_url = config.base_url
+    model = config.model
+    try:
+        if provider == "ollama":
+            return _check_ollama(base_url, model, timeout=timeout)
+        if provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"}:
+            return _check_openai_compatible(base_url, model, timeout=timeout)
+        if provider == "openai":
+            has_key = bool(config.api_key or os.environ.get("OPENAI_API_KEY"))
+            return LLMProviderStatus(
+                provider=provider,
+                model=model,
+                base_url=None,
+                reachable=has_key,
+                model_present=bool(model),
+                detail=(None if has_key else "OPENAI_API_KEY is not set in the environment"),
+            )
+        if provider == "codex":
+            auth = codex_auth_status()
+            return LLMProviderStatus(
+                provider=provider,
+                model=model,
+                base_url=None,
+                reachable=auth.connected,
+                model_present=bool(model),
+                detail=None if auth.connected else (auth.detail or "Codex auth disconnected"),
+            )
+        if provider == "fake":
+            return LLMProviderStatus(
+                provider=provider,
+                model=model,
+                base_url=None,
+                reachable=True,
+                model_present=True,
+                detail="fake provider is for tests/CI",
+            )
+    except Exception as exc:  # noqa: BLE001
+        return LLMProviderStatus(
+            provider=provider or "unknown",
+            model=model,
+            base_url=base_url,
+            reachable=False,
+            model_present=False,
+            detail=str(exc),
+        )
+    return LLMProviderStatus(
+        provider=provider or "unknown",
+        model=model,
+        base_url=base_url,
+        reachable=False,
+        model_present=False,
+        detail=f"Unknown provider: {provider!r}",
+    )
+
+
+def _check_ollama(base_url: str | None, model: str | None, *, timeout: float) -> LLMProviderStatus:
+    url = (base_url or OllamaProvider.DEFAULT_BASE_URL).rstrip("/")
+    # Strip the trailing /v1 because Ollama's native API lives at the root.
+    ollama_root = url[:-3] if url.endswith("/v1") else url
+    tags_url = f"{ollama_root}/api/tags"
+    try:
+        resp = httpx.get(tags_url, timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        return LLMProviderStatus(
+            provider="ollama",
+            model=model or "",
+            base_url=base_url,
+            reachable=False,
+            model_present=False,
+            detail=f"Ollama not reachable at {tags_url}: {exc}",
+        )
+    models_raw = payload.get("models") or []
+    names = [m.get("name", "") for m in models_raw if m.get("name")]
+    present = bool(model) and any(model == name or name.startswith(f"{model}:") for name in names)
+    return LLMProviderStatus(
+        provider="ollama",
+        model=model or "",
+        base_url=base_url,
+        reachable=True,
+        model_present=present,
+        detail=(
+            None
+            if present or not model
+            else f"Model {model!r} not pulled. Run: ollama pull {model}"
+        ),
+        available_models=names,
+    )
+
+
+def _check_openai_compatible(
+    base_url: str | None, model: str | None, *, timeout: float
+) -> LLMProviderStatus:
+    if not base_url:
+        return LLMProviderStatus(
+            provider="openai_compatible",
+            model=model or "",
+            base_url=None,
+            reachable=False,
+            model_present=False,
+            detail="llm.base_url is not set",
+        )
+    url = base_url.rstrip("/")
+    models_url = f"{url}/models" if not url.endswith("/v1") else f"{url}/models"
+    try:
+        resp = httpx.get(models_url, timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        return LLMProviderStatus(
+            provider="openai_compatible",
+            model=model or "",
+            base_url=base_url,
+            reachable=False,
+            model_present=False,
+            detail=f"Server not reachable at {models_url}: {exc}",
+        )
+    models_raw = payload.get("data") or []
+    names = [m.get("id", "") for m in models_raw if m.get("id")]
+    present = bool(model) and model in names
+    return LLMProviderStatus(
+        provider="openai_compatible",
+        model=model or "",
+        base_url=base_url,
+        reachable=True,
+        model_present=present,
+        detail=None if present or not model else f"Model {model!r} not served by this server",
+        available_models=names,
+    )

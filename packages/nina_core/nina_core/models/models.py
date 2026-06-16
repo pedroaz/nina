@@ -189,6 +189,12 @@ class Meeting(Base):
     channels = Column(Integer, nullable=False, default=1)
     transcript_path = Column(Text)
     summary_path = Column(Text)
+    # Vault-relative paths to the human-facing Markdown files written by the
+    # transcribe and summarize workflows. Distinct from `transcript_path`
+    # (raw .txt next to the audio) and `summary_path` (legacy: the same hub
+    # note path; kept for backwards compatibility with old code paths).
+    transcript_note_path = Column(Text)
+    summary_note_path = Column(Text)
     workflow_run_id = Column(Text)
     error = Column(Text)
     created_at = Column(Text, nullable=False, default=now_utc)
