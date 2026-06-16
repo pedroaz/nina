@@ -163,6 +163,10 @@ interface ConfigSnapshot {
     channels: number;
     open_command: string;
     play_command: string;
+    default_gain: number;
+    auto_normalize: boolean;
+    normalize_target_dbfs: number;
+    noise_reduction: string;
   };
   log_level: string;
 }
@@ -211,7 +215,13 @@ type ConfigFieldKey =
   | "transcription.compute_type"
   | "transcription.language"
   | "meetings.default_source"
-  | "meetings.auto_summarize";
+  | "meetings.auto_summarize"
+  | "meetings.sample_rate"
+  | "meetings.channels"
+  | "meetings.default_gain"
+  | "meetings.auto_normalize"
+  | "meetings.normalize_target_dbfs"
+  | "meetings.noise_reduction";
 
 interface ConfigFieldDefinition {
   key: ConfigFieldKey;
@@ -263,7 +273,7 @@ const PAGE_HELP: Record<PageName, string> = {
   Chat: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt. Use @path/to/note.md in the prompt to attach a note. While waiting, a loading card shows elapsed time. Ctrl+Q clears the chat and starts a new context. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom. Ctrl+R refreshes the page.",
   Agent: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt and may execute tool calls automatically. While waiting, a loading card shows elapsed time. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom.",
   Research: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter runs OpenAI web research and writes a note into Obsidian. While waiting, a loading card shows elapsed time. PageUp/PageDown scroll the report.",
-  Meetings: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Up/Down moves the selection. Type a title and press Enter to start a recording (runs detached, the TUI stays responsive). All other actions use Ctrl so the text input does not swallow them: Ctrl+T transcribe, Ctrl+Y summarize, Ctrl+X stop active recording, Ctrl+O open in Obsidian, Ctrl+P play audio, Ctrl+D delete. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
+  Meetings: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Up/Down moves the selection. Type a title and press Enter to start a recording. All other actions use Ctrl so the text input does not swallow them: Ctrl+T transcribe, Ctrl+Y summarize, Ctrl+X stop active recording, Ctrl+O open in Obsidian, Ctrl+P play audio, Ctrl+D delete. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
   Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it. F6 toggles between the history and the tab strip. PageUp/PageDown and Home/End scroll the history. Ctrl+R refreshes the page.",
   Config: "Esc returns to the tab strip. Click a tab to switch pages. Click the list or the value field to focus it. F6 toggles between the editable list and the value field. Up and Down change the selected setting. Enter saves the current value. Tab and Shift+Tab change pages. Ctrl+R refreshes the page. Ctrl+C quits.",
 };
@@ -272,7 +282,7 @@ const PAGE_INTRO: Record<PageName, string> = {
   Chat: "Chat mode answers questions with LLM-backed Obsidian context via tool calls. Use @path/to/note.md in the prompt to attach a note. It does not run commands or write to the vault.",
   Agent: "Agent mode can plan and execute tool calls (read + write) against the vault, kanban, and jobs. It is intended for natural-language task creation and other safe Nina operations.",
   Research: "Research mode uses OpenAI web search and writes a summary-plus-links note into your Obsidian vault.",
-  Meetings: "Meetings are recorded by the local CLI (`nina meeting record`). Each recording creates a Meetings/<date> - <title>.md note in Obsidian. Transcription and summarization are workflows that read the same audio file.",
+  Meetings: "Meetings are recorded through the daemon-backed CLI or TUI. Each recording creates a Meetings/<date> - <title>.md note in Obsidian. Transcription and summarization are workflows that read the same audio file.",
   Jobs: "Jobs execute Nina workflows on a schedule and keep their run history in SQLite.",
   Config: "This view lets you inspect and edit the config file that the daemon and CLI read.",
 };
@@ -654,10 +664,60 @@ const CONFIG_FIELDS: ConfigFieldDefinition[] = [
   {
     key: "meetings.default_source",
     label: "Meetings default source",
-    description: "mic | system",
+    description: "mic | system | mixed",
     restartRequired: false,
     getValue: (config) => config.meetings.default_source,
     buildPatch: (value) => ({ meetings: { default_source: value } }),
+  },
+  {
+    key: "meetings.sample_rate",
+    label: "Meetings sample rate",
+    description: "Sample rate in Hz",
+    restartRequired: false,
+    getValue: (config) => String(config.meetings.sample_rate),
+    buildPatch: (value) => ({ meetings: { sample_rate: Number.parseInt(value, 10) } }),
+  },
+  {
+    key: "meetings.channels",
+    label: "Meetings channels",
+    description: "1 or 2",
+    restartRequired: false,
+    getValue: (config) => String(config.meetings.channels),
+    buildPatch: (value) => ({ meetings: { channels: Number.parseInt(value, 10) } }),
+  },
+  {
+    key: "meetings.default_gain",
+    label: "Meetings default gain",
+    description: "Linear gain factor",
+    restartRequired: false,
+    getValue: (config) => String(config.meetings.default_gain),
+    buildPatch: (value) => ({ meetings: { default_gain: Number.parseFloat(value) } }),
+  },
+  {
+    key: "meetings.auto_normalize",
+    label: "Meetings auto-normalize",
+    description: "true | false",
+    restartRequired: false,
+    getValue: (config) => String(config.meetings.auto_normalize),
+    buildPatch: (value) => ({
+      meetings: { auto_normalize: value.toLowerCase() === "true" },
+    }),
+  },
+  {
+    key: "meetings.normalize_target_dbfs",
+    label: "Normalize target dBFS",
+    description: "Usually -3.0",
+    restartRequired: false,
+    getValue: (config) => String(config.meetings.normalize_target_dbfs),
+    buildPatch: (value) => ({ meetings: { normalize_target_dbfs: Number.parseFloat(value) } }),
+  },
+  {
+    key: "meetings.noise_reduction",
+    label: "Meetings noise reduction",
+    description: "off | ffmpeg",
+    restartRequired: false,
+    getValue: (config) => config.meetings.noise_reduction,
+    buildPatch: (value) => ({ meetings: { noise_reduction: value } }),
   },
   {
     key: "meetings.auto_summarize",
@@ -1372,7 +1432,7 @@ async function main(): Promise<void> {
           renderer,
           "No meetings",
           accentForPage("Meetings"),
-          "Start a recording with `nina meeting record \"title\"` in a terminal, or use the prompt below to plan a meeting title. The CLI owns the audio capture; this page shows what the daemon has tracked.",
+          "Start a recording from this page or with `nina meeting record \"title\"` in a terminal. The daemon owns the audio capture; this page shows what it has tracked.",
         ),
       );
     } else {
@@ -1422,7 +1482,7 @@ async function main(): Promise<void> {
         "Ctrl+T transcribe    Ctrl+Y summarize    Ctrl+X stop active",
         "Ctrl+O open in Obsidian    Ctrl+P play audio    Ctrl+D delete",
         "Up/Down move the selection",
-        "Type a title below and press Enter to start recording (it runs detached).",
+        "Type a title below and press Enter to start recording.",
       ].join("\n"),
     );
     pageRoot.add(keybinds);
@@ -1430,7 +1490,7 @@ async function main(): Promise<void> {
     const input = makeInputSection(
       pageRoot,
       "Start a recording",
-      "Type a title and press Enter to start recording. The recorder runs detached — close the TUI anytime. Press Ctrl+X here to stop.",
+      "Type a title and press Enter to start recording. The daemon owns the audio stream, so the TUI can stay open or be closed after it starts. Press Ctrl+X here to stop.",
       accentForPage("Meetings"),
     );
     activeInput = input;
@@ -1440,7 +1500,7 @@ async function main(): Promise<void> {
         return;
       }
       input.value = "";
-      startRecording(title);
+      void startRecording(title);
     });
   }
 
@@ -1753,32 +1813,28 @@ async function main(): Promise<void> {
     }
   }
 
-  function startRecording(title: string): void {
-    // Spawn `nina r` as a detached subprocess. The recorder does the
-    // actual work (PortAudio/PulseAudio capture, POST /meetings,
-    // POST /meetings/{id}/stop) and we just poll the daemon to see
-    // the new meeting row appear.
-    let child: ReturnType<typeof Bun.spawn>;
-    try {
-      child = Bun.spawn(["nina", "r", title], {
-        stdio: ["ignore", "ignore", "ignore"],
-      });
-    } catch (err) {
-      state.lastError = err instanceof Error ? err.message : String(err);
+  async function startRecording(title: string): Promise<void> {
+    if (!token) {
+      state.lastError = "No Nina token found. Run `nina init` first.";
       renderPage("Meetings");
       return;
     }
-    child.unref();
-    state.banner = {
-      kind: "info",
-      text: `Recording "${title}" started (pid ${child.pid}). Press Ctrl+X on this page to stop.`,
-    };
-    startMeetingsPolling();
-    // Refresh once quickly so the list updates immediately.
-    setTimeout(() => {
+    try {
+      const meeting = await apiFetch<Meeting>(token, "/meetings/record", {
+        method: "POST",
+        body: JSON.stringify({ title }),
+      });
+      state.banner = {
+        kind: "info",
+        text: `Recording ${meeting.id} started (${meeting.source}). Press Ctrl+X on this page to stop.`,
+      };
+      startMeetingsPolling();
       void refreshMeetings();
-    }, 500);
-    renderPage("Meetings");
+      renderPage("Meetings");
+    } catch (err) {
+      state.lastError = err instanceof Error ? err.message : String(err);
+      renderPage("Meetings");
+    }
   }
 
   async function deleteMeeting(meetingId: string): Promise<void> {

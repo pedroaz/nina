@@ -61,6 +61,9 @@ class MeetingsConfigResponse(BaseModel):
     open_command: str
     play_command: str
     default_gain: float
+    auto_normalize: bool
+    normalize_target_dbfs: float
+    noise_reduction: str
 
 
 class ConfigResponse(BaseModel):
@@ -109,6 +112,9 @@ class MeetingsConfigUpdate(BaseModel):
     open_command: str | None = None
     play_command: str | None = None
     default_gain: float | None = None
+    auto_normalize: bool | None = None
+    normalize_target_dbfs: float | None = None
+    noise_reduction: str | None = None
 
 
 class ConfigUpdate(BaseModel):
@@ -170,6 +176,9 @@ def _config_response(config_dir: Path, config: NinaConfig) -> ConfigResponse:
             open_command=config.meetings.open_command,
             play_command=config.meetings.play_command,
             default_gain=config.meetings.default_gain,
+            auto_normalize=config.meetings.auto_normalize,
+            normalize_target_dbfs=config.meetings.normalize_target_dbfs,
+            noise_reduction=config.meetings.noise_reduction,
         ),
         log_level=config.log_level,
     )
@@ -232,6 +241,12 @@ def _changed_config_fields(previous: NinaConfig, updated: NinaConfig) -> list[st
         changed.append("meetings.open_command")
     if previous.meetings.play_command != updated.meetings.play_command:
         changed.append("meetings.play_command")
+    if previous.meetings.auto_normalize != updated.meetings.auto_normalize:
+        changed.append("meetings.auto_normalize")
+    if previous.meetings.normalize_target_dbfs != updated.meetings.normalize_target_dbfs:
+        changed.append("meetings.normalize_target_dbfs")
+    if previous.meetings.noise_reduction != updated.meetings.noise_reduction:
+        changed.append("meetings.noise_reduction")
     return changed
 
 
@@ -459,6 +474,21 @@ class MeetingCreate(BaseModel):
     sample_rate: int = 16000
     channels: int = 1
     audio_format: str = "wav"
+
+
+class MeetingRecord(BaseModel):
+    title: str
+    source: str | None = None
+    device: str | None = None
+    mic_device: str | None = None
+    system_device: str | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+    duration_seconds: int | None = None
+    gain: float | None = None
+    auto_normalize: bool | None = None
+    normalize_target_dbfs: float | None = None
+    noise_reduction: str | None = None
 
 
 class MeetingStop(BaseModel):
@@ -1093,6 +1123,16 @@ def get_meeting_service(request: Request):
     )
 
 
+def get_meeting_recorder(request: Request):
+    from nina_core.meetings.manager import MeetingRecordingManager
+
+    recorder = getattr(request.app.state, "meeting_recorder", None)
+    if recorder is None:
+        recorder = MeetingRecordingManager()
+        request.app.state.meeting_recorder = recorder
+    return recorder
+
+
 def get_config_dir_resolved(request: Request) -> Path:
     config_dir = getattr(request.app.state, "config_dir", None)
     if config_dir is not None:
@@ -1112,6 +1152,38 @@ async def create_meeting(request: Request, data: MeetingCreate) -> dict[str, Any
         channels=data.channels,
         audio_format=data.audio_format,
     )
+
+
+@app.post("/meetings/record")
+async def record_meeting(request: Request, data: MeetingRecord) -> dict[str, Any]:
+    from nina_core.meetings.manager import RecordingRequest
+    from nina_core.meetings.recorder import RecorderError
+
+    config = _request_config(request)
+    recorder = get_meeting_recorder(request)
+    config_dir = get_config_dir_resolved(request)
+    try:
+        return recorder.start(
+            config=config,
+            config_dir=config_dir,
+            request=RecordingRequest(
+                title=data.title,
+                source=data.source,
+                device=data.device,
+                mic_device=data.mic_device,
+                system_device=data.system_device,
+                sample_rate=data.sample_rate,
+                channels=data.channels,
+                duration_seconds=data.duration_seconds,
+                gain=data.gain,
+                auto_normalize=data.auto_normalize,
+                normalize_target_dbfs=data.normalize_target_dbfs,
+                noise_reduction=data.noise_reduction,
+            ),
+        )
+    except RecorderError as exc:
+        status_code = 409 if "already active" in str(exc).lower() else 400
+        return JSONResponse(status_code=status_code, content={"detail": str(exc)})
 
 
 @app.get("/meetings")
@@ -1137,21 +1209,28 @@ async def get_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
 async def stop_meeting(
     request: Request, meeting_id: str, data: MeetingStop | None = None
 ) -> dict[str, Any]:
+    from nina_core.meetings.recorder import RecorderError
+
     service = get_meeting_service(request)
+    recorder = get_meeting_recorder(request)
     payload = data or MeetingStop()
+    try:
+        meeting = recorder.stop(meeting_id)
+    except RecorderError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+    if meeting is not None:
+        if payload.error is not None:
+            service.update_status(meeting_id, error=payload.error)
+            meeting = service.get(meeting_id) or meeting
+        return meeting
     meeting = service.stop(
         meeting_id,
         duration_seconds=payload.duration_seconds,
         size_bytes=payload.size_bytes,
+        error=payload.error,
     )
     if meeting is None:
         return JSONResponse(status_code=404, content={"detail": "Not found"})
-    if payload.error is not None:
-        # Best-effort: stamp the error onto the row so the user can see
-        # why the capture was partial. We don't fail the request if this
-        # also fails — the row is already finalized.
-        service.update_status(meeting_id, error=payload.error)
-        meeting = service.get(meeting_id) or meeting
     return meeting
 
 
@@ -1221,14 +1300,19 @@ async def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
     return {"deleted": True}
 
 
+@app.get("/meetings/devices")
 @app.get("/meetings-devices")
 async def list_meeting_devices() -> dict[str, Any]:
     from nina_core.meetings.recorder import (
         list_input_devices,
         list_pulse_sources,
+        list_soundcard_devices,
     )
 
+    soundcard = list_soundcard_devices()
     return {
         "inputs": list_input_devices(),
         "pulse_sources": list_pulse_sources(),
+        "soundcard_microphones": soundcard.get("microphones", []),
+        "soundcard_speakers": soundcard.get("speakers", []),
     }

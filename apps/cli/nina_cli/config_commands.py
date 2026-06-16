@@ -72,6 +72,9 @@ def _public_snapshot(config_dir: Path, config: NinaConfig) -> dict[str, Any]:
             "open_command": config.meetings.open_command,
             "play_command": config.meetings.play_command,
             "default_gain": config.meetings.default_gain,
+            "auto_normalize": config.meetings.auto_normalize,
+            "normalize_target_dbfs": config.meetings.normalize_target_dbfs,
+            "noise_reduction": config.meetings.noise_reduction,
         },
         "log_level": config.log_level,
     }
@@ -100,13 +103,13 @@ def _print_snapshot(snapshot: dict[str, Any]) -> None:
     table.add_row("Meetings auto-summarize", str(snapshot["meetings"]["auto_summarize"]))
     table.add_row("Meetings sample rate", str(snapshot["meetings"]["sample_rate"]))
     table.add_row("Meetings channels", str(snapshot["meetings"]["channels"]))
-    table.add_row("Meetings play command", str(snapshot["meetings"]["play_command"]))
     gain = snapshot["meetings"]["default_gain"]
     gain_db = 0.0 if gain == 1.0 else 20.0 * math.log10(gain)
-    table.add_row(
-        "Meetings default gain",
-        f"{gain}x ({gain_db:+.1f} dB)",
-    )
+    table.add_row("Meetings default gain", f"{gain}x ({gain_db:+.1f} dB)")
+    table.add_row("Meetings auto-normalize", str(snapshot["meetings"]["auto_normalize"]))
+    table.add_row("Meetings normalize target", str(snapshot["meetings"]["normalize_target_dbfs"]))
+    table.add_row("Meetings noise reduction", str(snapshot["meetings"]["noise_reduction"]))
+    table.add_row("Meetings play command", str(snapshot["meetings"]["play_command"]))
     table.add_row("Log level", str(snapshot["log_level"]))
     console.print(table)
 
@@ -414,6 +417,66 @@ def meetings_source(
 ) -> None:
     updated, synced = _apply_update(profile, {"meetings": {"default_source": source}})
     console.print(f"Meetings default source: {updated.meetings.default_source}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("meetings-sample-rate")
+def meetings_sample_rate(
+    value: int,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    if value <= 0:
+        console.print("[red]Sample rate must be > 0.[/red]")
+        raise typer.Exit(1) from None
+    updated, synced = _apply_update(profile, {"meetings": {"sample_rate": value}})
+    console.print(f"Meetings sample rate: {updated.meetings.sample_rate}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("meetings-channels")
+def meetings_channels(
+    value: int,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    if value <= 0:
+        console.print("[red]Channels must be > 0.[/red]")
+        raise typer.Exit(1) from None
+    updated, synced = _apply_update(profile, {"meetings": {"channels": value}})
+    console.print(f"Meetings channels: {updated.meetings.channels}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("meetings-auto-normalize")
+def meetings_auto_normalize(
+    value: bool,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"meetings": {"auto_normalize": value}})
+    console.print(f"Meetings auto-normalize: {updated.meetings.auto_normalize}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("meetings-normalize-target-dbfs")
+def meetings_normalize_target_dbfs(
+    value: float,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"meetings": {"normalize_target_dbfs": value}})
+    console.print(f"Meetings normalize target dBFS: {updated.meetings.normalize_target_dbfs}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("meetings-noise-reduction")
+def meetings_noise_reduction(
+    value: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    normalized = value.strip().lower() or "off"
+    if normalized not in {"off", "ffmpeg"}:
+        console.print("[red]Noise reduction must be 'off' or 'ffmpeg'.[/red]")
+        raise typer.Exit(1) from None
+    updated, synced = _apply_update(profile, {"meetings": {"noise_reduction": normalized}})
+    console.print(f"Meetings noise reduction: {updated.meetings.noise_reduction}")
     console.print("Applied to the running daemon." if synced else "Saved on disk.")
 
 

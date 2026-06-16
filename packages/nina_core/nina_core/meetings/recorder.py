@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import audioop
 import math
 import shutil
 import struct
@@ -9,6 +10,7 @@ import threading
 import time
 import wave
 from collections.abc import Iterator
+from queue import Empty, Queue
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -50,6 +52,51 @@ def _has_sounddevice() -> bool:
         return False
 
 
+
+
+def _has_soundcard() -> bool:
+    """Return True if the optional `soundcard` backend is importable."""
+    try:
+        import soundcard  # type: ignore[import-untyped]  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def _has_ffmpeg() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+def _pcm16_bytes_from_ndarray(data: Any) -> bytes:
+    """Convert a SoundCard numpy array into mono PCM16 little-endian bytes."""
+    try:
+        import numpy as np  # type: ignore[import-untyped]
+    except Exception as exc:  # pragma: no cover - numpy is a hard dependency
+        raise RecorderError("numpy is required for the SoundCard backend") from exc
+
+    array = np.asarray(data)
+    if array.ndim == 2:
+        array = array.mean(axis=1)
+    array = np.clip(array, -1.0, 1.0)
+    pcm = (array * 32767.0).astype(np.int16)
+    return pcm.tobytes()
+
+
+def _mix_pcm16(left: bytes, right: bytes) -> bytes:
+    """Mix two PCM16 fragments with equal weight and zero-pad the shorter one."""
+    if not left:
+        return right
+    if not right:
+        return left
+    target_len = max(len(left), len(right))
+    if len(left) < target_len:
+        left = left + (b"\x00" * (target_len - len(left)))
+    if len(right) < target_len:
+        right = right + (b"\x00" * (target_len - len(right)))
+    mixed = audioop.add(left, right, 2)
+    return audioop.mul(mixed, 2, 0.5)
+
 def is_portaudio_available() -> bool:
     """True when the PortAudio-backed mic capture path is usable.
 
@@ -85,6 +132,272 @@ class NullAudioSource:
 
     def close(self) -> None:
         self._stop.set()
+
+
+class SoundCardSource:
+    """Capture audio with the cross-platform `soundcard` backend."""
+
+    def __init__(self, device: str | None = None, *, kind: str = "mic") -> None:
+        self._device = device
+        self._kind = kind
+        self._card: Any | None = None
+        self._recorder: Any | None = None
+        self._recorder_cm: Any | None = None
+        self._stop = threading.Event()
+        self._sample_rate = 16000
+        self._channels = 1
+        self._chunk_frames = 0
+        self._mode = ""
+
+    def open(self, sample_rate: int, channels: int) -> None:
+        try:
+            import soundcard as sc  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise RecorderError(
+                "soundcard is not installed. Run `pip install soundcard` to use the cross-platform backend."
+            ) from exc
+
+        self._sample_rate = sample_rate
+        self._channels = channels
+        self._chunk_frames = max(256, int(sample_rate / 10))
+        try:
+            if self._kind == "speaker":
+                card = sc.get_speaker(self._device) if self._device else sc.default_speaker()
+            else:
+                card = sc.get_microphone(self._device) if self._device else sc.default_microphone()
+        except Exception as exc:
+            raise RecorderError(f"Failed to resolve SoundCard {self._kind}: {exc}") from exc
+        if card is None:
+            raise RecorderError(f"No SoundCard {self._kind} available")
+        self._card = card
+
+        recorder_factory = getattr(card, "recorder", None)
+        if callable(recorder_factory):
+            try:
+                self._recorder_cm = recorder_factory(samplerate=sample_rate, blocksize=self._chunk_frames)
+                if hasattr(self._recorder_cm, "__enter__"):
+                    self._recorder = self._recorder_cm.__enter__()
+                else:
+                    self._recorder = self._recorder_cm
+                self._mode = "recorder"
+                return
+            except Exception as exc:
+                raise RecorderError(f"Failed to open SoundCard recorder: {exc}") from exc
+
+        record_fn = getattr(card, "record", None)
+        if not callable(record_fn):
+            raise RecorderError("SoundCard backend does not expose a record API")
+        self._recorder = record_fn
+        self._mode = "record"
+
+    def stream(self) -> Iterator[bytes]:
+        if self._recorder is None:
+            raise RecorderError("SoundCard source not opened")
+        while not self._stop.is_set():
+            try:
+                if self._mode == "recorder":
+                    data = self._recorder.record(numframes=self._chunk_frames)
+                else:
+                    data = self._recorder(samplerate=self._sample_rate, numframes=self._chunk_frames)
+            except Exception as exc:
+                raise RecorderError(f"SoundCard capture failed: {exc}") from exc
+            if data is None:
+                break
+            chunk = _pcm16_bytes_from_ndarray(data)
+            if chunk:
+                yield chunk
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._recorder_cm is not None:
+            try:
+                if hasattr(self._recorder_cm, "__exit__"):
+                    self._recorder_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+        self._recorder = None
+        self._recorder_cm = None
+
+
+class WasapiLoopbackSource:
+    """Capture Windows system audio with a WASAPI loopback stream."""
+
+    def __init__(self, device: str | int | None = None) -> None:
+        self._device = device
+        self._stream: Any | None = None
+        self._queue: list[bytes] = []
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._sample_rate = 16000
+        self._channels = 1
+
+    def open(self, sample_rate: int, channels: int) -> None:
+        if not sys.platform.startswith("win"):
+            raise RecorderError("WASAPI loopback capture is only supported on Windows.")
+        try:
+            import sounddevice as sd  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise RecorderError(
+                "sounddevice is not installed. Run `pip install sounddevice` to use Windows loopback capture."
+            ) from exc
+
+        self._sample_rate = sample_rate
+        self._channels = channels
+
+        def callback(indata: Any, frames: int, time_info: Any, status: Any) -> None:
+            if status:
+                pass
+            with self._lock:
+                self._queue.append(bytes(indata))
+
+        kwargs: dict[str, Any] = {
+            "samplerate": sample_rate,
+            "channels": channels,
+            "dtype": "int16",
+            "device": self._device,
+            "callback": callback,
+            "blocksize": max(256, int(sample_rate / 10)),
+        }
+        try:
+            extra_settings = getattr(sd, "WasapiSettings", None)
+            if callable(extra_settings):
+                kwargs["extra_settings"] = extra_settings(loopback=True)
+            self._stream = sd.InputStream(**kwargs)
+            self._stream.start()
+        except Exception as exc:
+            raise RecorderError(f"Failed to open WASAPI loopback input: {exc}") from exc
+
+    def stream(self) -> Iterator[bytes]:
+        if self._stream is None:
+            raise RecorderError("WASAPI loopback source not opened")
+        while not self._stop.is_set():
+            chunk: bytes | None = None
+            with self._lock:
+                if self._queue:
+                    chunk = b"".join(self._queue)
+                    self._queue.clear()
+            if chunk:
+                yield chunk
+            else:
+                time.sleep(0.02)
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._stream is not None:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+
+
+class MixedAudioSource:
+    """Blend two PCM16 audio sources into a single mono stream."""
+
+    def __init__(self, left: AudioSource, right: AudioSource) -> None:
+        self._left = left
+        self._right = right
+        self._left_queue: Queue[bytes | None] = Queue()
+        self._right_queue: Queue[bytes | None] = Queue()
+        self._threads: list[threading.Thread] = []
+        self._errors: list[Exception] = []
+        self._stop = threading.Event()
+        self._opened = False
+
+    def open(self, sample_rate: int, channels: int) -> None:
+        self._left.open(sample_rate, channels)
+        try:
+            self._right.open(sample_rate, channels)
+        except Exception:
+            try:
+                self._left.close()
+            except Exception:
+                pass
+            raise
+
+        self._opened = True
+        self._threads = [
+            threading.Thread(target=self._pump, args=(self._left, self._left_queue), daemon=True),
+            threading.Thread(target=self._pump, args=(self._right, self._right_queue), daemon=True),
+        ]
+        for thread in self._threads:
+            thread.start()
+
+    def _pump(self, source: AudioSource, out_queue: Queue[bytes | None]) -> None:
+        try:
+            for chunk in source.stream():
+                if self._stop.is_set():
+                    break
+                out_queue.put(chunk)
+        except Exception as exc:
+            self._errors.append(exc)
+        finally:
+            out_queue.put(None)
+
+    def stream(self) -> Iterator[bytes]:
+        if not self._opened:
+            raise RecorderError("Mixed source not opened")
+        left_done = False
+        right_done = False
+        left_buf = b""
+        right_buf = b""
+        while not self._stop.is_set():
+            if self._errors:
+                raise RecorderError(f"Mixed audio source failed: {self._errors[0]}")
+            if not left_buf and not left_done:
+                try:
+                    item = self._left_queue.get(timeout=0.1)
+                except Empty:
+                    item = None
+                else:
+                    if item is None:
+                        left_done = True
+                    else:
+                        left_buf = item
+            if not right_buf and not right_done:
+                try:
+                    item = self._right_queue.get(timeout=0.1)
+                except Empty:
+                    item = None
+                else:
+                    if item is None:
+                        right_done = True
+                    else:
+                        right_buf = item
+
+            if self._errors:
+                raise RecorderError(f"Mixed audio source failed: {self._errors[0]}")
+            if left_buf and right_buf:
+                yield _mix_pcm16(left_buf, right_buf)
+                left_buf = b""
+                right_buf = b""
+                continue
+            if left_buf and right_done:
+                yield left_buf
+                left_buf = b""
+                continue
+            if right_buf and left_done:
+                yield right_buf
+                right_buf = b""
+                continue
+            if left_done and right_done:
+                break
+
+    def close(self) -> None:
+        self._stop.set()
+        try:
+            self._left.close()
+        except Exception:
+            pass
+        try:
+            self._right.close()
+        except Exception:
+            pass
+        for thread in self._threads:
+            thread.join(timeout=1)
+        self._opened = False
+
 
 
 class PortAudioSource:
@@ -274,17 +587,20 @@ def make_audio_source(
     device: str | int | None = None,
     *,
     prefer_null: bool = False,
+    mic_device: str | int | None = None,
+    system_device: str | int | None = None,
 ) -> AudioSource:
-    """Factory used by the CLI to select an audio source.
+    """Factory used by the CLI and daemon to select an audio source.
 
     Recognised source values:
 
-    - `mic`     — PortAudio (sounddevice). Falls back to `parec` against
-                  `@DEFAULT_SOURCE@` when PortAudio is not available.
-    - `system`  — `parec` against `@DEFAULT_MONITOR@` (system audio output).
-    - `parec`   — `parec` against a user-chosen device (mic or monitor).
-                  The `--device` flag is mandatory; we fall back to
-                  `@DEFAULT_SOURCE@` if not given.
+    - `mic`     — PortAudio (`sounddevice`), then `soundcard`, then `parec`
+                  on Linux.
+    - `system`  — Linux monitor capture via `parec`, Windows WASAPI loopback,
+                  then `soundcard` speaker capture, then an explicit input
+                  device when the user points at a loopback/virtual source.
+    - `mixed`   — mic + system capture combined into one mono stream.
+    - `parec`   — direct PulseAudio/PipeWire source capture.
 
     `prefer_null=True` returns `NullAudioSource` regardless of `source`,
     which is useful for tests and headless runs.
@@ -292,20 +608,48 @@ def make_audio_source(
 
     if prefer_null:
         return NullAudioSource()
+    if source == "mixed":
+        mic = make_audio_source(
+            "mic",
+            device=mic_device if mic_device is not None else device,
+            prefer_null=False,
+        )
+        system = make_audio_source(
+            "system",
+            device=system_device if system_device is not None else device,
+            prefer_null=False,
+        )
+        return MixedAudioSource(mic, system)
     if source == "mic":
         if is_portaudio_available():
             return PortAudioSource(device=device)
+        if _has_soundcard():
+            return SoundCardSource(device=device if isinstance(device, str) else None, kind="mic")
         # Fallback: record from the default PulseAudio/PipeWire input
         # source (the actual mic). Works on systems without libportaudio2
         # installed (e.g. a vanilla PipeWire desktop).
         if not _has_parec():
             raise RecorderError(
                 "No audio capture backend available. Install `sounddevice` "
-                "(requires libportaudio2) OR install `pulseaudio-utils` for `parec`."
+                "(requires libportaudio2) OR install `pulseaudio-utils` for `parec` "
+                "or `soundcard` for the portable backend."
             )
-        return PulseSource(device=device, kind="source")
+        return PulseSource(device=device if isinstance(device, str) else None, kind="source")
     if source == "system":
-        return PulseSource(device=device, kind="monitor")
+        if sys.platform.startswith("linux") and _has_parec():
+            return PulseSource(device=device if isinstance(device, str) else None, kind="monitor")
+        if sys.platform.startswith("win") and _has_sounddevice():
+            return WasapiLoopbackSource(device=device)
+        if _has_soundcard():
+            return SoundCardSource(device=device if isinstance(device, str) else None, kind="speaker")
+        if _has_sounddevice() and device is not None:
+            return PortAudioSource(device=device)
+        if _has_parec():
+            return PulseSource(device=device if isinstance(device, str) else None, kind="monitor")
+        raise RecorderError(
+            "No system-audio capture backend available. Install `soundcard`, "
+            "`sounddevice`, or use a Linux PulseAudio/PipeWire monitor source."
+        )
     if source == "parec":
         return PulseSource(device=device or "@DEFAULT_SOURCE@", kind="source")
     raise RecorderError(f"Unknown audio source: {source!r}")
@@ -338,6 +682,29 @@ def list_input_devices() -> list[dict[str, str]]:
     except Exception:
         return devices
     return devices  # type: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUnknownArgumentType]
+
+
+def list_soundcard_devices() -> dict[str, list[dict[str, str]]]:
+    """Return microphone and speaker names from the optional SoundCard backend."""
+    if not _has_soundcard():
+        return {"microphones": [], "speakers": []}
+    try:
+        import soundcard as sc  # type: ignore[import-untyped]
+    except Exception:
+        return {"microphones": [], "speakers": []}
+    microphones: list[dict[str, str]] = []
+    speakers: list[dict[str, str]] = []
+    try:
+        for mic in sc.all_microphones():
+            microphones.append({"name": getattr(mic, "name", str(mic))})
+    except Exception:
+        pass
+    try:
+        for speaker in sc.all_speakers():
+            speakers.append({"name": getattr(speaker, "name", str(speaker))})
+    except Exception:
+        pass
+    return {"microphones": microphones, "speakers": speakers}
 
 
 def list_pulse_sources() -> list[dict[str, str]]:
@@ -387,6 +754,7 @@ def record_wav(
     sample_rate: int,
     channels: int,
     duration_seconds: float | None = None,
+    stop_event: threading.Event | None = None,
 ) -> int:
     """Stream from `source` into a WAV file. Returns the size in bytes.
 
@@ -403,6 +771,8 @@ def record_wav(
     try:
         for chunk in source.stream():
             writer.writeframes(chunk)
+            if stop_event is not None and stop_event.is_set():
+                break
             if deadline is not None and time.monotonic() >= deadline:
                 break
     except BaseException as exc:  # noqa: BLE001 — intentional wide catch
@@ -579,3 +949,48 @@ def normalize_wav(path: Path, target_dbfs: float = -3.0) -> tuple[float, float]:
     factor = 10.0 ** (headroom_db / 20.0)
     new_peak_dbfs = boost_wav(path, factor)
     return (current_dbfs, new_peak_dbfs)
+
+
+def apply_ffmpeg_noise_reduction(path: Path) -> bool:
+    """Apply a best-effort noise reduction pass using ffmpeg's `afftdn` filter.
+
+    Returns True when processing succeeded. If ffmpeg is not available or the
+    command fails, the caller can ignore the result and keep the original file.
+    """
+    path = Path(path)
+    if not _has_ffmpeg():
+        return False
+    sample_rate, channels, _sample_width, _raw = _read_wav_samples(path)
+    tmp = path.with_suffix(path.suffix + ".denoise.tmp")
+    try:
+        result = subprocess.run(
+            [
+                shutil.which("ffmpeg") or "ffmpeg",
+                "-y",
+                "-i",
+                str(path),
+                "-af",
+                "afftdn",
+                "-ar",
+                str(sample_rate),
+                "-ac",
+                str(channels),
+                "-c:a",
+                "pcm_s16le",
+                str(tmp),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60 * 30,
+        )
+    except Exception:
+        return False
+    if result.returncode != 0 or not tmp.exists():
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return False
+    tmp.replace(path)
+    return True

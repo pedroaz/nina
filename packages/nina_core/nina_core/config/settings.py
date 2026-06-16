@@ -36,7 +36,7 @@ class TranscriptionConfig(BaseModel):
 
 
 class MeetingsConfig(BaseModel):
-    default_source: str = "mic"
+    default_source: str = "mixed"
     auto_summarize: bool = False
     open_command: str = "xdg-open obsidian://open?path={path}"
     play_command: str = "xdg-open {path}"
@@ -47,6 +47,9 @@ class MeetingsConfig(BaseModel):
     # (PipeWire/PulseAudio sometimes defaults to a low capture volume).
     # Per-call `--gain` on `nina r` / `nina meeting record` still overrides.
     default_gain: float = 1.0
+    auto_normalize: bool = True
+    normalize_target_dbfs: float = -3.0
+    noise_reduction: str = "off"
 
 
 class NinaConfig(BaseModel):

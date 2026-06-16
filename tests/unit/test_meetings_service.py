@@ -43,6 +43,27 @@ def test_meeting_service_lifecycle(isolated_config: Path) -> None:
     assert detail["title"] == "Standup"
 
 
+def test_meeting_service_stop_is_idempotent(isolated_config: Path) -> None:
+    db_path = get_database_path(isolated_config)
+    recordings = get_recordings_path(isolated_config)
+    vault = isolated_config / "vault"
+    service = MeetingService(str(db_path), recordings, vault)
+
+    started = service.start(title="Idempotent stop", source="mic", sample_rate=16000, channels=1)
+    meeting_id = started["id"]
+    audio_file = Path(started["audio_path"])
+    audio_file.parent.mkdir(parents=True, exist_ok=True)
+    audio_file.write_bytes(b"RIFF....WAVE")
+
+    first = service.stop(meeting_id, duration_seconds=12, size_bytes=16)
+    assert first is not None
+    second = service.stop(meeting_id, error="late error")
+    assert second is not None
+    assert second["status"] == "stopped"
+    assert second["error"] == "late error"
+    assert second["note_path"] == first["note_path"]
+
+
 def test_meeting_service_update_status(isolated_config: Path) -> None:
     db_path = get_database_path(isolated_config)
     recordings = get_recordings_path(isolated_config)

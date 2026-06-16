@@ -54,5 +54,7 @@ def api_client(isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     scheduler.shutdown()
     if hasattr(app.state, "scheduler"):
         del app.state.scheduler
+    if hasattr(app.state, "meeting_recorder"):
+        del app.state.meeting_recorder
     if hasattr(app.state, "config"):
         del app.state.config

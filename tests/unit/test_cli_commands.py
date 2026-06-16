@@ -482,6 +482,15 @@ def test_tui_binary_resolution_prefers_env(monkeypatch, tmp_path) -> None:  # ty
     assert main_module._resolve_tui_binary() == tui_bin
 
 
+def test_version_command_prints_nina_version() -> None:
+    from nina_core import __version__
+
+    for argv in (["version"], ["v"], ["-v"], ["--version"]):
+        result = runner.invoke(app, argv)
+        assert result.exit_code == 0, argv
+        assert result.stdout.strip() == f"Nina {__version__}", argv
+
+
 def test_tui_alias_invokes_the_tui_command(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     tui_bin = tmp_path / "nina-tui"
     tui_bin.write_text("binary")

@@ -113,6 +113,7 @@ class MeetingService:
         meeting_id: str,
         duration_seconds: int | None = None,
         size_bytes: int | None = None,
+        error: str | None = None,
     ) -> dict[str, Any] | None:
         db = self._session()
         try:
@@ -120,38 +121,49 @@ class MeetingService:
             if meeting is None:
                 return None
             now = _now()
-            meeting.status = "stopped"
-            meeting.ended_at = now
-            if duration_seconds is not None:
-                meeting.duration_seconds = duration_seconds
-            elif meeting.started_at:
-                try:
-                    start_dt = datetime.fromisoformat(meeting.started_at)
-                    meeting.duration_seconds = max(
-                        0, int((datetime.fromisoformat(now) - start_dt).total_seconds())
-                    )
-                except ValueError:
-                    pass
-            if size_bytes is not None:
-                meeting.audio_size_bytes = size_bytes
-            meeting.updated_at = now
-            db.commit()
-            db.refresh(meeting)
+            if meeting.status != "stopped":
+                meeting.status = "stopped"
+                meeting.ended_at = now
+                if duration_seconds is not None:
+                    meeting.duration_seconds = duration_seconds
+                elif meeting.started_at:
+                    try:
+                        start_dt = datetime.fromisoformat(meeting.started_at)
+                        meeting.duration_seconds = max(
+                            0, int((datetime.fromisoformat(now) - start_dt).total_seconds())
+                        )
+                    except ValueError:
+                        pass
+                if size_bytes is not None:
+                    meeting.audio_size_bytes = size_bytes
+                if error is not None:
+                    meeting.error = error
+                meeting.updated_at = now
+                db.commit()
+                db.refresh(meeting)
+            elif error is not None and not meeting.error:
+                meeting.error = error
+                meeting.updated_at = now
+                db.commit()
+                db.refresh(meeting)
             payload = self._serialize(meeting)
         finally:
             db.close()
-        self.obsidian.create_meeting_note(
-            meeting_id=payload["id"],
-            title=payload["title"],
-            started_at=payload["started_at"],
-            ended_at=payload.get("ended_at"),
-            duration_seconds=payload.get("duration_seconds"),
-            source=payload.get("source") or "mic",
-            audio_path=payload.get("audio_path") or "",
-            transcript_status="pending",
-            summary_status="pending",
-            workflow_run_id=payload.get("workflow_run_id"),
-        )
+
+        note_path = self.vault_path / _meeting_path(payload["title"], payload["started_at"])
+        if not note_path.exists():
+            self.obsidian.create_meeting_note(
+                meeting_id=payload["id"],
+                title=payload["title"],
+                started_at=payload["started_at"],
+                ended_at=payload.get("ended_at"),
+                duration_seconds=payload.get("duration_seconds"),
+                source=payload.get("source") or "mic",
+                audio_path=payload.get("audio_path") or "",
+                transcript_status="pending",
+                summary_status="pending",
+                workflow_run_id=payload.get("workflow_run_id"),
+            )
         return payload
 
     def update_status(

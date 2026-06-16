@@ -12,6 +12,7 @@ from nina_core.meetings.recorder import (
     PortAudioSource,
     PulseSource,
     RecorderError,
+    SoundCardSource,
     boost_wav,
     is_portaudio_available,
     make_audio_source,
@@ -63,9 +64,18 @@ def test_make_audio_source_parec_returns_pulse_source() -> None:
     assert isinstance(source, PulseSource)
 
 
-def test_make_audio_source_system_returns_pulse_source_with_monitor_kind() -> None:
+def test_make_audio_source_system_returns_supported_source() -> None:
     source = make_audio_source("system")
-    assert isinstance(source, PulseSource)
+    assert isinstance(source, (PulseSource, SoundCardSource))
+
+
+def test_make_audio_source_system_falls_back_to_soundcard_when_parec_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("nina_core.meetings.recorder._has_parec", lambda: False)
+    monkeypatch.setattr("nina_core.meetings.recorder._has_soundcard", lambda: True)
+    source = make_audio_source("system")
+    assert isinstance(source, SoundCardSource)
 
 
 def test_make_audio_source_mic_falls_back_to_pulse_when_portaudio_unavailable(

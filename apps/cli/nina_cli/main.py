@@ -86,6 +86,21 @@ app = typer.Typer(
 )
 
 
+@app.callback(invoke_without_command=True)
+def _main_callback(
+    version: bool = typer.Option(
+        False,
+        "-v",
+        "--version",
+        help="Print the Nina version and exit.",
+        is_eager=True,
+    ),
+) -> None:
+    if version:
+        _print_version()
+        raise typer.Exit()
+
+
 def _add_alias(parent: typer.Typer, sub_app: typer.Typer, alias: str) -> None:
     """Register a hidden sub-app alias so `nina <alias>` works but doesn't clutter help."""
     parent.add_typer(sub_app, name=alias, hidden=True)
@@ -309,18 +324,23 @@ def nina_r(
         "-s",
         "--source",
         help=(
-            "Audio source: mic (default), system (sink monitor), or parec "
-            "(explicit PulseAudio/PipeWire source via `--device`)"
+            "Audio source: mic, system, mixed, or parec (explicit PulseAudio/PipeWire source via `--device`)"
         ),
     ),
     device: str | None = typer.Option(
-        None, "-d", "--device", help="Audio device name or index (see `nina mt devices`)"
+        None, "-d", "--device", help="Fallback audio device name or index"
+    ),
+    mic_device: str | None = typer.Option(
+        None, "--mic-device", help="Mic device name or index"
+    ),
+    system_device: str | None = typer.Option(
+        None, "--system-device", help="System/loopback device name or index"
     ),
     sample_rate: int = typer.Option(
-        0, "-r", "--sample-rate", help="Sample rate in Hz (default from config, usually 16000)"
+        0, "-r", "--sample-rate", help="Sample rate in Hz (default from config)"
     ),
     channels: int = typer.Option(
-        0, "-c", "--channels", help="Channel count (default from config, usually 1)"
+        0, "-c", "--channels", help="Channel count (default from config)"
     ),
     duration: int | None = typer.Option(
         None, "-D", "--duration", help="Auto-stop after this many seconds"
@@ -330,13 +350,23 @@ def nina_r(
         "--gain",
         help=(
             "Linear gain applied after recording (e.g. 4.0 = +12 dB). "
-            "Defaults to `meetings.default_gain` in config.yaml."
+            "Defaults to the daemon config if omitted."
         ),
     ),
-    auto_normalize: bool = typer.Option(
-        False,
-        "--auto-normalize",
-        help="Auto-gain the WAV so its peak hits -3 dBFS.",
+    auto_normalize: bool | None = typer.Option(
+        None,
+        "--auto-normalize/--no-auto-normalize",
+        help="Auto-gain the WAV so its peak hits the configured dBFS target.",
+    ),
+    normalize_target_dbfs: float | None = typer.Option(
+        None,
+        "--normalize-target-dbfs",
+        help="Peak dBFS target used when auto-normalizing.",
+    ),
+    noise_reduction: str | None = typer.Option(
+        None,
+        "--noise-reduction",
+        help="Optional noise reduction mode: off or ffmpeg.",
     ),
 ) -> None:
     """Quick alias for `nina meeting record`. Stops on Ctrl+C.
@@ -357,11 +387,15 @@ def nina_r(
         title=title,
         source=source,
         device=device,
+        mic_device=mic_device,
+        system_device=system_device,
         sample_rate=sample_rate,
         channels=channels,
         duration=duration,
         gain=gain,
         auto_normalize=auto_normalize,
+        normalize_target_dbfs=normalize_target_dbfs,
+        noise_reduction=noise_reduction,
     )
 
 
@@ -383,11 +417,20 @@ def init(
     console.print(f"  Vault: {get_vault_path(config_dir)}")
 
 
-@app.command("version", help="Print the Nina version.")
-def version() -> None:
+def _print_version() -> None:
     from nina_core import __version__
 
     console.print(f"Nina {__version__}")
+
+
+@app.command("v", help="Print the Nina version. Alias for `nina version`.")
+def nina_v() -> None:
+    _print_version()
+
+
+@app.command("version", help="Print the Nina version.")
+def version() -> None:
+    _print_version()
 
 
 @app.command("status", help="Show daemon health, Codex auth, and config paths.")
@@ -536,6 +579,9 @@ def main() -> None:
         return
     if sys.argv[1] == "h":
         _print_short_help()
+        return
+    if sys.argv[1] in {"v", "-v", "--version"}:
+        _print_version()
         return
     if sys.argv[1] in {"-h", "--help"}:
         # Translate short/full help flags to the full typer help.

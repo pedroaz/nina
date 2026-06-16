@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import signal
 import subprocess
 import time
 from pathlib import Path
@@ -13,20 +12,14 @@ import httpx
 import typer
 from rich.console import Console
 
-from nina_core.config import (
-    get_config_dir,
-    get_recordings_path,
-    load_effective_config,
-)
+from nina_core.config import get_config_dir, load_effective_config
 from nina_core.meetings.recorder import (
-    RecorderError,
     boost_wav,
     list_input_devices,
     list_pulse_sources,
-    make_audio_source,
+    list_soundcard_devices,
     normalize_wav,
     peak_dbfs,
-    record_wav,
 )
 
 from .api import api_base, headers, request
@@ -43,32 +36,8 @@ meeting_app = typer.Typer(
 )
 
 
-def _runtime_meetings_dir() -> Path:
-    config_dir = get_config_dir(os.environ.get("NINA_PROFILE", "default"))
-    return get_recordings_path(config_dir)
-
-
 def _resolve_config_dir() -> Path:
     return get_config_dir(os.environ.get("NINA_PROFILE", "default"))
-
-
-def _load_meetings_config() -> tuple[int, int, str, float]:
-    config_dir = _resolve_config_dir()
-    try:
-        config = load_effective_config(config_dir)
-        source = config.meetings.default_source or "mic"
-        gain = config.meetings.default_gain if config.meetings.default_gain > 0 else 1.0
-        return config.meetings.sample_rate, config.meetings.channels, source, gain
-    except Exception:
-        return 16000, 1, "mic", 1.0
-
-
-def _resolve_device_index(device: str | None) -> str | int | None:
-    if not device:
-        return None
-    if device.isdigit():
-        return int(device)
-    return device
 
 
 def _print_json(data: Any) -> None:
@@ -332,10 +301,10 @@ def meeting_boost(
 
 @meeting_app.command("devices")
 def meeting_devices() -> None:
-    """List audio input devices and PulseAudio sources."""
-    from nina_core.meetings.recorder import is_portaudio_available, _has_parec
+    """List local audio inputs plus available PulseAudio/PipeWire and SoundCard devices."""
 
     inputs = list_input_devices()
+    soundcard = list_soundcard_devices()
     sources = list_pulse_sources()
     if inputs:
         console.print("[bold]Input devices (PortAudio):[/bold]")
@@ -344,14 +313,16 @@ def meeting_devices() -> None:
                 f"  [{dev['index']}] {dev['name']} (host={dev['host']}, channels={dev['channels']})"
             )
     else:
-        console.print(
-            "No PortAudio input devices found."
-            + (
-                " Run `pip install sounddevice` (requires libportaudio2)."
-                if not is_portaudio_available()
-                else ""
-            )
-        )
+        console.print("No PortAudio input devices found.")
+
+    if soundcard.get("microphones"):
+        console.print("[bold]SoundCard microphones:[/bold]")
+        for mic in soundcard["microphones"]:
+            console.print(f"  {mic['name']}")
+    if soundcard.get("speakers"):
+        console.print("[bold]SoundCard speakers:[/bold]")
+        for speaker in soundcard["speakers"]:
+            console.print(f"  {speaker['name']}")
     if sources:
         console.print("[bold]PulseAudio / PipeWire sources:[/bold]")
         for src in sources:
@@ -360,215 +331,101 @@ def meeting_devices() -> None:
             kind = " (system output)" if is_monitor else " (input)"
             console.print(f"  {src['name']}{kind}{(' — ' + desc) if desc else ''}")
     else:
-        if _has_parec():
-            console.print(
-                "`parec` is available, but `pactl` is not. Run `pacmd list-sources` or `pactl list short sources` to inspect sources manually."
-            )
-        else:
-            console.print(
-                "No PulseAudio sources found. Install `pulseaudio-utils` for `parec` and `pactl`."
-            )
+        console.print("No PulseAudio sources found.")
 
-    if not is_portaudio_available() and sources:
+    if not inputs and not soundcard.get("microphones") and sources:
         mic_sources = [s for s in sources if ".monitor" not in s["name"]]
         if mic_sources:
-            console.print(
-                "\nPortAudio is not available. To record from your mic via PulseAudio, run:"
-            )
+            console.print("")
+            console.print("To record from your mic via PulseAudio, run:")
             first_mic = mic_sources[0]["name"]
             console.print(f'  [cyan]nina r "title" --source parec --device {first_mic}[/cyan]')
+
 
 
 def record_meeting(
     title: str,
     source: str | None = None,
     device: str | None = None,
+    mic_device: str | None = None,
+    system_device: str | None = None,
     sample_rate: int = 0,
     channels: int = 0,
     duration: int | None = None,
     gain: float | None = None,
-    auto_normalize: bool = False,
+    auto_normalize: bool | None = None,
+    normalize_target_dbfs: float | None = None,
+    noise_reduction: str | None = None,
 ) -> None:
-    """Run the recording loop and create the meeting note.
+    """Start a daemon-owned recording and wait until it finishes.
 
-    Used by both `nina meeting record` and the top-level `nina r` shortcut.
-
-    `gain` is a linear multiplier applied to the captured WAV after
-    recording (e.g. 2.0 = +6 dB, 4.0 = +12 dB). `None` means "use
-    `meetings.default_gain` from config". `auto_normalize` auto-gains
-    the WAV to peak at -3 dBFS, which is the safest way to fix quiet
-    recordings when you don't know the source's level in advance.
+    The daemon owns the capture backend. The CLI just starts the session,
+    waits for the row to stop, and asks the daemon to stop it if the user
+    hits Ctrl+C.
     """
-    cfg_rate, cfg_channels, cfg_source, cfg_default_gain = _load_meetings_config()
-    sr = sample_rate or cfg_rate
-    ch = channels or cfg_channels
-    chosen_source = source or cfg_source
-    effective_gain = gain if gain is not None else cfg_default_gain
-
     if not title or title.strip().lower() in {"untitled"}:
         title = f"Meeting {time.strftime('%Y-%m-%d %H:%M')}"
 
-    payload: dict[str, Any] = {
-        "title": title,
-        "source": chosen_source,
-        "sample_rate": sr,
-        "channels": ch,
-        "audio_format": "wav",
-    }
-    if device:
-        payload["device_name"] = device
+    payload: dict[str, Any] = {"title": title}
+    if source is not None:
+        payload["source"] = source
+    if device is not None:
+        payload["device"] = device
+    if mic_device is not None:
+        payload["mic_device"] = mic_device
+    if system_device is not None:
+        payload["system_device"] = system_device
+    if sample_rate > 0:
+        payload["sample_rate"] = sample_rate
+    if channels > 0:
+        payload["channels"] = channels
+    if duration is not None:
+        payload["duration_seconds"] = duration
+    if gain is not None:
+        payload["gain"] = gain
+    if auto_normalize is not None:
+        payload["auto_normalize"] = auto_normalize
+    if normalize_target_dbfs is not None:
+        payload["normalize_target_dbfs"] = normalize_target_dbfs
+    if noise_reduction is not None:
+        payload["noise_reduction"] = noise_reduction
 
     try:
-        resp = httpx_post("/meetings", json=payload)
+        meeting = httpx_post("/meetings/record", json=payload)
     except Exception as exc:
         console.print(f"Failed to start meeting: {exc}")
         raise typer.Exit(1) from None
-    meeting = resp
+
     meeting_id = meeting["id"]
-    audio_path = Path(meeting["audio_path"])
-    console.print(f"Recording {meeting_id} -> {audio_path}")
+    console.print(f"Recording {meeting_id} -> {meeting.get('audio_path', '')}")
+    if meeting.get("device_name"):
+        console.print(f"Source: {meeting.get('source')} ({meeting.get('device_name')})")
 
-    recordings_dir = _runtime_meetings_dir()
-    recordings_dir.mkdir(parents=True, exist_ok=True)
-
-    audio_source = make_audio_source(chosen_source, device=_resolve_device_index(device))
-    stop_signal = {"requested": False}
-
-    def _request_stop(_signum: int, _frame: object) -> None:
-        stop_signal["requested"] = True
-
-    had_signal = False
     try:
-        signal.signal(signal.SIGINT, _request_stop)
-        had_signal = True
-    except ValueError:
-        pass
-    try:
-        signal.signal(signal.SIGTERM, _request_stop)
-    except ValueError:
-        pass
-
-    started = time.monotonic()
-    size_bytes = 0
-    record_error: str | None = None
-    try:
-        # Open the source with the chosen sample rate / channels. This is
-        # where `PortAudioSource` creates the input stream and where
-        # `PulseSource` forks `parec`. Without this call, the source has
-        # no underlying capture device and `stream()` raises immediately.
-        audio_source.open(sr, ch)
-        size_bytes = record_wav(
-            audio_path,
-            audio_source,
-            sample_rate=sr,
-            channels=ch,
-            duration_seconds=float(duration) if duration else None,
-        )
-    except RecorderError as exc:
-        record_error = str(exc)
-        console.print(f"Recording failed: {exc}")
-        console.print(
-            "Use `nina meeting devices` to inspect available inputs, "
-            "or `--source parec --device <name>` to pick a specific "
-            "PulseAudio/PipeWire source. `--source system` captures the "
-            "default sink monitor (other people on the call)."
-        )
+        while True:
+            current = request("GET", f"/meetings/{meeting_id}").json()
+            status = current.get("status")
+            if status != "recording":
+                meeting = current
+                break
+            time.sleep(1.0)
     except KeyboardInterrupt:
-        pass
-    finally:
-        if had_signal:
-            try:
-                signal.signal(signal.SIGINT, signal.default_int_handler)  # type: ignore[attr-defined]
-            except Exception:
-                pass
-
-    elapsed = int(time.monotonic() - started)
-    # `record_wav` already promoted `.wav.partial` → `.wav` even on
-    # failures, so the audio we DID capture is reachable. If a
-    # `RecorderError` left us with zero bytes, fall back to inspecting
-    # the partial file as a last resort.
-    if not audio_path.is_file():
-        partial = audio_path.with_suffix(audio_path.suffix + ".partial")
-        if partial.is_file() and partial.stat().st_size > 0:
-            try:
-                partial.replace(audio_path)
-                size_bytes = audio_path.stat().st_size
-            except Exception:
-                pass
-    if not audio_path.is_file():
-        console.print("No audio file was produced.")
-        raise typer.Exit(1) from None
-
-    if size_bytes == 0:
-        size_bytes = audio_path.stat().st_size
-
-    # Optional post-capture gain / auto-normalize. The user might be
-    # running on PipeWire with a low source volume, so even a perfect
-    # capture can come back too quiet. Apply gain to the WAV in-place
-    # before the daemon sees it. The on-disk file grows by the same
-    # bytes (int math, no header changes).
-    if auto_normalize:
+        console.print("Stopping recording...")
         try:
-            before_db, after_db = normalize_wav(audio_path, target_dbfs=-3.0)
-            if after_db > before_db:
-                console.print(f"Auto-normalized: peak {before_db:.1f} dBFS → {after_db:.1f} dBFS.")
+            meeting = request("POST", f"/meetings/{meeting_id}/stop", json={}).json()
         except Exception as exc:
-            console.print(f"(auto-normalize skipped: {exc})")
-    if effective_gain != 1.0:
-        try:
-            new_peak = boost_wav(audio_path, effective_gain)
-            console.print(f"Applied gain {effective_gain}x → peak now {new_peak:.1f} dBFS.")
-        except Exception as exc:
-            console.print(f"(gain skipped: {exc})")
+            console.print(f"Failed to stop meeting: {exc}")
+            raise typer.Exit(1) from None
 
-    # Quiet-capture hint: if no gain was applied (CLI flag and config
-    # default both at 1.0) and the WAV came back unusually quiet, suggest
-    # fix-ups. This is the most common first-time-PipeWire problem.
-    if effective_gain == 1.0 and not auto_normalize:
-        try:
-            peak = peak_dbfs(audio_path)
-            if peak is not None and peak < -15.0:
-                console.print(
-                    f"[yellow]Heads up: capture peak is {peak:.1f} dBFS "
-                    "(quiet). Try one of:[/yellow]"
-                )
-                console.print(
-                    "  [cyan]nina meeting boost <id> --factor 4.0[/cyan]  (+12 dB, safe to rerun)"
-                )
-                console.print(
-                    "  [cyan]nina meeting boost <id> --normalize[/cyan]  (auto-gain to -3 dBFS)"
-                )
-                console.print(
-                    "  [cyan]wpctl set-default <source> <vol%>[/cyan]   "
-                    "(raise the system source volume for next time)"
-                )
-        except Exception:
-            pass
-
-    try:
-        stop_payload: dict[str, Any] = {
-            "duration_seconds": elapsed,
-            "size_bytes": size_bytes,
-        }
-        if record_error is not None:
-            stop_payload["error"] = record_error
-        stopped = httpx_post(f"/meetings/{meeting_id}/stop", json=stop_payload)
-    except Exception as exc:
-        console.print(f"Failed to finalize meeting: {exc}")
+    if meeting.get("error"):
+        console.print(f"Meeting {meeting_id} saved with error: {meeting['error']}")
         raise typer.Exit(1) from None
-
-    if record_error is not None:
-        console.print(
-            f"Meeting {meeting_id} saved with partial audio (error: {record_error}). "
-            "Use `nina mt transcribe` and `nina mt summarize` on the partial file."
-        )
-        raise typer.Exit(1) from None
-    note_path = stopped.get("note_path") or ""
+    note_path = meeting.get("note_path") or ""
     console.print(f"Meeting {meeting_id} saved. Note: {note_path}")
 
 
 @meeting_app.command(
-    "record", help="Record audio and create a meeting note. Stops on Ctrl+C or `--duration`."
+    "record", help="Record audio through the daemon and create a meeting note. Stops on Ctrl+C or `--duration`."
 )
 def meeting_record(
     title: str = typer.Argument("Untitled", help='Meeting title (or "Untitled" to use the date)'),
@@ -577,18 +434,23 @@ def meeting_record(
         "-s",
         "--source",
         help=(
-            "Audio source: mic (default), system (sink monitor), or parec "
-            "(explicit PulseAudio/PipeWire source via `--device`)"
+            "Audio source: mic, system, mixed, or parec (explicit PulseAudio/PipeWire source via `--device`)"
         ),
     ),
     device: str | None = typer.Option(
-        None, "-d", "--device", help="Audio device name or index (see `nina meeting devices`)"
+        None, "-d", "--device", help="Fallback audio device name or index"
+    ),
+    mic_device: str | None = typer.Option(
+        None, "--mic-device", help="Mic device name or index (overrides --device for mic capture)"
+    ),
+    system_device: str | None = typer.Option(
+        None, "--system-device", help="System/loopback device name or index (overrides --device for system capture)"
     ),
     sample_rate: int = typer.Option(
-        0, "-r", "--sample-rate", help="Sample rate in Hz (default from config, usually 16000)"
+        0, "-r", "--sample-rate", help="Sample rate in Hz (default from config)"
     ),
     channels: int = typer.Option(
-        0, "-c", "--channels", help="Channel count (default from config, usually 1)"
+        0, "-c", "--channels", help="Channel count (default from config)"
     ),
     duration: int | None = typer.Option(
         None, "-D", "--duration", help="Auto-stop after this many seconds"
@@ -597,55 +459,40 @@ def meeting_record(
         None,
         "--gain",
         help=(
-            "Linear gain applied to the captured WAV after recording "
-            "(e.g. 2.0 = +6 dB, 4.0 = +12 dB). Useful when the source volume is low. "
-            "Defaults to `meetings.default_gain` in config.yaml. Pass an explicit "
-            "value to override for this call."
+            "Linear gain applied after recording (e.g. 4.0 = +12 dB). "
+            "Defaults to the daemon config if omitted."
         ),
     ),
-    auto_normalize: bool = typer.Option(
-        False,
-        "--auto-normalize",
-        help="Auto-gain the WAV so its peak hits -3 dBFS (overrides --gain if both are set).",
+    auto_normalize: bool | None = typer.Option(
+        None,
+        "--auto-normalize/--no-auto-normalize",
+        help="Auto-gain the WAV so its peak hits the configured dBFS target.",
+    ),
+    normalize_target_dbfs: float | None = typer.Option(
+        None,
+        "--normalize-target-dbfs",
+        help="Peak dBFS target used when auto-normalizing.",
+    ),
+    noise_reduction: str | None = typer.Option(
+        None,
+        "--noise-reduction",
+        help="Optional noise reduction mode: off or ffmpeg.",
     ),
 ) -> None:
-    """Record audio from the local machine and create a meeting note.
-
-    Captures your mic by default, or the system audio sink (PulseAudio/PipeWire
-    monitor) when `--source system` is set, which is what you want for capturing
-    other participants in a Teams, Zoom, or Meet call. Use `--source parec`
-    with `--device <source-name>` to target a specific PulseAudio/PipeWire
-    source (useful on systems where libportaudio2 is missing but PipeWire's
-    pulse-compat layer is present).
-
-    If the captured audio is too quiet (e.g. a low PipeWire source volume),
-    pass `--gain 4.0` (+12 dB) or `--auto-normalize` (auto-gain to
-    -3 dBFS). You can also boost an existing file with
-    `nina meeting boost <id>`.
-
-    Examples:
-
-        nina meeting record "Quarterly planning"
-
-        nina r "Standup" -s system
-
-        nina r "Mic-only" -s parec -d alsa_input.pci-0000_00_1f.3.analog-stereo
-
-        nina meeting record --duration 1800
-
-        nina r "Quiet room" --gain 4.0
-
-        nina r "Whatever volume" --auto-normalize
-    """
+    """Record audio from the local machine through the daemon and create a meeting note."""
     record_meeting(
         title=title,
         source=source,
         device=device,
+        mic_device=mic_device,
+        system_device=system_device,
         sample_rate=sample_rate,
         channels=channels,
         duration=duration,
         gain=gain,
         auto_normalize=auto_normalize,
+        normalize_target_dbfs=normalize_target_dbfs,
+        noise_reduction=noise_reduction,
     )
 
 

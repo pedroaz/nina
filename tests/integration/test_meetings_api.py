@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import wave
 from pathlib import Path
 
@@ -62,6 +63,45 @@ def test_meeting_lifecycle_start_stop_show_list(
     fetched = api_client.get(f"/meetings/{meeting_id}", headers=auth_headers)
     assert fetched.status_code == 200
     assert fetched.json()["title"] == "Quarterly planning"
+
+
+def test_daemon_owned_recording_endpoint_creates_and_finishes_meeting(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nina_core.meetings.recorder import NullAudioSource
+
+    monkeypatch.setattr(
+        "nina_core.meetings.manager.make_audio_source",
+        lambda *args, **kwargs: NullAudioSource(),
+    )
+
+    started = api_client.post(
+        "/meetings/record",
+        headers=auth_headers,
+        json={"title": "Daemon-owned recording", "duration_seconds": 1},
+    )
+    assert started.status_code == 200, started.json()
+    meeting_id = started.json()["id"]
+    assert started.json()["status"] == "recording"
+
+    deadline = time.monotonic() + 10
+    payload: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        fetched = api_client.get(f"/meetings/{meeting_id}", headers=auth_headers)
+        assert fetched.status_code == 200
+        payload = fetched.json()
+        if payload.get("status") != "recording":
+            break
+        time.sleep(0.05)
+
+    assert payload is not None
+    assert payload["status"] == "stopped"
+    assert payload["note_path"].startswith("Meetings/")
+    note_path = isolated_config / "vault" / payload["note_path"]
+    assert note_path.is_file()
 
 
 def test_transcribe_meeting_workflow_writes_note_section(
@@ -215,7 +255,9 @@ def test_config_endpoint_includes_transcription_and_meetings(
     assert "transcription" in payload
     assert "meetings" in payload
     assert payload["transcription"]["backend"] in {"local_whisper", "null"}
-    assert payload["meetings"]["default_source"] in {"mic", "system"}
+    assert payload["meetings"]["default_source"] in {"mic", "system", "mixed"}
+    assert isinstance(payload["meetings"]["auto_normalize"], bool)
+    assert payload["meetings"]["noise_reduction"] in {"off", "ffmpeg"}
 
 
 def test_workflow_list_includes_meetings(
