@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from pathlib import Path
 
@@ -169,8 +168,16 @@ class VaultWatcher:
         return self._observer is not None
 
 
-def make_watcher_if_enabled(db_path: str, vault_path: str | Path) -> VaultWatcher | None:
-    enabled = os.environ.get("NINA_SEARCH_WATCHER", "on").lower()
-    if enabled in {"off", "0", "false", "no"}:
+def make_watcher_if_enabled(
+    db_path: str,
+    vault_path: str | Path,
+    enabled: bool = True,
+) -> VaultWatcher | None:
+    """Create a vault watcher if live indexing is enabled.
+
+    The caller is responsible for passing `enabled` based on
+    `NinaConfig.search.live_indexing`. We do not read from any env var.
+    """
+    if not enabled:
         return None
     return VaultWatcher(db_path, vault_path)

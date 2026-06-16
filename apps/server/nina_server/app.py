@@ -36,8 +36,31 @@ class LLMConfigResponse(BaseModel):
     model: str
 
 
+class ResearchConfigResponse(BaseModel):
+    provider: str
+    model: str
+
+
 class SchedulerConfigResponse(BaseModel):
     daily_summary_time: str
+
+
+class TranscriptionConfigResponse(BaseModel):
+    backend: str
+    model: str
+    device: str
+    compute_type: str
+    language: str | None = None
+
+
+class MeetingsConfigResponse(BaseModel):
+    default_source: str
+    auto_summarize: bool
+    sample_rate: int
+    channels: int
+    open_command: str
+    play_command: str
+    default_gain: float
 
 
 class ConfigResponse(BaseModel):
@@ -49,7 +72,10 @@ class ConfigResponse(BaseModel):
     daemon_host: str
     daemon_port: int
     llm: LLMConfigResponse
+    research: ResearchConfigResponse
     scheduler: SchedulerConfigResponse
+    transcription: TranscriptionConfigResponse
+    meetings: MeetingsConfigResponse
     log_level: str
 
 
@@ -58,8 +84,31 @@ class LLMConfigUpdate(BaseModel):
     model: str | None = None
 
 
+class ResearchConfigUpdate(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+
+
 class SchedulerConfigUpdate(BaseModel):
     daily_summary_time: str | None = None
+
+
+class TranscriptionConfigUpdate(BaseModel):
+    backend: str | None = None
+    model: str | None = None
+    device: str | None = None
+    compute_type: str | None = None
+    language: str | None = None
+
+
+class MeetingsConfigUpdate(BaseModel):
+    default_source: str | None = None
+    auto_summarize: bool | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+    open_command: str | None = None
+    play_command: str | None = None
+    default_gain: float | None = None
 
 
 class ConfigUpdate(BaseModel):
@@ -69,7 +118,10 @@ class ConfigUpdate(BaseModel):
     daemon_port: int | None = None
     log_level: str | None = None
     llm: LLMConfigUpdate | None = None
+    research: ResearchConfigUpdate | None = None
     scheduler: SchedulerConfigUpdate | None = None
+    transcription: TranscriptionConfigUpdate | None = None
+    meetings: MeetingsConfigUpdate | None = None
 
 
 def _request_config_dir(request: Request) -> Path:
@@ -98,23 +150,41 @@ def _config_response(config_dir: Path, config: NinaConfig) -> ConfigResponse:
         daemon_host=config.daemon_host,
         daemon_port=config.daemon_port,
         llm=LLMConfigResponse(provider=config.llm.provider, model=config.llm.model),
+        research=ResearchConfigResponse(
+            provider=config.research.provider,
+            model=config.research.model,
+        ),
         scheduler=SchedulerConfigResponse(daily_summary_time=config.scheduler.daily_summary_time),
+        transcription=TranscriptionConfigResponse(
+            backend=config.transcription.backend,
+            model=config.transcription.model,
+            device=config.transcription.device,
+            compute_type=config.transcription.compute_type,
+            language=config.transcription.language,
+        ),
+        meetings=MeetingsConfigResponse(
+            default_source=config.meetings.default_source,
+            auto_summarize=config.meetings.auto_summarize,
+            sample_rate=config.meetings.sample_rate,
+            channels=config.meetings.channels,
+            open_command=config.meetings.open_command,
+            play_command=config.meetings.play_command,
+            default_gain=config.meetings.default_gain,
+        ),
         log_level=config.log_level,
     )
 
 
 def apply_runtime_config(app: FastAPI, config_dir: Path, config: NinaConfig) -> NinaConfig:
+    """Resolve paths and stash the active NinaConfig on the FastAPI app.
+
+    We deliberately do NOT mirror settings into `NINA_*` environment
+    variables. The config file is the single source of truth; services
+    read it via `load_effective_config` or by being passed the typed
+    `NinaConfig`. Bootstrap env vars (`NINA_CONFIG_DIR`, `NINA_TOKEN`)
+    are set by the launcher before this function runs.
+    """
     resolved = config.with_resolved_paths(config_dir)
-    os.environ["NINA_PROFILE"] = resolved.profile
-    os.environ["NINA_CONFIG_DIR"] = str(config_dir)
-    os.environ["NINA_VAULT_PATH"] = resolved.vault_path
-    os.environ["NINA_DATABASE_PATH"] = resolved.database_path
-    os.environ["NINA_DAEMON_HOST"] = resolved.daemon_host
-    os.environ["NINA_DAEMON_PORT"] = str(resolved.daemon_port)
-    os.environ["NINA_LLM_PROVIDER"] = resolved.llm.provider
-    os.environ["NINA_LLM_MODEL"] = resolved.llm.model
-    os.environ["NINA_LOG_LEVEL"] = resolved.log_level
-    os.environ["NINA_DAILY_SUMMARY_TIME"] = resolved.scheduler.daily_summary_time
     app.state.profile = resolved.profile
     app.state.config_dir = config_dir
     app.state.config_path = get_config_path(config_dir)
@@ -140,6 +210,28 @@ def _changed_config_fields(previous: NinaConfig, updated: NinaConfig) -> list[st
         changed.append("scheduler.daily_summary_time")
     if previous.log_level != updated.log_level:
         changed.append("log_level")
+    if previous.transcription.backend != updated.transcription.backend:
+        changed.append("transcription.backend")
+    if previous.transcription.model != updated.transcription.model:
+        changed.append("transcription.model")
+    if previous.transcription.device != updated.transcription.device:
+        changed.append("transcription.device")
+    if previous.transcription.compute_type != updated.transcription.compute_type:
+        changed.append("transcription.compute_type")
+    if previous.transcription.language != updated.transcription.language:
+        changed.append("transcription.language")
+    if previous.meetings.default_source != updated.meetings.default_source:
+        changed.append("meetings.default_source")
+    if previous.meetings.auto_summarize != updated.meetings.auto_summarize:
+        changed.append("meetings.auto_summarize")
+    if previous.meetings.sample_rate != updated.meetings.sample_rate:
+        changed.append("meetings.sample_rate")
+    if previous.meetings.channels != updated.meetings.channels:
+        changed.append("meetings.channels")
+    if previous.meetings.open_command != updated.meetings.open_command:
+        changed.append("meetings.open_command")
+    if previous.meetings.play_command != updated.meetings.play_command:
+        changed.append("meetings.play_command")
     return changed
 
 
@@ -178,7 +270,7 @@ async def get_config(request: Request) -> ConfigResponse:
 async def update_config(request: Request, data: ConfigUpdate) -> dict[str, Any]:
     config_dir = _request_config_dir(request)
     current = _request_config(request)
-    patch = data.model_dump(exclude_unset=True, exclude_none=True)
+    patch = data.model_dump(exclude_unset=True, exclude_none=False)
     if not patch:
         return {
             "config": _config_response(config_dir, current).model_dump(),
@@ -213,28 +305,50 @@ async def update_config(request: Request, data: ConfigUpdate) -> dict[str, Any]:
     }
 
 
+def _active_config_path() -> str:
+    """Database path from the active NinaConfig on the app state.
+
+    Falls back to the bootstrap env var only if the config has not been
+    loaded yet (e.g. unit tests that bypass `apply_runtime_config`).
+    """
+    config = getattr(app.state, "config", None)
+    if config is not None:
+        return str(config.database_path)
+    return os.environ.get("NINA_DATABASE_PATH", "")
+
+
+def _active_vault_path() -> str:
+    config = getattr(app.state, "config", None)
+    if config is not None:
+        return str(config.vault_path)
+    return os.environ.get("NINA_VAULT_PATH", "")
+
+
 def get_db() -> Session:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
+    db_path = _active_config_path()
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
     SessionLocal = sessionmaker(bind=engine)
     return SessionLocal()
 
 
 def get_obsidian() -> ObsidianService:
-    return ObsidianService(os.environ.get("NINA_VAULT_PATH", ""))
+    return ObsidianService(_active_vault_path())
 
 
 def get_scheduler(request: Request) -> SchedulerService:
     scheduler = getattr(request.app.state, "scheduler", None)
     if scheduler is not None:
         return scheduler
-    return SchedulerService(os.environ.get("NINA_DATABASE_PATH", ""))
+    return SchedulerService(_active_config_path())
 
 
 def get_session_service(request: Request) -> SessionService:
+    config = _request_config(request)
     return SessionService(
-        os.environ.get("NINA_DATABASE_PATH", ""),
-        os.environ.get("NINA_VAULT_PATH", ""),
+        _active_config_path(),
+        _active_vault_path(),
+        llm_config=config.llm,
+        search_config=config.search,
     )
 
 
@@ -336,6 +450,21 @@ class JobCreate(BaseModel):
 
 class JobUpdate(BaseModel):
     enabled: bool
+
+
+class MeetingCreate(BaseModel):
+    title: str
+    source: str = "mic"
+    device_name: str | None = None
+    sample_rate: int = 16000
+    channels: int = 1
+    audio_format: str = "wav"
+
+
+class MeetingStop(BaseModel):
+    duration_seconds: int | None = None
+    size_bytes: int | None = None
+    error: str | None = None
 
 
 @app.get("/projects")
@@ -637,14 +766,14 @@ async def kanban_move(request: Request, data: KanbanMove) -> TaskResponse:
 
 @app.post("/search")
 async def search_endpoint(request: Request, data: SearchQuery) -> list[dict[str, Any]]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
+    db_path = _active_config_path()
     return search(db_path, data.query, data.limit)
 
 
 @app.post("/search/reindex")
 async def reindex_endpoint(request: Request) -> dict[str, Any]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
-    vault_path = os.environ.get("NINA_VAULT_PATH", "")
+    db_path = _active_config_path()
+    vault_path = _active_vault_path()
     index_notes(db_path, vault_path)
     return {"reindexed": True}
 
@@ -653,7 +782,7 @@ async def reindex_endpoint(request: Request) -> dict[str, Any]:
 async def open_endpoint(request: Request, data: SearchOpen) -> dict[str, Any]:
     import subprocess
 
-    vault_path = os.environ.get("NINA_VAULT_PATH", "")
+    vault_path = _active_vault_path()
     full_path = os.path.join(vault_path, data.path)
     subprocess.run(["xdg-open", f"obsidian://open?path={full_path}"], capture_output=True)
     return {"opened": True}
@@ -661,14 +790,14 @@ async def open_endpoint(request: Request, data: SearchOpen) -> dict[str, Any]:
 
 @app.post("/ask")
 async def ask_endpoint(request: Request, data: AskQuery) -> dict[str, Any]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
-    vault_path = os.environ.get("NINA_VAULT_PATH", "")
+    db_path = _active_config_path()
+    vault_path = _active_vault_path()
     return await ask_obsidian(db_path, vault_path, data.question, data.limit)
 
 
 @app.post("/llm/complete")
 async def llm_complete(request: Request, data: LLMRequest) -> dict[str, Any]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
+    db_path = _active_config_path()
     service = LLMService(db_path)
     response = await service.complete(data)
     return {"response": response.response, "model": response.model, "provider": response.provider}
@@ -676,7 +805,7 @@ async def llm_complete(request: Request, data: LLMRequest) -> dict[str, Any]:
 
 @app.get("/llm/interactions")
 async def llm_interactions(request: Request) -> list[dict[str, Any]]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
+    db_path = _active_config_path()
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from nina_core.models.models import LLMInteraction
@@ -768,8 +897,8 @@ def get_note_service(request: Request):
     from nina_core.notes.service import NoteService
 
     return NoteService(
-        os.environ.get("NINA_DATABASE_PATH", ""),
-        os.environ.get("NINA_VAULT_PATH", ""),
+        _active_config_path(),
+        _active_vault_path(),
     )
 
 
@@ -837,8 +966,8 @@ async def update_note_endpoint(request: Request, path: str, data: NoteUpdate) ->
 
 @app.post("/research/run")
 async def run_research(request: Request, data: ResearchRunInput) -> dict[str, Any]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
-    runner = WorkflowRunner(db_path)
+    db_path = _active_config_path()
+    runner = WorkflowRunner(db_path, config=_request_config(request))
     result = runner.run("research-topic", {"topic": data.topic})
     if result.get("status") != "completed":
         return JSONResponse(status_code=400, content=result)
@@ -851,19 +980,25 @@ async def run_research(request: Request, data: ResearchRunInput) -> dict[str, An
 
 @app.get("/workflows")
 async def list_workflows(request: Request) -> list[str]:
-    return ["summarize-last-day", "research-topic"]
+    return [
+        "summarize-last-day",
+        "research-topic",
+        "reindex-vault",
+        "transcribe-meeting",
+        "summarize-meeting",
+    ]
 
 
 @app.post("/workflows/{workflow_name}/run")
 async def run_workflow(request: Request, workflow_name: str, data: WorkflowInput) -> dict[str, Any]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
-    runner = WorkflowRunner(db_path)
+    db_path = _active_config_path()
+    runner = WorkflowRunner(db_path, config=_request_config(request))
     return runner.run(workflow_name, data.input)
 
 
 @app.get("/workflow-runs")
 async def list_workflow_runs(request: Request) -> list[dict[str, Any]]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
+    db_path = _active_config_path()
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from nina_core.models.models import WorkflowRun
@@ -885,7 +1020,7 @@ async def list_workflow_runs(request: Request) -> list[dict[str, Any]]:
 
 @app.get("/workflow-runs/{run_id}")
 async def get_workflow_run(request: Request, run_id: str) -> dict[str, Any]:
-    db_path = os.environ.get("NINA_DATABASE_PATH", "")
+    db_path = _active_config_path()
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from nina_core.models.models import WorkflowRun
@@ -945,3 +1080,155 @@ async def list_job_runs(
     request: Request, job_name: str | None = None, limit: int = 20
 ) -> list[dict[str, Any]]:
     return get_scheduler(request).list_job_runs(job_name, limit)
+
+
+def get_meeting_service(request: Request):
+    from nina_core.meetings.service import MeetingService
+
+    config = _request_config(request)
+    return MeetingService(
+        config.database_path,
+        get_config_dir_resolved(request) / "recordings",
+        str(config.vault_path),
+    )
+
+
+def get_config_dir_resolved(request: Request) -> Path:
+    config_dir = getattr(request.app.state, "config_dir", None)
+    if config_dir is not None:
+        return Path(config_dir)
+    profile = os.environ.get("NINA_PROFILE", "default")
+    return get_config_dir(str(profile))
+
+
+@app.post("/meetings")
+async def create_meeting(request: Request, data: MeetingCreate) -> dict[str, Any]:
+    service = get_meeting_service(request)
+    return service.start(
+        title=data.title,
+        source=data.source,
+        device_name=data.device_name,
+        sample_rate=data.sample_rate,
+        channels=data.channels,
+        audio_format=data.audio_format,
+    )
+
+
+@app.get("/meetings")
+async def list_meetings(
+    request: Request,
+    status: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    service = get_meeting_service(request)
+    return {"meetings": service.list(status=status, limit=limit)}
+
+
+@app.get("/meetings/{meeting_id}")
+async def get_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
+    service = get_meeting_service(request)
+    meeting = service.get(meeting_id)
+    if meeting is None:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return meeting
+
+
+@app.post("/meetings/{meeting_id}/stop")
+async def stop_meeting(
+    request: Request, meeting_id: str, data: MeetingStop | None = None
+) -> dict[str, Any]:
+    service = get_meeting_service(request)
+    payload = data or MeetingStop()
+    meeting = service.stop(
+        meeting_id,
+        duration_seconds=payload.duration_seconds,
+        size_bytes=payload.size_bytes,
+    )
+    if meeting is None:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    if payload.error is not None:
+        # Best-effort: stamp the error onto the row so the user can see
+        # why the capture was partial. We don't fail the request if this
+        # also fails — the row is already finalized.
+        service.update_status(meeting_id, error=payload.error)
+        meeting = service.get(meeting_id) or meeting
+    return meeting
+
+
+@app.post("/meetings/{meeting_id}/transcribe")
+async def transcribe_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
+    import asyncio
+    import concurrent.futures
+
+    from nina_core.workflows.runner import WorkflowRunner
+
+    db_path = _active_config_path()
+
+    def _run() -> dict[str, Any]:
+        runner = WorkflowRunner(db_path, config=_request_config(request))
+        return runner.run("transcribe-meeting", {"meeting_id": meeting_id, "input": {}})
+
+    loop = asyncio.get_running_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        result = await loop.run_in_executor(executor, _run)
+    if result.get("status") != "completed":
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.post("/meetings/{meeting_id}/summarize")
+async def summarize_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
+    import asyncio
+    import concurrent.futures
+
+    from nina_core.workflows.runner import WorkflowRunner
+
+    db_path = _active_config_path()
+
+    def _run() -> dict[str, Any]:
+        runner = WorkflowRunner(db_path, config=_request_config(request))
+        return runner.run("summarize-meeting", {"meeting_id": meeting_id, "input": {}})
+
+    loop = asyncio.get_running_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        result = await loop.run_in_executor(executor, _run)
+    if result.get("status") != "completed":
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.get("/meetings/{meeting_id}/transcript")
+async def get_meeting_transcript(request: Request, meeting_id: str) -> dict[str, Any]:
+    service = get_meeting_service(request)
+    meeting = service.get(meeting_id)
+    if meeting is None:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    transcript_path = meeting.get("transcript_path")
+    if not transcript_path:
+        return {"transcript": "", "status": meeting.get("status")}
+    full = Path(transcript_path)
+    if not full.is_file():
+        return {"transcript": "", "status": meeting.get("status")}
+    return {"transcript": full.read_text(), "status": meeting.get("status")}
+
+
+@app.delete("/meetings/{meeting_id}")
+async def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
+    service = get_meeting_service(request)
+    ok = service.delete(meeting_id)
+    if not ok:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return {"deleted": True}
+
+
+@app.get("/meetings-devices")
+async def list_meeting_devices() -> dict[str, Any]:
+    from nina_core.meetings.recorder import (
+        list_input_devices,
+        list_pulse_sources,
+    )
+
+    return {
+        "inputs": list_input_devices(),
+        "pulse_sources": list_pulse_sources(),
+    }

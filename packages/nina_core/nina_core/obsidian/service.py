@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -173,3 +174,173 @@ class ObsidianService:
         }
         self.write_note(relative_path, body, metadata)
         return str(relative_path)
+
+    def _meeting_path(self, title: str, started_at: str) -> Path:
+        date = started_at[:10]
+        return Path("Meetings") / f"{date} - {_slugify(title)}.md"
+
+    def _meeting_body(
+        self,
+        title: str,
+        started_at: str,
+        ended_at: str | None,
+        duration_seconds: int | None,
+        source: str,
+        transcript_section: str,
+        summary_section: str,
+        action_items: str,
+        decisions: str,
+    ) -> str:
+        duration_minutes = ""
+        if duration_seconds is not None:
+            duration_minutes = (
+                f" ({int(duration_seconds) // 60}m {int(duration_seconds) % 60:02d}s)"
+            )
+        date_part = started_at[:10]
+        return "\n".join(
+            [
+                f"# {title}",
+                "",
+                "## Notes",
+                "",
+                f"Recording captured on {date_part} from `{source}` input{duration_minutes}.",
+                "",
+                "## Transcript",
+                "",
+                transcript_section.strip() or "_Transcription pending._",
+                "",
+                "## Summary",
+                "",
+                summary_section.strip() or "_Summary pending._",
+                "",
+                "## Action items",
+                "",
+                action_items.strip() or "- _none yet_",
+                "",
+                "## Decisions",
+                "",
+                decisions.strip() or "- _none yet_",
+                "",
+            ]
+        )
+
+    def create_meeting_note(
+        self,
+        meeting_id: str,
+        title: str,
+        started_at: str,
+        ended_at: str | None,
+        duration_seconds: int | None,
+        source: str,
+        audio_path: str,
+        transcript_status: str = "pending",
+        summary_status: str = "pending",
+        workflow_run_id: str | None = None,
+    ) -> str:
+        relative_path = self._meeting_path(title, started_at)
+        body = self._meeting_body(
+            title=title,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_seconds=duration_seconds,
+            source=source,
+            transcript_section="",
+            summary_section="",
+            action_items="",
+            decisions="",
+        )
+        metadata = {
+            "nina_type": "meeting",
+            "nina_id": meeting_id,
+            "title": title,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "duration_seconds": duration_seconds,
+            "source": source,
+            "audio_path": audio_path,
+            "transcript_status": transcript_status,
+            "summary_status": summary_status,
+            "workflow_run_id": workflow_run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.write_note(relative_path, body, metadata)
+        return str(relative_path)
+
+    def update_meeting_note_sections(
+        self,
+        meeting_id: str,
+        title: str,
+        started_at: str,
+        ended_at: str | None,
+        duration_seconds: int | None,
+        source: str,
+        audio_path: str,
+        *,
+        transcript: str | None = None,
+        transcript_status: str | None = None,
+        summary: str | None = None,
+        action_items: str | None = None,
+        decisions: str | None = None,
+        summary_status: str | None = None,
+        workflow_run_id: str | None = None,
+    ) -> str | None:
+        relative_path = self._meeting_path(title, started_at)
+        full_path = self.vault_path / relative_path
+        if not full_path.is_file():
+            return None
+        post = frontmatter.loads(full_path.read_text())
+        existing_transcript_section = _extract_section(post.content, "Transcript")
+        existing_summary_section = _extract_section(post.content, "Summary")
+        existing_action_items = _extract_section(post.content, "Action items")
+        existing_decisions = _extract_section(post.content, "Decisions")
+        body = self._meeting_body(
+            title=title,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_seconds=duration_seconds,
+            source=source,
+            transcript_section=transcript
+            if transcript is not None
+            else existing_transcript_section,
+            summary_section=summary if summary is not None else existing_summary_section,
+            action_items=action_items if action_items is not None else existing_action_items,
+            decisions=decisions if decisions is not None else existing_decisions,
+        )
+        post.content = body
+        if transcript_status is not None:
+            post.metadata["transcript_status"] = transcript_status
+        if summary_status is not None:
+            post.metadata["summary_status"] = summary_status
+        if workflow_run_id is not None:
+            post.metadata["workflow_run_id"] = workflow_run_id
+        if ended_at is not None:
+            post.metadata["ended_at"] = ended_at
+        if duration_seconds is not None:
+            post.metadata["duration_seconds"] = duration_seconds
+        if audio_path:
+            post.metadata["audio_path"] = audio_path
+        post.metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
+        full_path.write_text(frontmatter.dumps(post))
+        return str(relative_path)
+
+    def soft_delete_meeting_note(self, meeting_id: str, title: str, started_at: str) -> str | None:
+        relative_path = self._meeting_path(title, started_at)
+        full_path = self.vault_path / relative_path
+        if not full_path.is_file():
+            return None
+        deleted_dir = self.vault_path / "System" / "Deleted"
+        deleted_dir.mkdir(parents=True, exist_ok=True)
+        os.rename(full_path, deleted_dir / full_path.name)
+        return str((deleted_dir / full_path.name).relative_to(self.vault_path))
+
+
+def _extract_section(body: str, heading: str) -> str:
+    pattern = re.compile(
+        rf"^##\s+{re.escape(heading)}\s*$\n(?P<content>.*?)(?=^##\s+|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(body)
+    if match is None:
+        return ""
+    return match.group("content").strip()

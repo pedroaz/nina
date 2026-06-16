@@ -11,10 +11,11 @@ from nina_core.obsidian.service import ObsidianService
 
 @pytest.fixture
 def tool_context(isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> ToolContext:
-    monkeypatch.setenv("NINA_EMBEDDING_PROVIDER", "fake")
+    from nina_core.config.settings import SearchConfig
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
+    monkeypatch.setenv("NINA_EMBEDDING_PROVIDER", "fake")
     db_path = str(get_database_path(isolated_config))
     vault_path = get_vault_path(isolated_config)
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
@@ -25,6 +26,7 @@ def tool_context(isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> Tool
         vault_path=vault_path,
         db=db,
         obsidian=ObsidianService(vault_path),
+        search_config=SearchConfig(embedding_provider="fake"),
     )
 
 

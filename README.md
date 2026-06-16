@@ -18,7 +18,7 @@ It is designed for one person's workflow, not a multi-user SaaS.
 
 - **Daemon**: FastAPI server that owns SQLite, Obsidian writes, LLM calls, workflows, jobs, and session state.
 - **CLI**: Typer-based commands for `project`, `task`, `ticket`, `job`, `research`, `workflow`, `ask`, `status`, and `daemon`.
-- **TUI**: OpenTUI terminal interface with dedicated `Tickets`, `Chat`, `Agent`, `Research`, `Jobs`, and `Config` tabs.
+- **TUI**: OpenTUI terminal interface with dedicated `Tickets`, `Chat`, `Agent`, `Research`, `Meetings`, `Jobs`, and `Config` tabs.
 - **Core**: Shared models, database, search, Obsidian, LLM, research, session, and workflow services.
 
 ## Modes
@@ -69,6 +69,36 @@ nina research run "OpenAI web search"
 ```
 
 The generated note lands under `Research/YYYY-MM-DD - <topic>.md`.
+
+### Meetings
+
+Meeting mode records audio from the local machine (mic or system audio), writes the WAV to the active profile, and creates an Obsidian note under `Meetings/`. It runs on Linux (and on WSL2) without any extra cloud services. Use `--source system` to capture the PulseAudio/PipeWire monitor so other participants on a Teams, Zoom, Meet, or Discord call are picked up alongside the user's mic.
+
+Compact form — `nina r` is the shortest path:
+
+```bash
+nina r "Quarterly planning"
+# ... join the meeting in Teams/Zoom/Meet/Discord ...
+# Ctrl+C to stop
+nina mt t <meeting-id>   # transcribe (local faster-whisper)
+nina mt m <meeting-id>   # summarize (LLM)
+nina mt o <meeting-id>   # open the note in Obsidian
+```
+
+Long form (does the same thing):
+
+```bash
+nina meeting record "Quarterly planning"
+nina meeting transcribe <meeting-id>
+nina meeting summarize <meeting-id>
+nina meeting open <meeting-id>
+```
+
+Available compact meeting subcommands: `r` (record), `ls` (list), `t` (transcribe), `m` (summarize), `s` (stop), `o` (open), `p` (play), `rm` (delete), `x` (show), `devices`. Use `nina mt <sub> --help` for flags.
+
+Other shortcuts: `nina h` (compact help), `nina -h` (full help), `nina t` (TUI), `nina d` (daemon), `nina n` (note), `nina p` (project), `nina tk` (ticket), `nina k` (kanban), `nina j` (job), `nina c` (config), `nina ll` (llm), `nina rch` (research), `nina s` (search). Short aliases are hidden from `--help` so the main command list stays readable; they're fully wired and tested.
+
+The generated note lands under `Meetings/YYYY-MM-DD - <title>.md` with sections for transcript, summary, action items, and decisions. Transcription runs locally with `faster-whisper`; summarization reuses the configured LLM provider (`codex` or `openai`).
 
 ## Architecture
 
@@ -201,19 +231,18 @@ Short aliases: `uv run nina d` for `uv run nina daemon`, `uv run nina d r` for `
 
 Nina uses `NINA_CONFIG_DIR` to point at a profile directory. If it is not set, the default profile lives under `~/.nina/default`.
 
-Useful environment variables:
+All Nina configuration lives in `<config_dir>/config.yaml`. The CLI and daemon both read from it; nothing is hidden in environment variables.
 
-- `NINA_CONFIG_DIR`: profile directory used by the CLI, daemon, and TUI.
-- `NINA_LLM_PROVIDER`: LLM provider for chat and agent mode. Default: `codex`.
+External credentials (not Nina's config) still come from the environment:
+
 - `CODEX_AUTH_FILE`: path to the Codex auth JSON used by the `codex` provider. Default: `~/.codex/auth.json`.
 - `OPENAI_API_KEY`: required for the explicit `openai` LLM provider and research mode.
-- `NINA_RESEARCH_PROVIDER`: research backend. Default: `openai_web`.
-- `NINA_RESEARCH_MODEL`: model used for research requests.
-- `NINA_LLM_MODEL`: model used for general LLM calls.
 
 The default chat/agent path is `codex`, which uses the Codex auth file directly; `openai` and research remain API-key-only.
 
-Saved config now covers the vault path, database path, daemon host/port, log level, LLM provider/model, and daily summary schedule. Inspect it with `nina config show`, change it with `nina config vault`, `nina config database`, `nina config daemon-host`, `nina config daemon-port`, `nina config log-level`, `nina config llm-provider`, `nina config llm-model`, and `nina config daily-summary-time`, or edit the same fields from the TUI Settings tab. The daemon writes a small `daemon.json` runtime file in the config directory so CLI and TUI clients keep talking to the live host and port until the next restart.
+Saved config covers the vault path, database path, daemon host/port, log level, LLM provider/model, research provider/model, daily summary schedule, transcription backend/model/device/compute-type/language, and meetings default source. Inspect it with `nina config show`, change it with `nina config vault`, `nina config database`, `nina config daemon-host`, `nina config daemon-port`, `nina config log-level`, `nina config llm-provider`, `nina config llm-model`, `nina config research-provider`, `nina config research-model`, `nina config daily-summary-time`, `nina config transcription-backend`, `nina config transcription-model`, `nina config transcription-device`, `nina config transcription-compute-type`, `nina config transcription-language`, `nina config meetings-source`, and `nina config auto-summarize`, or edit the same fields from the TUI Settings tab. The daemon writes a small `daemon.json` runtime file in the config directory so CLI and TUI clients keep talking to the live host and port until the next restart.
+
+When adding new configuration, give every field a default in the Pydantic model so old config files keep working. New blocks should appear in `nina config show` automatically.
 
 ## Obsidian Integration
 
@@ -225,6 +254,7 @@ Current folders created by `nina init`:
 - `Tasks/`
 - `Research/`
 - `Research/Sources/`
+- `Meetings/`
 - `Daily/`
 - `Templates/`
 - `System/`

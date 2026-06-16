@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -46,8 +50,28 @@ def _public_snapshot(config_dir: Path, config: NinaConfig) -> dict[str, Any]:
             "provider": config.llm.provider,
             "model": config.llm.model,
         },
+        "research": {
+            "provider": config.research.provider,
+            "model": config.research.model,
+        },
         "scheduler": {
             "daily_summary_time": config.scheduler.daily_summary_time,
+        },
+        "transcription": {
+            "backend": config.transcription.backend,
+            "model": config.transcription.model,
+            "device": config.transcription.device,
+            "compute_type": config.transcription.compute_type,
+            "language": config.transcription.language,
+        },
+        "meetings": {
+            "default_source": config.meetings.default_source,
+            "auto_summarize": config.meetings.auto_summarize,
+            "sample_rate": config.meetings.sample_rate,
+            "channels": config.meetings.channels,
+            "open_command": config.meetings.open_command,
+            "play_command": config.meetings.play_command,
+            "default_gain": config.meetings.default_gain,
         },
         "log_level": config.log_level,
     }
@@ -64,7 +88,25 @@ def _print_snapshot(snapshot: dict[str, Any]) -> None:
     table.add_row("Daemon port", str(snapshot["daemon_port"]))
     table.add_row("LLM provider", str(snapshot["llm"]["provider"]))
     table.add_row("LLM model", str(snapshot["llm"]["model"]))
+    table.add_row("Research provider", str(snapshot["research"]["provider"]))
+    table.add_row("Research model", str(snapshot["research"]["model"]))
     table.add_row("Daily summary", str(snapshot["scheduler"]["daily_summary_time"]))
+    table.add_row("Transcription backend", str(snapshot["transcription"]["backend"]))
+    table.add_row("Transcription model", str(snapshot["transcription"]["model"]))
+    table.add_row("Transcription device", str(snapshot["transcription"]["device"]))
+    table.add_row("Transcription compute", str(snapshot["transcription"]["compute_type"]))
+    table.add_row("Transcription language", str(snapshot["transcription"]["language"] or "auto"))
+    table.add_row("Meetings default source", str(snapshot["meetings"]["default_source"]))
+    table.add_row("Meetings auto-summarize", str(snapshot["meetings"]["auto_summarize"]))
+    table.add_row("Meetings sample rate", str(snapshot["meetings"]["sample_rate"]))
+    table.add_row("Meetings channels", str(snapshot["meetings"]["channels"]))
+    table.add_row("Meetings play command", str(snapshot["meetings"]["play_command"]))
+    gain = snapshot["meetings"]["default_gain"]
+    gain_db = 0.0 if gain == 1.0 else 20.0 * math.log10(gain)
+    table.add_row(
+        "Meetings default gain",
+        f"{gain}x ({gain_db:+.1f} dB)",
+    )
     table.add_row("Log level", str(snapshot["log_level"]))
     console.print(table)
 
@@ -183,6 +225,26 @@ def llm_provider(
     console.print("Applied to the running daemon." if synced else "Saved on disk.")
 
 
+@config_app.command("research-provider")
+def research_provider(
+    provider: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"research": {"provider": provider}})
+    console.print(f"Research provider: {updated.research.provider}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("research-model")
+def research_model(
+    model: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"research": {"model": model}})
+    console.print(f"Research model: {updated.research.model}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
 @config_app.command("llm-model")
 def llm_model(
     model: str,
@@ -200,4 +262,196 @@ def daily_summary_time(
 ) -> None:
     updated, synced = _apply_update(profile, {"scheduler": {"daily_summary_time": time_value}})
     console.print(f"Daily summary time: {updated.scheduler.daily_summary_time}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("transcription-backend")
+def transcription_backend(
+    backend: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"transcription": {"backend": backend}})
+    console.print(f"Transcription backend: {updated.transcription.backend}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("transcription-model")
+def transcription_model(
+    model: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"transcription": {"model": model}})
+    console.print(f"Transcription model: {updated.transcription.model}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("transcription-device")
+def transcription_device(
+    device: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"transcription": {"device": device}})
+    console.print(f"Transcription device: {updated.transcription.device}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("transcription-compute-type")
+def transcription_compute_type(
+    compute_type: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"transcription": {"compute_type": compute_type}})
+    console.print(f"Transcription compute type: {updated.transcription.compute_type}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("transcription-language")
+def transcription_language(
+    language: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    normalized = language.strip() or "auto"
+    updated, synced = _apply_update(
+        profile, {"transcription": {"language": None if normalized == "auto" else normalized}}
+    )
+    console.print(f"Transcription language: {updated.transcription.language or 'auto'}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command(
+    "edit",
+    help=(
+        "Open the config file in VS Code. Uses the `code` binary from PATH; "
+        "falls back to `$EDITOR` if set, then to the OS default opener. "
+        "Pass `--editor <name>` to force a different editor (e.g. `code --wait`, "
+        "`nvim`, `nano`). The file is created with the current effective "
+        "config if it doesn't exist yet."
+    ),
+)
+def edit(
+    profile: str = typer.Option("default", help="Profile name"),
+    editor: str = typer.Option(
+        None,
+        "--editor",
+        "-e",
+        help=(
+            "Editor command to launch. Use `{path}` as a placeholder for the "
+            "config file path (e.g. `--editor 'code --wait'`). Defaults to "
+            "`code` (VS Code), then `$EDITOR`, then the OS opener."
+        ),
+    ),
+    wait: bool = typer.Option(
+        False,
+        "--wait",
+        "-w",
+        help="Block until the editor closes (passes `--wait` to VS Code).",
+    ),
+) -> None:
+    config_dir, config = _load_config(profile)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = get_config_path(config_dir)
+    if not config_path.exists():
+        # First run: write the current effective config so the editor
+        # opens a real, schema-valid file. Uses the same serializer as
+        # `_apply_update` so it's byte-for-byte consistent.
+        config.save(config_path)
+        console.print(f"Created {config_path} with current effective config.")
+    if not config_path.exists():
+        console.print(f"[red]Config file not found at {config_path}[/red]")
+        raise typer.Exit(1) from None
+
+    cmd = _resolve_editor_command(editor=editor, wait=wait, path=config_path)
+    if cmd is None:
+        console.print(
+            "[red]No editor found. Set $EDITOR, install VS Code (`code` on "
+            "PATH), or pass --editor '<command> {path}'.[/red]"
+        )
+        raise typer.Exit(1) from None
+    try:
+        subprocess.Popen(cmd)
+    except FileNotFoundError as exc:
+        console.print(f"[red]Failed to launch editor: {exc}[/red]")
+        raise typer.Exit(1) from None
+    console.print(f"Opening {config_path} in {cmd[0]}...")
+
+
+def _resolve_editor_command(
+    editor: str | None, wait: bool, path: Path
+) -> list[str] | None:
+    """Pick the editor command. Returns the argv list, or None if nothing found.
+
+    Resolution order:
+    1. `--editor "<cmd> {path}"` (explicit user override)
+    2. `--editor "<cmd>"` (placeholder-less override; we append `{path}`)
+    3. `code` (VS Code) — `--wait` if user asked
+    4. `$EDITOR` env var
+    5. `xdg-open` (Linux) / `open` (macOS) / `start` (Windows)
+    """
+    path_str = str(path)
+    if editor:
+        if "{path}" in editor:
+            return editor.format(path=path_str).split()
+        return [*editor.split(), path_str]
+    if shutil.which("code"):
+        cmd = ["code"]
+        if wait:
+            cmd.append("--wait")
+        return [*cmd, path_str]
+    env_editor = os.environ.get("EDITOR", "").strip()
+    if env_editor:
+        return [*env_editor.split(), path_str]
+    if os.name == "nt":
+        return ["start", "", path_str]
+    if shutil.which("xdg-open"):
+        return ["xdg-open", path_str]
+    if shutil.which("open"):
+        return ["open", path_str]
+    return None
+
+
+@config_app.command("meetings-source")
+def meetings_source(
+    source: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"meetings": {"default_source": source}})
+    console.print(f"Meetings default source: {updated.meetings.default_source}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("auto-summarize")
+def auto_summarize(
+    value: bool,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"meetings": {"auto_summarize": value}})
+    console.print(f"Auto-summarize after recording: {updated.meetings.auto_summarize}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command(
+    "meetings-gain",
+    help=(
+        "Default linear gain applied to every recording. Use this when your "
+        "system source volume is low (e.g. 2.0 = +6 dB, 4.0 = +12 dB). "
+        "Per-call `--gain` on `nina r` still overrides."
+    ),
+)
+def meetings_gain(
+    value: float = typer.Argument(..., help="Linear gain factor (e.g. 2.0 = +6 dB, 4.0 = +12 dB)"),
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    if value <= 0:
+        console.print("[red]Gain must be > 0 (use 1.0 for no change).[/red]")
+        raise typer.Exit(1) from None
+    updated, synced = _apply_update(profile, {"meetings": {"default_gain": value}})
+    actual = updated.meetings.default_gain
+    if abs(actual - 1.0) < 1e-9:
+        db = 0.0
+    else:
+        import math
+        db = 20.0 * math.log10(actual)
+    console.print(
+        f"Meetings default gain: {actual}x ({db:+.1f} dB)."
+    )
     console.print("Applied to the running daemon." if synced else "Saved on disk.")

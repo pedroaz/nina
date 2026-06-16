@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from nina_core.config.settings import LLMConfig
 from nina_core.models.models import LLMInteraction
 
 CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -256,8 +257,8 @@ def _base64url_decode(value: str) -> str:
 
 
 class CodexAuthProvider(LLMProvider):
-    def __init__(self) -> None:
-        self.model = os.environ.get("NINA_LLM_MODEL", "gpt-5")
+    def __init__(self, model: str | None = None) -> None:
+        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-5")
         self.auth = _load_codex_auth()
         self.client = OpenAI(
             api_key=self.auth.access_token,
@@ -401,12 +402,12 @@ CodexCliProvider = CodexAuthProvider
 
 
 class OpenAIProvider(LLMProvider):
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY is required for the OpenAI provider")
         self.client = OpenAI(api_key=self.api_key)
-        self.model = os.environ.get("NINA_LLM_MODEL", "gpt-5")
+        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-5")
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         model = request.model or self.model
@@ -490,18 +491,24 @@ class FakeProvider(LLMProvider):
 
 
 class LLMService:
-    def __init__(self, db_path: str, provider: LLMProvider | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        provider: LLMProvider | None = None,
+        config: LLMConfig | None = None,
+    ) -> None:
         self.db_path = db_path
+        self.config = config or LLMConfig()
         self.provider: LLMProvider = provider or self._build_provider()
 
     def _build_provider(self) -> LLMProvider:
-        provider = os.environ.get("NINA_LLM_PROVIDER", "codex").lower()
+        provider = self.config.provider.lower()
         if provider == "fake":
             return FakeProvider()
         if provider == "openai":
-            return OpenAIProvider()
+            return OpenAIProvider(model=self.config.model)
         if provider == "codex":
-            return CodexAuthProvider()
+            return CodexAuthProvider(model=self.config.model)
         raise RuntimeError(f"Unsupported LLM provider: {provider}")
 
     def _session(self) -> Session:
@@ -516,12 +523,12 @@ class LLMService:
         db.close()
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        provider_name = os.environ.get("NINA_LLM_PROVIDER", "codex")
-        model = request.model or getattr(self.provider, "model", request.model)
+        provider_name = self.config.provider
+        model = request.model or self.config.model or getattr(self.provider, "model", None)
         interaction = LLMInteraction(
             id=str(uuid.uuid4()),
             provider=provider_name,
-            model=model,
+            model=model or "",
             purpose=request.purpose,
             prompt=request.prompt,
             status="pending",

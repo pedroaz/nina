@@ -16,8 +16,8 @@ Obsidian is authoritative for durable human-readable knowledge:
 - Project notes.
 - Task notes and descriptions.
 - Daily summaries.
-- Research notes later.
-- Meeting notes later.
+- Research notes.
+- Meeting notes (transcript + summary).
 - Long-form context that should survive outside Nina.
 
 The daemon keeps both layers connected. CLI and TUI do not write Markdown directly.
@@ -45,6 +45,7 @@ Nina uses only:
 - `Projects/`
 - `Tasks/`
 - `Daily/`
+- `Meetings/`
 - `Templates/`
 - `System/`
 

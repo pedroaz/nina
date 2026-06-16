@@ -8,10 +8,20 @@ from .paths import (
     get_pid_path,
     get_token_path,
     get_runtime_path,
+    get_recordings_path,
     get_vault_path,
     load_effective_config,
 )
-from .settings import LLMConfig, NinaConfig, SchedulerConfig, SearchConfig, merge_config
+from .settings import (
+    LLMConfig,
+    MeetingsConfig,
+    NinaConfig,
+    ResearchConfig,
+    SchedulerConfig,
+    SearchConfig,
+    TranscriptionConfig,
+    merge_config,
+)
 from .token import generate_token, read_token, write_token
 
 __all__ = [
@@ -26,11 +36,15 @@ __all__ = [
     "get_pid_path",
     "get_token_path",
     "get_runtime_path",
+    "get_recordings_path",
     "get_vault_path",
     "NinaConfig",
     "LLMConfig",
+    "ResearchConfig",
     "SchedulerConfig",
     "SearchConfig",
+    "TranscriptionConfig",
+    "MeetingsConfig",
     "merge_config",
     "generate_token",
     "read_token",

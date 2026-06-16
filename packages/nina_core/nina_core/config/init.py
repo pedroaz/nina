@@ -18,6 +18,7 @@ VAULT_FOLDERS = [
     "Projects",
     "Tasks",
     "Daily",
+    "Meetings",
     "Templates",
     "System",
     "System/Deleted",

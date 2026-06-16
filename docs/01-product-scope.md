@@ -57,6 +57,7 @@ The feature set is:
 - Scheduler inside the daemon.
 - Daily summary workflow.
 - Job/workflow log view in the TUI.
+- Meeting recorder, transcribe, and summarize.
 - Tool-calling chat and agent sessions over the vault (see `docs/12-llm-tools.md`).
 
 ## Non-Goals
@@ -68,11 +69,11 @@ The feature set is:
 - GitHub integration.
 - Jira integration.
 - OpenCode integration.
-- Meeting audio transcription.
 - Semantic/vector search.
 - Custom user-authored workflows.
 - Advanced task fields such as dependencies, estimates, and recurrence.
 - Production-grade backup/export/import.
+- Native macOS and Windows recording (Linux first; WSL is acceptable).
 
 ## Critique Of The Original Plan
 
@@ -83,7 +84,7 @@ Specific corrections:
 - Make the daemon the only writer to SQLite and Nina-managed Obsidian files.
 - Treat CLI and TUI as clients, not separate implementations of business logic.
 - Delay the plugin system until internal modules prove the extension shape.
-- Delay OpenCode, GitHub, Jira, meetings, and semantic search.
+- Delay OpenCode, GitHub, Jira, and semantic search.
 - Add a local security boundary even though this is single-user.
 - Add explicit sync rules between SQLite and Obsidian.
 - Add workflow run persistence before building many workflows.

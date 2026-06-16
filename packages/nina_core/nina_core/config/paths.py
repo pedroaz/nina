@@ -43,3 +43,7 @@ def get_log_path(config_dir: Path) -> Path:
 
 def get_pid_path(config_dir: Path) -> Path:
     return config_dir / "daemon.pid"
+
+
+def get_recordings_path(config_dir: Path) -> Path:
+    return config_dir / "recordings"

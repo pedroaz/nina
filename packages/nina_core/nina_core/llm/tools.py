@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
+from nina_core.config.settings import SearchConfig
 from nina_core.llm.provider import ToolDefinition
 from nina_core.obsidian.service import ObsidianService
 
@@ -18,6 +19,7 @@ class ToolContext:
     obsidian: ObsidianService
     session_id: str | None = None
     embeddings: Any | None = None
+    search_config: SearchConfig | None = None
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], dict[str, Any]]

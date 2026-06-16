@@ -55,8 +55,9 @@ class FakeCommandRunner:
 async def test_chat_session_uses_obsidian_context(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
+    # Nina no longer reads NINA_LLM_PROVIDER; pass the FakeProvider through LLMConfig
     note_dir = isolated_config / "vault" / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "codex.md").write_text(
@@ -77,8 +78,9 @@ async def test_chat_session_uses_obsidian_context(
 async def test_agent_session_creates_ticket_and_moves_it(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
+    # Nina no longer reads NINA_LLM_PROVIDER; pass the FakeProvider through LLMConfig
     fake_runner = FakeCommandRunner(commands=[])
     service = SessionService(
         str(get_database_path(isolated_config)),
@@ -113,12 +115,23 @@ def _stub_fake_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     return fake
 
 
+@pytest.fixture
+def fake_llm(monkeypatch: pytest.MonkeyPatch):
+    """All session tests use the FakeProvider regardless of config.
+
+    Returns the FakeProvider instance so tests can queue tool calls and
+    responses on it.
+    """
+    fake = provider_module.FakeProvider()
+    monkeypatch.setattr(LLMService, "_build_provider", lambda self: fake)
+    return fake
+
+
 async def test_chat_session_uses_obsidian_search_tool_call(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
-    fake = _stub_fake_provider(monkeypatch)
 
     note_dir = isolated_config / "vault" / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +150,7 @@ async def test_chat_session_uses_obsidian_search_tool_call(
         name="obsidian_search",
         arguments={"query": "Codex OAuth", "limit": 3},
     )
+    fake = fake_llm
     fake.queue_tool_calls([call], "")
     fake.queue_text("Found information about Codex OAuth in the vault.")
 
@@ -156,9 +170,10 @@ async def test_chat_session_uses_obsidian_search_tool_call(
 async def test_chat_session_carries_history_into_tool_loop(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
-    fake = _stub_fake_provider(monkeypatch)
+    # Nina no longer reads NINA_LLM_PROVIDER; pass the FakeProvider through LLMConfig
+    fake = fake_llm
     service = SessionService(
         str(get_database_path(isolated_config)), str(get_vault_path(isolated_config))
     )
@@ -201,8 +216,9 @@ async def test_chat_session_carries_history_into_tool_loop(
 async def test_session_cancel_marks_session(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
+    # Nina no longer reads NINA_LLM_PROVIDER; pass the FakeProvider through LLMConfig
     service = SessionService(
         str(get_database_path(isolated_config)), str(get_vault_path(isolated_config))
     )
@@ -221,9 +237,10 @@ async def test_session_cancel_marks_session(
 async def test_chat_session_cancelled_run_records_finish_reason(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
-    fake = _stub_fake_provider(monkeypatch)
+    # Nina no longer reads NINA_LLM_PROVIDER; pass the FakeProvider through LLMConfig
+    fake = fake_llm
     service = SessionService(
         str(get_database_path(isolated_config)), str(get_vault_path(isolated_config))
     )
@@ -241,9 +258,10 @@ async def test_chat_session_cancelled_run_records_finish_reason(
 async def test_agent_session_uses_tickets_create_tool(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
-    fake = _stub_fake_provider(monkeypatch)
+    # Nina no longer reads NINA_LLM_PROVIDER; pass the FakeProvider through LLMConfig
+    fake = fake_llm
     service = SessionService(
         str(get_database_path(isolated_config)),
         str(get_vault_path(isolated_config)),
@@ -289,9 +307,10 @@ async def test_agent_session_uses_tickets_create_tool(
 async def test_agent_session_creates_note_via_tool(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
-    fake = _stub_fake_provider(monkeypatch)
+    # Nina no longer reads NINA_LLM_PROVIDER; pass the FakeProvider through LLMConfig
+    fake = fake_llm
     service = SessionService(
         str(get_database_path(isolated_config)),
         str(get_vault_path(isolated_config)),

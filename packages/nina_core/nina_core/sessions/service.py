@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from nina_core.cli.runner import NinaCommandRunner, build_nina_command, extract_created_id
+from nina_core.config.settings import LLMConfig, SearchConfig
 from nina_core.llm.default_tools import register_default_tools
 from nina_core.llm.provider import LLMRequest, LLMResponse, LLMService, ToolCall
 from nina_core.llm.tools import ToolContext, ToolRegistry
@@ -168,14 +169,17 @@ class SessionService:
         llm: LLMService | None = None,
         obsidian: ObsidianService | None = None,
         history_limit: int = 6,
+        llm_config: LLMConfig | None = None,
+        search_config: "SearchConfig | None" = None,  # noqa: F821
     ) -> None:
         self.db_path = db_path
         self.vault_path = Path(vault_path)
         self.command_runner = command_runner or NinaCommandRunner()
-        self.llm = llm or LLMService(db_path)
+        self.llm = llm or LLMService(db_path, config=llm_config)
         self.obsidian = obsidian or ObsidianService(self.vault_path)
         self.tools = tools or default_tool_registry()
         self.history_limit = history_limit
+        self.search_config = search_config
         self.engine = create_engine(f"sqlite:///{db_path}", echo=False)
         self.session_factory = sessionmaker(bind=self.engine)
 
@@ -188,6 +192,7 @@ class SessionService:
             vault_path=self.vault_path,
             db=self._session(),
             obsidian=self.obsidian,
+            search_config=self.search_config,
             session_id=session_id,
         )
 

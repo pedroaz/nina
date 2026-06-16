@@ -21,7 +21,13 @@ class PricingService:
 
     def __init__(self, config_dir: Path | str | None = None) -> None:
         if config_dir is None:
-            config_dir = get_config_dir()
+            try:
+                config_dir = get_config_dir()
+            except RuntimeError:
+                # Fall back to the default profile dir if NINA_CONFIG_DIR is
+                # not exported and no explicit config_dir was given. The
+                # cache and helpers all tolerate an empty cache file.
+                config_dir = Path.home() / ".nina" / "default"
         self.config_dir = Path(config_dir)
 
     def available(self) -> list[str]:

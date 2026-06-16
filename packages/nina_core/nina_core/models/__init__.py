@@ -4,6 +4,7 @@ from .models import (
     JobRun,
     KanbanColumn,
     LLMInteraction,
+    Meeting,
     Note,
     Project,
     Task,
@@ -22,4 +23,5 @@ __all__ = [
     "WorkflowStep",
     "JobRun",
     "Event",
+    "Meeting",
 ]

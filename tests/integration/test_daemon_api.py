@@ -59,7 +59,6 @@ def test_ask_answers_from_obsidian_notes(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
     note_dir = isolated_config / "vault" / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "codex.md").write_text(
@@ -170,7 +169,6 @@ def test_chat_sessions_use_obsidian_context(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("NINA_LLM_PROVIDER", "fake")
     note_dir = isolated_config / "vault" / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "codex.md").write_text(
@@ -206,7 +204,28 @@ def test_research_run_writes_summary_and_sources_note(
     isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("NINA_RESEARCH_PROVIDER", "fake")
+    from nina_core.research import service as research_service_module
+
+    monkeypatch.setattr(
+        research_service_module,
+        "FakeResearchProvider",
+        research_service_module.FakeResearchProvider,
+    )
+    # Pin the research provider to "fake" via config so the daemon picks
+    # the deterministic provider rather than hitting the real OpenAI API.
+    config_path = isolated_config / "config.yaml"
+    import yaml
+
+    cfg = yaml.safe_load(config_path.read_text()) or {}
+    cfg.setdefault("research", {})
+    cfg["research"]["provider"] = "fake"
+    cfg["research"]["model"] = "fake"
+    config_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    # Re-apply the config on the running app.
+    from nina_core.config import load_effective_config
+    from nina_server.app import app, apply_runtime_config
+
+    apply_runtime_config(app, isolated_config, load_effective_config(isolated_config))
 
     researched = api_client.post(
         "/research/run",

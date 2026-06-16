@@ -187,9 +187,12 @@ Acceptance:
 - OpenCode integration.
 - GitHub plugin.
 - Jira plugin.
-- Meeting transcription.
 - Hard delete support.
 - Backup/export/import.
+- `nina meeting import` for Teams-native recordings and other existing audio files.
+- macOS BlackHole and Windows native WASAPI loopback.
+- `nina meeting compact` to transcode WAV to opus.
+- Speaker diarization.
 
 ## Tool-Calling Chat And Agent
 
@@ -216,6 +219,18 @@ The chat and agent features use a shared LLM tool loop. See
 26. Add `nina search reindex-embeddings` and the `reindex-vault` scheduled workflow as a backstop.
 27. Add `nina_core/search/watcher.py` using `watchdog`; start in the daemon lifespan; debounce per-path; skip refused prefixes.
 28. Expose `search.live_indexing: bool` and `search.reindex_cron: str` in `NinaConfig`; show in the TUI Settings tab.
+
+## Phase 12: Meetings
+
+1. Add the `Meeting` SQLAlchemy model and an Alembic migration for the `meetings` table (id, title, status, source, device_name, started_at, ended_at, duration_seconds, audio_path, audio_size_bytes, audio_format, sample_rate, channels, transcript_path, summary_path, workflow_run_id, error, timestamps).
+2. Add `Meetings/` to `ensure_vault_structure` and a `create_meeting_note` helper in `ObsidianService`.
+3. Add `MeetingService` in `nina_core/meetings/service.py` with `start`, `stop`, `list`, `get`, `delete` (soft).
+4. Add `nina_core/meetings/recorder.py` with a small `AudioSource` protocol and `PortAudioSource` (mic via `sounddevice`), `PulseMonitorSource` (system via `parec`), `NullAudioSource` (tests/CI).
+5. Add the `transcribe-meeting` and `summarize-meeting` workflows in `WorkflowRunner` and a `TranscriptionProvider` interface in `nina_core/llm/transcription.py` (default: `FasterWhisperProvider`, plus `NullTranscriptionProvider` for tests).
+6. Add `nina_core/config/transcription.py` (`TranscriptionConfig`) and the `meetings.*` block; expose both in the TUI Settings page and `nina config` subcommands.
+7. Add the `/meetings` REST endpoints in `nina_server/app.py` and the `nina meeting ...` subcommands in `apps/cli/nina_cli/meeting_commands.py` (alias `mt`).
+8. Add the **Meetings** TUI page in `apps/tui/src/main.ts`, wired to the daemon REST + SSE.
+9. Tests: unit for `MeetingService`, recorder, transcription, and workflows; integration for the API + Obsidian; smoke target that records a short fixture and runs both workflows.
 
 ## Provider Pricing
 

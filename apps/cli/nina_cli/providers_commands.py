@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from nina_core.config import get_config_dir
 from nina_core.pricing import PricingService
 from nina_core.pricing.providers import available_providers, normalize_provider_name
 
@@ -17,7 +19,12 @@ providers_app = typer.Typer(help="Look up model pricing for supported LLM provid
 
 
 def _service() -> PricingService:
-    return PricingService()
+    # Always pass the config dir explicitly so this command works even when
+    # `NINA_CONFIG_DIR` is not exported (e.g. when launched from a bare shell
+    # or by another tool). `get_config_dir` already falls back to
+    # `~/.nina/default` if the env var is missing.
+    config_dir = os.environ.get("NINA_CONFIG_DIR") or get_config_dir()
+    return PricingService(Path(config_dir))
 
 
 def _format_price(value: float | None) -> str:

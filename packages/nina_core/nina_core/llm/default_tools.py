@@ -94,14 +94,14 @@ def _obsidian_semantic_search(ctx: ToolContext, args: dict[str, Any]) -> dict[st
     if not query:
         return {"results": []}
     try:
-        store = EmbeddingStore(ctx.db_path)
+        store = EmbeddingStore(ctx.db_path, config=ctx.search_config)
     except Exception as exc:
         return {"error": f"Embedding service unavailable: {exc}", "results": []}
     rows = store.list_rows()
     if not rows:
         # Lazy reindex
         try:
-            reindex_embeddings(ctx.db_path, str(ctx.vault_path))
+            reindex_embeddings(ctx.db_path, str(ctx.vault_path), config=ctx.search_config)
         except Exception as exc:
             return {"error": f"Embedding reindex failed: {exc}", "results": []}
         rows = store.list_rows()
@@ -158,10 +158,10 @@ def _obsidian_hybrid_search(ctx: ToolContext, args: dict[str, Any]) -> dict[str,
     semantic_results: list[dict[str, Any]] = []
     semantic_error: str | None = None
     try:
-        store = EmbeddingStore(ctx.db_path)
+        store = EmbeddingStore(ctx.db_path, config=ctx.search_config)
         if not store.list_rows():
             try:
-                reindex_embeddings(ctx.db_path, str(ctx.vault_path))
+                reindex_embeddings(ctx.db_path, str(ctx.vault_path), config=ctx.search_config)
             except Exception as exc:
                 semantic_error = str(exc)
         if not semantic_error:

@@ -170,3 +170,26 @@ class NoteEmbedding(Base):
     content_hash = Column(Text, nullable=False)
     created_at = Column(Text, nullable=False, default=now_utc)
     updated_at = Column(Text, nullable=False, default=now_utc)
+
+
+class Meeting(Base):
+    __tablename__ = "meetings"
+    id = Column(Text, primary_key=True)
+    title = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, default="recording")
+    source = Column(Text, nullable=False, default="mic")
+    device_name = Column(Text)
+    started_at = Column(Text, nullable=False)
+    ended_at = Column(Text)
+    duration_seconds = Column(Integer)
+    audio_path = Column(Text, nullable=False)
+    audio_size_bytes = Column(Integer)
+    audio_format = Column(Text, nullable=False, default="wav")
+    sample_rate = Column(Integer, nullable=False, default=16000)
+    channels = Column(Integer, nullable=False, default=1)
+    transcript_path = Column(Text)
+    summary_path = Column(Text)
+    workflow_run_id = Column(Text)
+    error = Column(Text)
+    created_at = Column(Text, nullable=False, default=now_utc)
+    updated_at = Column(Text, nullable=False, default=now_utc)

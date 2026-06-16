@@ -6,6 +6,7 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel
 
+from nina_core.config.settings import ResearchConfig
 from nina_core.obsidian.service import ObsidianService
 from nina_core.search.indexer import index_notes
 
@@ -40,7 +41,11 @@ class FakeResearchProvider(ResearchProvider):
 
 
 class OpenAIWebResearchProvider(ResearchProvider):
-    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY is required for web research")
@@ -102,18 +107,20 @@ class ResearchService:
         vault_path: str,
         provider: ResearchProvider | None = None,
         obsidian: ObsidianService | None = None,
+        config: ResearchConfig | None = None,
     ) -> None:
         self.db_path = db_path
         self.vault_path = vault_path
+        self.config = config or ResearchConfig()
         self.provider = provider or self._build_provider()
         self.obsidian = obsidian or ObsidianService(vault_path)
 
     def _build_provider(self) -> ResearchProvider:
-        provider = os.environ.get("NINA_RESEARCH_PROVIDER", "openai_web").lower()
+        provider = self.config.provider.lower()
         if provider == "fake":
             return FakeResearchProvider()
         if provider in {"openai", "openai_web", "web"}:
-            return OpenAIWebResearchProvider()
+            return OpenAIWebResearchProvider(model=self.config.model)
         raise RuntimeError(f"Unsupported research provider: {provider}")
 
     def run(

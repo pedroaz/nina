@@ -178,14 +178,20 @@ class OpenAIEmbeddingService(EmbeddingService):
         return [list(map(float, item.embedding)) for item in response.data]
 
 
-def build_embedding_service() -> EmbeddingService:
-    provider = os.environ.get("NINA_EMBEDDING_PROVIDER", "fastembed").lower()
+def build_embedding_service(
+    config: "SearchConfig | None" = None,  # noqa: F821
+) -> EmbeddingService:
+    """Build an embedding service from Nina search config."""
+    from nina_core.config.settings import SearchConfig
+
+    cfg = config or SearchConfig()
+    provider = cfg.embedding_provider.lower()
     if provider == "fake":
         return FakeEmbeddingService()
     if provider == "openai":
-        return OpenAIEmbeddingService()
+        return OpenAIEmbeddingService(model_name=cfg.embedding_model)
     if provider == "fastembed":
-        return FastembedEmbeddingService()
+        return FastembedEmbeddingService(model_name=cfg.embedding_model)
     raise RuntimeError(f"Unsupported embedding provider: {provider}")
 
 
@@ -214,9 +220,14 @@ def rrf_merge(rankings: list[list[ScoredRow]], k: int = 60, limit: int = 5) -> l
 
 
 class EmbeddingStore:
-    def __init__(self, db_path: str, service: EmbeddingService | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        service: EmbeddingService | None = None,
+        config: "SearchConfig | None" = None,  # noqa: F821
+    ) -> None:
         self.db_path = db_path
-        self.service = service or build_embedding_service()
+        self.service = service or build_embedding_service(config=config)
         self.engine = create_engine(f"sqlite:///{db_path}", echo=False)
         self.SessionLocal = sessionmaker(bind=self.engine)
 
@@ -324,7 +335,11 @@ class EmbeddingStore:
             db.close()
 
 
-def reindex_embeddings(db_path: str, vault_path: str) -> int:
+def reindex_embeddings(
+    db_path: str,
+    vault_path: str,
+    config: "SearchConfig | None" = None,  # noqa: F821
+) -> int:
     """Re-embed all notes in the vault. Returns the number of notes re-embedded."""
 
     import frontmatter
@@ -332,7 +347,7 @@ def reindex_embeddings(db_path: str, vault_path: str) -> int:
 
     from nina_core.search.indexer import index_note
 
-    store = EmbeddingStore(db_path)
+    store = EmbeddingStore(db_path, config=config)
     vault = Path(vault_path)
     count = 0
     for root, _dirs, files in os.walk(vault):
@@ -353,11 +368,15 @@ def reindex_embeddings(db_path: str, vault_path: str) -> int:
     return count
 
 
-def reindex_vault(db_path: str, vault_path: str) -> dict[str, int]:
+def reindex_vault(
+    db_path: str,
+    vault_path: str,
+    config: "SearchConfig | None" = None,  # noqa: F821
+) -> dict[str, int]:
     """Reindex the vault: FTS5 + embeddings. Returns counts."""
 
     from nina_core.search.indexer import index_notes
 
     index_notes(db_path, vault_path)
-    embedded = reindex_embeddings(db_path, vault_path)
+    embedded = reindex_embeddings(db_path, vault_path, config=config)
     return {"fts": -1, "embedded": embedded}  # fts count is implicit (full rebuild)

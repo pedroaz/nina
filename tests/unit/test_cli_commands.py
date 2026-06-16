@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+import yaml
 from nina_cli import config_commands as config_module
 from nina_cli import main as main_module
 from nina_cli.api import api_base
 from nina_cli.main import app
-from nina_core.config import load_effective_config
+from nina_core.config import (
+    get_token_path,
+    initialize,
+    load_effective_config,
+    read_token,
+)
 from typer.testing import CliRunner
 
 
@@ -31,6 +38,26 @@ class FakeHealthResponse:
 
 
 runner = CliRunner()
+
+
+def _patch_popen_capture(
+    monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
+) -> None:
+    """Patch `subprocess.Popen` to capture the argv into `captured["cmd"]`
+    and return a sentinel object that doesn't actually spawn a process.
+
+    Used by the `nina config edit` tests so they don't launch a real
+    editor or hang waiting for one to close.
+    """
+
+    class _Sentinel:
+        pass
+
+    def _fake_popen(cmd: list[str], *args: Any, **kwargs: Any) -> _Sentinel:
+        captured["cmd"] = list(cmd)
+        return _Sentinel()
+
+    monkeypatch.setattr(config_module.subprocess, "Popen", _fake_popen)
 
 
 def test_task_move_calls_kanban_move_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -344,6 +371,113 @@ def test_config_show_json_lists_config_values(isolated_config) -> None:  # type:
     assert payload["config_dir"] == str(isolated_config)
     assert payload["vault_path"] == str(isolated_config / "vault")
     assert payload["daemon_host"] == "127.0.0.1"
+    # `default_gain` should be in the snapshot with the model default (1.0).
+    assert payload["meetings"]["default_gain"] == 1.0
+
+
+def test_config_show_includes_default_gain_in_table(isolated_config) -> None:  # type: ignore[no-untyped-def]
+    result = runner.invoke(app, ["config", "show"])
+
+    assert result.exit_code == 0
+    # The default gain row should be present in the rich table output.
+    assert "default gain" in result.stdout.lower()
+    assert "1.0x" in result.stdout
+
+
+def test_config_meetings_gain_round_trip(isolated_config) -> None:  # type: ignore[no-untyped-def]
+    # Set gain via the CLI, then verify it shows up in `nina config show`.
+    result = runner.invoke(app, ["config", "meetings-gain", "4.0"])
+    assert result.exit_code == 0, result.stdout
+    assert "+12.0 dB" in result.stdout
+
+    # Now show should reflect the new value.
+    show = runner.invoke(app, ["config", "show", "--json"])
+    assert show.exit_code == 0
+    payload = json.loads(show.stdout)
+    assert payload["meetings"]["default_gain"] == 4.0
+
+    # And the on-disk file should have it too.
+    config_path = isolated_config / "config.yaml"
+    on_disk = yaml.safe_load(config_path.read_text())
+    assert on_disk["meetings"]["default_gain"] == 4.0
+
+
+def test_config_edit_uses_explicit_editor(
+    monkeypatch: pytest.MonkeyPatch, isolated_config
+) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, Any] = {}
+    _patch_popen_capture(monkeypatch, captured)
+
+    result = runner.invoke(app, ["config", "edit", "--editor", "nvim {path}"])
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["cmd"] == ["nvim", str(isolated_config / "config.yaml")]
+
+
+def test_config_edit_creates_file_if_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    config_dir = tmp_path / "nina-config"
+    initialize(config_dir=config_dir, force=True)
+    monkeypatch.setenv("NINA_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("NINA_TOKEN", read_token(get_token_path(config_dir)))
+
+    config_path = config_dir / "config.yaml"
+    config_path.unlink(missing_ok=True)
+    assert not config_path.exists()
+
+    captured: dict[str, Any] = {}
+    _patch_popen_capture(monkeypatch, captured)
+
+    result = runner.invoke(app, ["config", "edit", "--editor", "code"])
+
+    assert result.exit_code == 0, result.stdout
+    # File was created with the effective config.
+    assert config_path.exists()
+    on_disk = yaml.safe_load(config_path.read_text())
+    assert on_disk["profile"] == "default"
+    # And the editor was launched with the path.
+    assert captured["cmd"] == ["code", str(config_path)]
+
+
+def test_config_edit_falls_back_to_code_binary(
+    monkeypatch: pytest.MonkeyPatch, isolated_config
+) -> None:  # type: ignore[no-untyped-def]
+    # Make `code` discoverable.
+    code_dir = isolated_config / "bin"
+    code_dir.mkdir(exist_ok=True)
+    fake_code = code_dir / "code"
+    fake_code.write_text("#!/bin/sh\n")
+    fake_code.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{code_dir}:{__import__('os').environ.get('PATH', '')}")
+    monkeypatch.delenv("EDITOR", raising=False)
+
+    captured: dict[str, Any] = {}
+    _patch_popen_capture(monkeypatch, captured)
+
+    result = runner.invoke(app, ["config", "edit", "--wait"])
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["cmd"][0] == "code"
+    assert "--wait" in captured["cmd"]
+    assert captured["cmd"][-1] == str(isolated_config / "config.yaml")
+
+
+def test_config_edit_exits_when_no_editor_available(
+    monkeypatch: pytest.MonkeyPatch, isolated_config
+) -> None:  # type: ignore[no-untyped-def]
+    # Pretend nothing is on PATH and no $EDITOR is set.
+    monkeypatch.setenv("PATH", "/nonexistent")
+    monkeypatch.delenv("EDITOR", raising=False)
+    # Also no xdg-open/open/start.
+    import shutil as _shutil
+
+    monkeypatch.setattr(_shutil, "which", lambda name: None)
+
+    result = runner.invoke(app, ["config", "edit"])
+
+    assert result.exit_code == 1
+    assert "no editor found" in result.stdout.lower()
 
 
 def test_tui_binary_resolution_prefers_env(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -550,3 +684,58 @@ def test_note_update_patches_body(monkeypatch) -> None:  # type: ignore[no-untyp
     )
     assert result.exit_code == 0, result.output
     assert calls == [("PATCH", "/notes/Research/x.md", {"json": {"body": "new"}})]
+
+
+# ----------------------------------------------------------------------------
+# Meeting play path: recover from a stranded `.wav.partial`
+# ----------------------------------------------------------------------------
+
+
+def test_resolve_audio_path_returns_existing_wav(tmp_path) -> None:
+    from nina_cli.meeting_commands import resolve_audio_path
+
+    wav = tmp_path / "meeting.wav"
+    wav.write_bytes(b"RIFF...WAVE")
+    resolved = resolve_audio_path(str(wav))
+    assert resolved == wav
+
+
+def test_resolve_audio_path_promotes_partial(tmp_path) -> None:
+    from nina_cli.meeting_commands import resolve_audio_path
+
+    wav = tmp_path / "meeting.wav"
+    partial = tmp_path / "meeting.wav.partial"
+    partial.write_bytes(b"RIFF...WAVE")  # valid WAV header + some data
+    resolved = resolve_audio_path(str(wav))
+    assert resolved == wav
+    assert wav.exists()
+    assert not partial.exists()
+
+
+def test_resolve_audio_path_raises_when_neither_exists(tmp_path) -> None:
+    from nina_cli.meeting_commands import resolve_audio_path
+
+    wav = tmp_path / "missing.wav"
+    with pytest.raises(FileNotFoundError):
+        resolve_audio_path(str(wav))
+
+
+def test_resolve_audio_path_raises_when_partial_empty(tmp_path) -> None:
+    """A zero-byte partial is not useful — don't promote it."""
+    from nina_cli.meeting_commands import resolve_audio_path
+
+    wav = tmp_path / "meeting.wav"
+    partial = tmp_path / "meeting.wav.partial"
+    partial.write_bytes(b"")
+    with pytest.raises(FileNotFoundError):
+        resolve_audio_path(str(wav))
+    # We did NOT promote the empty partial.
+    assert not wav.exists()
+    assert partial.exists()
+
+
+def test_resolve_audio_path_raises_for_empty_path() -> None:
+    from nina_cli.meeting_commands import resolve_audio_path
+
+    with pytest.raises(FileNotFoundError, match="no audio_path"):
+        resolve_audio_path("")

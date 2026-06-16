@@ -142,10 +142,52 @@ interface ConfigSnapshot {
     provider: string;
     model: string;
   };
+  research: {
+    provider: string;
+    model: string;
+  };
   scheduler: {
     daily_summary_time: string;
   };
+  transcription: {
+    backend: string;
+    model: string;
+    device: string;
+    compute_type: string;
+    language: string | null;
+  };
+  meetings: {
+    default_source: string;
+    auto_summarize: boolean;
+    sample_rate: number;
+    channels: number;
+    open_command: string;
+    play_command: string;
+  };
   log_level: string;
+}
+
+interface Meeting {
+  id: string;
+  title: string;
+  status: string;
+  source: string;
+  device_name: string | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  audio_path: string;
+  audio_size_bytes: number | null;
+  audio_format: string;
+  sample_rate: number;
+  channels: number;
+  transcript_path: string | null;
+  summary_path: string | null;
+  workflow_run_id: string | null;
+  error: string | null;
+  note_path: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface ConfigUpdateResponse {
@@ -162,7 +204,14 @@ type ConfigFieldKey =
   | "log_level"
   | "llm.provider"
   | "llm.model"
-  | "scheduler.daily_summary_time";
+  | "scheduler.daily_summary_time"
+  | "transcription.backend"
+  | "transcription.model"
+  | "transcription.device"
+  | "transcription.compute_type"
+  | "transcription.language"
+  | "meetings.default_source"
+  | "meetings.auto_summarize";
 
 interface ConfigFieldDefinition {
   key: ConfigFieldKey;
@@ -178,16 +227,25 @@ interface Banner {
   text: string;
 }
 
-type PageName = "Tickets" | "Chat" | "Agent" | "Research" | "Jobs" | "Config";
+type PageName = "Tickets" | "Chat" | "Agent" | "Research" | "Jobs" | "Meetings" | "Config";
 type PageFocusTarget = "tabs" | "scroll" | "input" | "select";
 type MainPageFocusTarget = Exclude<PageFocusTarget, "tabs">;
 
-const PAGE_NAMES: PageName[] = ["Tickets", "Chat", "Agent", "Research", "Jobs", "Config"];
+const PAGE_NAMES: PageName[] = [
+  "Tickets",
+  "Chat",
+  "Agent",
+  "Research",
+  "Meetings",
+  "Jobs",
+  "Config",
+];
 const PAGE_DESCRIPTIONS: Record<PageName, string> = {
   Tickets: "Create tickets and inspect the board",
   Chat: "Ask questions over local Nina context",
   Agent: "Natural language that can auto-run Nina commands",
   Research: "Research a topic and write an Obsidian note",
+  Meetings: "Record meetings, transcribe, and summarize",
   Jobs: "Inspect scheduled workflows and recent runs",
   Config: "Vault, database, daemon, and runtime settings",
 };
@@ -196,6 +254,7 @@ const PAGE_ACCENTS: Record<PageName, string> = {
   Chat: "#22d3ee",
   Agent: "#f97316",
   Research: "#eab308",
+  Meetings: "#a855f7",
   Jobs: "#60a5fa",
   Config: "#94a3b8",
 };
@@ -204,6 +263,7 @@ const PAGE_HELP: Record<PageName, string> = {
   Chat: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt. Use @path/to/note.md in the prompt to attach a note. While waiting, a loading card shows elapsed time. Ctrl+Q clears the chat and starts a new context. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom. Ctrl+R refreshes the page.",
   Agent: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt and may execute tool calls automatically. While waiting, a loading card shows elapsed time. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom.",
   Research: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter runs OpenAI web research and writes a note into Obsidian. While waiting, a loading card shows elapsed time. PageUp/PageDown scroll the report.",
+  Meetings: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Up/Down moves the selection. Type a title and press Enter to start a recording (runs detached, the TUI stays responsive). All other actions use Ctrl so the text input does not swallow them: Ctrl+T transcribe, Ctrl+Y summarize, Ctrl+X stop active recording, Ctrl+O open in Obsidian, Ctrl+P play audio, Ctrl+D delete. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
   Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it. F6 toggles between the history and the tab strip. PageUp/PageDown and Home/End scroll the history. Ctrl+R refreshes the page.",
   Config: "Esc returns to the tab strip. Click a tab to switch pages. Click the list or the value field to focus it. F6 toggles between the editable list and the value field. Up and Down change the selected setting. Enter saves the current value. Tab and Shift+Tab change pages. Ctrl+R refreshes the page. Ctrl+C quits.",
 };
@@ -212,6 +272,7 @@ const PAGE_INTRO: Record<PageName, string> = {
   Chat: "Chat mode answers questions with LLM-backed Obsidian context via tool calls. Use @path/to/note.md in the prompt to attach a note. It does not run commands or write to the vault.",
   Agent: "Agent mode can plan and execute tool calls (read + write) against the vault, kanban, and jobs. It is intended for natural-language task creation and other safe Nina operations.",
   Research: "Research mode uses OpenAI web search and writes a summary-plus-links note into your Obsidian vault.",
+  Meetings: "Meetings are recorded by the local CLI (`nina meeting record`). Each recording creates a Meetings/<date> - <title>.md note in Obsidian. Transcription and summarization are workflows that read the same audio file.",
   Jobs: "Jobs execute Nina workflows on a schedule and keep their run history in SQLite.",
   Config: "This view lets you inspect and edit the config file that the daemon and CLI read.",
 };
@@ -220,6 +281,7 @@ const PAGE_DEFAULT_FOCUS: Record<PageName, MainPageFocusTarget> = {
   Chat: "input",
   Agent: "input",
   Research: "input",
+  Meetings: "input",
   Jobs: "scroll",
   Config: "input",
 };
@@ -547,6 +609,66 @@ const CONFIG_FIELDS: ConfigFieldDefinition[] = [
     getValue: (config) => config.scheduler.daily_summary_time,
     buildPatch: (value) => ({ scheduler: { daily_summary_time: value } }),
   },
+  {
+    key: "transcription.backend",
+    label: "Transcription backend",
+    description: "local_whisper, whisper_cli, or null",
+    restartRequired: false,
+    getValue: (config) => config.transcription.backend,
+    buildPatch: (value) => ({ transcription: { backend: value } }),
+  },
+  {
+    key: "transcription.model",
+    label: "Transcription model",
+    description: "tiny | base | small | medium | large-v3",
+    restartRequired: false,
+    getValue: (config) => config.transcription.model,
+    buildPatch: (value) => ({ transcription: { model: value } }),
+  },
+  {
+    key: "transcription.device",
+    label: "Transcription device",
+    description: "cpu | cuda",
+    restartRequired: false,
+    getValue: (config) => config.transcription.device,
+    buildPatch: (value) => ({ transcription: { device: value } }),
+  },
+  {
+    key: "transcription.compute_type",
+    label: "Transcription compute",
+    description: "int8 | float16 | float32",
+    restartRequired: false,
+    getValue: (config) => config.transcription.compute_type,
+    buildPatch: (value) => ({ transcription: { compute_type: value } }),
+  },
+  {
+    key: "transcription.language",
+    label: "Transcription language",
+    description: "Language code or 'auto'",
+    restartRequired: false,
+    getValue: (config) => config.transcription.language ?? "auto",
+    buildPatch: (value) => ({
+      transcription: { language: value === "auto" ? null : value },
+    }),
+  },
+  {
+    key: "meetings.default_source",
+    label: "Meetings default source",
+    description: "mic | system",
+    restartRequired: false,
+    getValue: (config) => config.meetings.default_source,
+    buildPatch: (value) => ({ meetings: { default_source: value } }),
+  },
+  {
+    key: "meetings.auto_summarize",
+    label: "Auto-summarize meetings",
+    description: "true | false",
+    restartRequired: false,
+    getValue: (config) => String(config.meetings.auto_summarize),
+    buildPatch: (value) => ({
+      meetings: { auto_summarize: value.toLowerCase() === "true" },
+    }),
+  },
 ];
 
 function getConfigFieldDefinition(key: ConfigFieldKey): ConfigFieldDefinition {
@@ -624,6 +746,8 @@ async function main(): Promise<void> {
     kanbanSelectionIndex: number;
     jobs: Job[];
     jobRuns: JobRun[];
+    meetings: Meeting[];
+    meetingSelectedId: string | null;
     chatSession: SessionRecord | null;
     agentSession: SessionRecord | null;
     researchReport: ResearchRunResult | null;
@@ -645,6 +769,8 @@ async function main(): Promise<void> {
     kanbanSelectionIndex: -1,
     jobs: [],
     jobRuns: [],
+    meetings: [],
+    meetingSelectedId: null,
     chatSession: null,
     agentSession: null,
     researchReport: null,
@@ -661,6 +787,7 @@ async function main(): Promise<void> {
   };
 
   const pendingTickers: Partial<Record<"chat" | "agent", ReturnType<typeof setInterval>>> = {};
+  let meetingsPollTicker: ReturnType<typeof setInterval> | null = null;
 
   function getKanbanTickets(): { ticket: Ticket; column: string; index: number }[] {
     if (!state.kanban) return [];
@@ -1236,6 +1363,87 @@ async function main(): Promise<void> {
     }
   }
 
+  function renderMeetingsPage(pageRoot: BoxRenderable): void {
+    const scroll = makeScrollArea(pageRoot, accentForPage("Meetings"), "Meetings (scrollable)");
+    activeScrollArea = scroll;
+    if (state.meetings.length === 0) {
+      scroll.add(
+        buildCard(
+          renderer,
+          "No meetings",
+          accentForPage("Meetings"),
+          "Start a recording with `nina meeting record \"title\"` in a terminal, or use the prompt below to plan a meeting title. The CLI owns the audio capture; this page shows what the daemon has tracked.",
+        ),
+      );
+    } else {
+      const selectedId = state.meetings.find(
+        (m) => m.id === state.meetingSelectedId,
+      )
+        ? state.meetingSelectedId
+        : state.meetings[0].id;
+      state.meetingSelectedId = selectedId;
+      for (const meeting of state.meetings) {
+        const lines: string[] = [
+          `Status: ${meeting.status}`,
+          `Source: ${meeting.source}${meeting.device_name ? ` (${meeting.device_name})` : ""}`,
+          `Started: ${formatTime(meeting.started_at)}`,
+          meeting.ended_at ? `Ended: ${formatTime(meeting.ended_at)}` : "Ended: —",
+          meeting.duration_seconds != null ? `Duration: ${meeting.duration_seconds}s` : "Duration: —",
+          `Audio: ${meeting.audio_path}`,
+        ];
+        if (meeting.transcript_path) {
+          lines.push(`Transcript: ${meeting.transcript_path}`);
+        }
+        if (meeting.summary_path) {
+          lines.push(`Summary note: ${meeting.summary_path}`);
+        }
+        if (meeting.error) {
+          lines.push(`Error: ${meeting.error}`);
+        }
+        const isSelected = meeting.id === state.meetingSelectedId;
+        const accent = meeting.status === "recording" ? THEME.success : accentForPage("Meetings");
+        const titlePrefix = isSelected ? "▶ " : "  ";
+        scroll.add(
+          buildCard(
+            renderer,
+            `${titlePrefix}${meeting.title}`,
+            accent,
+            lines.join("\n"),
+          ),
+        );
+      }
+    }
+
+    const keybinds = buildCard(
+      renderer,
+      "Keys (all require Ctrl)",
+      THEME.subtle,
+      [
+        "Ctrl+T transcribe    Ctrl+Y summarize    Ctrl+X stop active",
+        "Ctrl+O open in Obsidian    Ctrl+P play audio    Ctrl+D delete",
+        "Up/Down move the selection",
+        "Type a title below and press Enter to start recording (it runs detached).",
+      ].join("\n"),
+    );
+    pageRoot.add(keybinds);
+
+    const input = makeInputSection(
+      pageRoot,
+      "Start a recording",
+      "Type a title and press Enter to start recording. The recorder runs detached — close the TUI anytime. Press Ctrl+X here to stop.",
+      accentForPage("Meetings"),
+    );
+    activeInput = input;
+    input.on(InputRenderableEvents.ENTER, (value: string) => {
+      const title = value.trim();
+      if (!title) {
+        return;
+      }
+      input.value = "";
+      startRecording(title);
+    });
+  }
+
   function renderConfigPage(pageRoot: BoxRenderable): void {
     if (!state.config) {
       pageRoot.add(
@@ -1401,6 +1609,186 @@ async function main(): Promise<void> {
     }
     state.jobs = await apiFetch<Job[]>(token, "/jobs");
     state.jobRuns = await apiFetch<JobRun[]>(token, "/job-runs?limit=8");
+  }
+
+  async function refreshMeetings(): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    const response = await apiFetch<{ meetings: Meeting[] }>(token, "/meetings?limit=20");
+    state.meetings = response.meetings || [];
+  }
+
+  async function triggerMeetingWorkflow(meetingId: string, kind: "transcribe" | "summarize"): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    const result = await apiFetch<{ status: string; output?: { note_path?: string | null } }>(
+      token,
+      `/meetings/${meetingId}/${kind}`,
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    if (result.status !== "completed") {
+      throw new Error(`${kind} did not complete`);
+    }
+    state.banner = {
+      kind: "success",
+      text:
+        kind === "transcribe"
+          ? `Transcribed ${meetingId}.`
+          : `Summarized ${meetingId}.`,
+    };
+    if (result.output?.note_path) {
+      state.banner = { ...state.banner, text: `${state.banner.text} Note: ${result.output.note_path}` };
+    }
+    await refreshMeetings();
+    renderPage("Meetings");
+  }
+
+  async function openMeetingInObsidian(meetingId: string): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    const meeting = state.meetings.find((entry) => entry.id === meetingId);
+    if (!meeting || !meeting.note_path) {
+      throw new Error("Meeting has no note yet. Stop the recording first.");
+    }
+    await apiFetch<{ opened: boolean }>(token, "/search/open", {
+      method: "POST",
+      body: JSON.stringify({ path: meeting.note_path }),
+    });
+    state.banner = { kind: "info", text: `Requested Obsidian to open ${meeting.note_path}` };
+    renderPage("Meetings");
+  }
+
+  async function playMeeting(meetingId: string): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    const meeting = state.meetings.find((entry) => entry.id === meetingId);
+    if (!meeting) {
+      throw new Error(`Meeting not found: ${meetingId}`);
+    }
+    if (!meeting.audio_path) {
+      throw new Error("Meeting has no audio file.");
+    }
+    // If the final WAV is missing, the recorder subprocess was likely
+    // killed before it could rename `.wav.partial` → `.wav`. Promote
+    // the partial file in place so the meeting stays playable.
+    const audioFile = meeting.audio_path;
+    let playPath = audioFile;
+    try {
+      const exists = await Bun.file(audioFile).exists();
+      if (!exists) {
+        const partialPath = audioFile + ".partial";
+        const partialExists = await Bun.file(partialPath).exists();
+        if (partialExists) {
+          await Bun.$`mv ${partialPath} ${audioFile}`.quiet();
+          playPath = audioFile;
+        }
+      }
+    } catch (err) {
+      throw new Error(
+        `Audio not found for meeting ${meetingId} and partial recovery failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
+    if (!(await Bun.file(playPath).exists())) {
+      throw new Error(`Audio not found for meeting ${meetingId}.`);
+    }
+    // Read the configured play command from the server. We could
+    // hard-code `xdg-open` here, but the server config is the
+    // single source of truth (Nina has no env-var fallback for
+    // this anymore).
+    const cfg = state.config;
+    const playTemplate = cfg?.meetings.play_command ?? "xdg-open {path}";
+    const binary = playTemplate.split(/\s+/)[0];
+    if (!binary) {
+      throw new Error("meetings.play_command is empty in config.");
+    }
+    const args = playTemplate
+      .split(/\s+/)
+      .slice(1)
+      .map((part) => part.replace("{path}", playPath));
+    // Spawn detached; we don't wait for the player to exit.
+    const child = Bun.spawn([binary, ...args], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    child.unref();
+    state.banner = {
+      kind: "info",
+      text: `Playing ${playPath} (${binary})`,
+    };
+    renderPage("Meetings");
+  }
+
+  function startMeetingsPolling(): void {
+    if (meetingsPollTicker) {
+      return;
+    }
+    meetingsPollTicker = setInterval(() => {
+      // Stop polling if the user navigated away from the Meetings page
+      // or if no recording is in flight.
+      if (state.currentPage !== "Meetings") {
+        stopMeetingsPolling();
+        return;
+      }
+      void refreshMeetings().then(() => {
+        if (!state.meetings.some((m) => m.status === "recording")) {
+          stopMeetingsPolling();
+        }
+        if (state.currentPage === "Meetings") {
+          renderPage("Meetings");
+        }
+      });
+    }, 2000);
+  }
+
+  function stopMeetingsPolling(): void {
+    if (meetingsPollTicker) {
+      clearInterval(meetingsPollTicker);
+      meetingsPollTicker = null;
+    }
+  }
+
+  function startRecording(title: string): void {
+    // Spawn `nina r` as a detached subprocess. The recorder does the
+    // actual work (PortAudio/PulseAudio capture, POST /meetings,
+    // POST /meetings/{id}/stop) and we just poll the daemon to see
+    // the new meeting row appear.
+    let child: ReturnType<typeof Bun.spawn>;
+    try {
+      child = Bun.spawn(["nina", "r", title], {
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+    } catch (err) {
+      state.lastError = err instanceof Error ? err.message : String(err);
+      renderPage("Meetings");
+      return;
+    }
+    child.unref();
+    state.banner = {
+      kind: "info",
+      text: `Recording "${title}" started (pid ${child.pid}). Press Ctrl+X on this page to stop.`,
+    };
+    startMeetingsPolling();
+    // Refresh once quickly so the list updates immediately.
+    setTimeout(() => {
+      void refreshMeetings();
+    }, 500);
+    renderPage("Meetings");
+  }
+
+  async function deleteMeeting(meetingId: string): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    await apiFetch<{ deleted: boolean }>(token, `/meetings/${meetingId}`, { method: "DELETE" });
+    state.banner = { kind: "info", text: `Deleted meeting ${meetingId}` };
+    await refreshMeetings();
+    renderPage("Meetings");
   }
 
   async function sendChatPrompt(value: string, input: InputRenderable): Promise<void> {
@@ -1710,6 +2098,9 @@ async function main(): Promise<void> {
       case "Research":
         renderResearchPage(pageRoot);
         break;
+      case "Meetings":
+        renderMeetingsPage(pageRoot);
+        break;
       case "Jobs":
         renderJobsPage(pageRoot);
         break;
@@ -1737,6 +2128,9 @@ async function main(): Promise<void> {
         state.agentSession = await loadConversationSession("agent", state.agentSession, "Agent");
         break;
       case "Research":
+        break;
+      case "Meetings":
+        await refreshMeetings();
         break;
       case "Jobs":
         await refreshJobs();
@@ -1810,6 +2204,110 @@ async function main(): Promise<void> {
       key.preventDefault();
       key.stopPropagation();
       return;
+    }
+    if (state.currentPage === "Meetings" && key.ctrl) {
+      const currentIndex = state.meetings.findIndex(
+        (m) => m.id === state.meetingSelectedId,
+      );
+      const selected = currentIndex >= 0
+        ? state.meetings[currentIndex]
+        : state.meetings[0];
+
+      // Up/Down still work without Ctrl (they don't conflict with the
+      // text input because they're navigation keys, not letters).
+      if (key.name === "up" || key.name === "down") {
+        if (state.meetings.length > 0) {
+          const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+          const delta = key.name === "down" ? 1 : -1;
+          const nextIndex =
+            (baseIndex + delta + state.meetings.length) % state.meetings.length;
+          state.meetingSelectedId = state.meetings[nextIndex].id;
+          renderPage("Meetings");
+        }
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+
+      // Every action below requires Ctrl so the text input on this page
+      // doesn't swallow the keystrokes. Pick letters that don't collide
+      // with terminal-reserved combos (Ctrl+C, Ctrl+M, Ctrl+S, Ctrl+Z
+      // are commonly intercepted by the line discipline).
+      if (key.name === "x") {
+        // Ctrl+X — stop the active recording
+        void (async () => {
+          try {
+            const recording = state.meetings.find((m) => m.status === "recording");
+            if (recording) {
+              await apiFetch(token, `/meetings/${recording.id}/stop`, {
+                method: "POST",
+                body: JSON.stringify({}),
+              });
+              state.banner = { kind: "info", text: `Stopped meeting ${recording.id}.` };
+            } else {
+              state.banner = { kind: "info", text: "No active recording to stop." };
+            }
+            await refreshMeetings();
+            renderPage("Meetings");
+          } catch (error) {
+            state.lastError = error instanceof Error ? error.message : String(error);
+            renderPage("Meetings");
+          }
+        })();
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "t" && selected) {
+        // Ctrl+T — transcribe
+        void triggerMeetingWorkflow(selected.id, "transcribe").catch((err: unknown) => {
+          state.lastError = err instanceof Error ? err.message : String(err);
+          renderPage("Meetings");
+        });
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "y" && selected) {
+        // Ctrl+Y — summarize (Y for summarYze, avoids Ctrl+M = Enter)
+        void triggerMeetingWorkflow(selected.id, "summarize").catch((err: unknown) => {
+          state.lastError = err instanceof Error ? err.message : String(err);
+          renderPage("Meetings");
+        });
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "o" && selected) {
+        // Ctrl+O — open in Obsidian
+        void openMeetingInObsidian(selected.id).catch((err: unknown) => {
+          state.lastError = err instanceof Error ? err.message : String(err);
+          renderPage("Meetings");
+        });
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "p" && selected) {
+        // Ctrl+P — play
+        void playMeeting(selected.id).catch((err: unknown) => {
+          state.lastError = err instanceof Error ? err.message : String(err);
+          renderPage("Meetings");
+        });
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "d" && selected) {
+        // Ctrl+D — delete
+        void deleteMeeting(selected.id).catch((err: unknown) => {
+          state.lastError = err instanceof Error ? err.message : String(err);
+          renderPage("Meetings");
+        });
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
     }
     if (key.name === "pageup" || key.name === "pagedown" || key.name === "home" || key.name === "end") {
       handleScrollKey(key.name, key.ctrl);

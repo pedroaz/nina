@@ -156,5 +156,23 @@ Workflows stream status events. Later external worker integrations, such as Open
 - Start ticket.
 - Weekly review.
 - Research topic.
-- Process meeting recording.
 - OpenCode session tracker.
+
+## `transcribe-meeting` Workflow
+
+Steps:
+
+1. `load_meeting` — load the `Meeting` row by id; fail if the audio file is missing.
+2. `transcribe` — call `TranscriptionService.transcribe(meeting)`. Default backend: local `faster-whisper` (16 kHz mono PCM, VAD on, no word timestamps). Writes raw text to `<config>/recordings/mt_<id>.txt`.
+3. `update_note` — call `NoteService.update_note` to replace the `## Transcript` section of the meeting note with the new text. Patch `transcript_status: done` into the frontmatter.
+4. `log_interaction` — write an `LLMInteraction` row with `purpose="meeting_transcription"`, `provider="local_whisper"`, the model name, the prompt, the response, status, and timings.
+
+## `summarize-meeting` Workflow
+
+Steps:
+
+1. `load_meeting` — load the meeting plus its transcript path.
+2. `build_context` — assemble title, `started_at`, transcript (or note body if no transcript), tags, optional project link.
+3. `summarize` — call `LLMService.complete` with a fixed system prompt asking for a 3–6 bullet summary, an `## Action items` block, and a `## Decisions` block.
+4. `update_note` — replace `## Summary`, `## Action items`, and `## Decisions`; patch `summary_status: done` into the frontmatter.
+5. `log_interaction` — write an `LLMInteraction` row with the configured provider/model.

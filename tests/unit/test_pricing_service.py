@@ -58,6 +58,38 @@ def test_default_config_dir_when_unset(tmp_path: Path, monkeypatch: pytest.Monke
     assert service.config_dir == tmp_path / ".nina" / "default"
 
 
+def test_construct_without_env_falls_back_when_helper_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: an older `get_config_dir` raised when NINA_CONFIG_DIR was
+    unset. `PricingService()` must still succeed in that situation by falling
+    back to the default profile dir."""
+    from nina_core import pricing
+    from nina_core.pricing import PricingService
+
+    monkeypatch.delenv("NINA_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    def _boom() -> Path:
+        raise RuntimeError("NINA_CONFIG_DIR is not set; pass config_dir explicitly")
+
+    monkeypatch.setattr(pricing.service, "get_config_dir", _boom)
+    service = PricingService()
+    assert service.config_dir == tmp_path / ".nina" / "default"
+
+
+def test_construct_with_explicit_dir_ignores_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`PricingService(<path>)` uses the given dir verbatim, never the env var."""
+    from nina_core.pricing import PricingService
+
+    monkeypatch.setenv("NINA_CONFIG_DIR", "/some/other/place")
+    target = tmp_path / "explicit-config"
+    service = PricingService(target)
+    assert service.config_dir == target
+
+
 def test_source_override_skips_network(tmp_path: Path) -> None:
     service = PricingService(tmp_path)
     refreshed = service.refresh(

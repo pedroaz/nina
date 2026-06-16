@@ -33,6 +33,7 @@ from .config_commands import config_app
 from .job_commands import job_app
 from .kanban_commands import kanban_app
 from .llm_commands import llm_app
+from .meeting_commands import meeting_app, record_meeting
 from .notes_commands import note_app
 from .project_commands import project_app
 from .providers_commands import providers_app
@@ -43,24 +44,78 @@ from .ticket_commands import ticket_app
 
 console = Console()
 
-app = typer.Typer(help="Nina CLI - local-first personal operations platform")
+
+def _print_short_help() -> None:
+    """Compact help for the top-level `nina` command."""
+
+    console.print(
+        "[bold]Nina[/bold] - local-first personal operations platform\n"
+        "\n"
+        "[bold]Most common[/bold]\n"
+        '  [cyan]nina r  "title"[/cyan]      record a meeting (alias for `meeting record`)\n'
+        "  [cyan]nina mt list[/cyan]         list meetings (alias for `meeting list`)\n"
+        "  [cyan]nina mt stop[/cyan]         stop the active recording\n"
+        "  [cyan]nina mt t <id>[/cyan]       transcribe a meeting (local faster-whisper)\n"
+        "  [cyan]nina mt m <id>[/cyan]       summarize a meeting (LLM)\n"
+        "  [cyan]nina t[/cyan]               launch the TUI\n"
+        '  [cyan]nina ask "q?"[/cyan]        ask a question over the vault\n'
+        '  [cyan]nina search "q"[/cyan]      full-text search the vault\n'
+        "  [cyan]nina config show[/cyan]     inspect settings\n"
+        "\n"
+        "[bold]Compact aliases[/bold]\n"
+        "  r = meeting record       mt = meeting sub-app   h = compact help\n"
+        "  help = compact help (alias for `h`)\n"
+        "  t = tui                  d = daemon              -h = --help\n"
+        "  n = note                 p = project             tk = ticket\n"
+        "  k = kanban               j = job                 c = config\n"
+        "  rch = research           s = search              ll = llm\n"
+        "\n"
+        "[bold]Meeting subcommands[/bold] (via `nina mt ...`):\n"
+        "  ls = list    t = transcribe    m = summarize    s = stop\n"
+        "  o = open     p = play          rm = delete      x = show\n"
+        "\n"
+        "[bold]Run[/bold] [cyan]nina <command> --help[/cyan] [bold]for options.[/bold]"
+    )
+
+
+app = typer.Typer(
+    help="Nina CLI - local-first personal operations platform. Try `nina r` to record a meeting.",
+    no_args_is_help=False,
+    add_completion=False,
+)
+
+
+def _add_alias(parent: typer.Typer, sub_app: typer.Typer, alias: str) -> None:
+    """Register a hidden sub-app alias so `nina <alias>` works but doesn't clutter help."""
+    parent.add_typer(sub_app, name=alias, hidden=True)
 
 
 daemon_app = typer.Typer(help="Daemon commands")
 app.add_typer(daemon_app, name="daemon")
-app.add_typer(daemon_app, name="d")
+_add_alias(app, daemon_app, "d")
 app.add_typer(chat_app, name="chat")
 app.add_typer(config_app, name="config")
+_add_alias(app, config_app, "c")
 app.add_typer(note_app, name="note")
+_add_alias(app, note_app, "n")
 app.add_typer(project_app, name="project")
+_add_alias(app, project_app, "p")
 app.add_typer(providers_app, name="providers")
 app.add_typer(task_app, name="task")
 app.add_typer(ticket_app, name="ticket")
+_add_alias(app, ticket_app, "tk")
 app.add_typer(kanban_app, name="kanban")
+_add_alias(app, kanban_app, "k")
 app.add_typer(job_app, name="job")
+_add_alias(app, job_app, "j")
 app.add_typer(llm_app, name="llm")
+_add_alias(app, llm_app, "ll")
+app.add_typer(meeting_app, name="meeting")
+_add_alias(app, meeting_app, "mt")
 app.add_typer(research_app, name="research")
+_add_alias(app, research_app, "rch")
 app.add_typer(search_app, name="search")
+_add_alias(app, search_app, "s")
 
 
 def _resolve_tui_binary() -> Path | None:
@@ -213,10 +268,10 @@ def _format_codex_auth_status() -> str:
     return f"LLM auth: disconnected ({detail})"
 
 
-@app.command("ask")
+@app.command("ask", help="Ask a question over the local Obsidian vault.")
 def ask(
-    question: str,
-    limit: int = typer.Option(5, help="Maximum source notes to use"),
+    question: str = typer.Argument(..., help="Question in natural language"),
+    limit: int = typer.Option(5, "-n", "--limit", help="Maximum source notes to use"),
 ) -> None:
     resp = request("POST", "/ask", json={"question": question, "limit": limit})
     data = resp.json()
@@ -228,8 +283,8 @@ def ask(
             console.print("- {}".format(source["path"]))
 
 
-@app.command("t")
-@app.command()
+@app.command("t", help="Launch the OpenTUI terminal UI.")
+@app.command("tui", help="Launch the OpenTUI terminal UI.")
 def tui() -> None:
     tui_bin = _resolve_tui_binary()
     if tui_bin:
@@ -245,7 +300,78 @@ def tui() -> None:
     raise typer.Exit(1)
 
 
-@app.command()
+@app.command("r", help="Record a meeting. Alias for `nina meeting record`.")
+def nina_r(
+    title: str = typer.Argument("Untitled", help='Meeting title (or "Untitled" to use the date)'),
+    source: str | None = typer.Option(
+        None,
+        "-s",
+        "--source",
+        help=(
+            "Audio source: mic (default), system (sink monitor), or parec "
+            "(explicit PulseAudio/PipeWire source via `--device`)"
+        ),
+    ),
+    device: str | None = typer.Option(
+        None, "-d", "--device", help="Audio device name or index (see `nina mt devices`)"
+    ),
+    sample_rate: int = typer.Option(
+        0, "-r", "--sample-rate", help="Sample rate in Hz (default from config, usually 16000)"
+    ),
+    channels: int = typer.Option(
+        0, "-c", "--channels", help="Channel count (default from config, usually 1)"
+    ),
+    duration: int | None = typer.Option(
+        None, "-D", "--duration", help="Auto-stop after this many seconds"
+    ),
+    gain: float | None = typer.Option(
+        None,
+        "--gain",
+        help=(
+            "Linear gain applied after recording (e.g. 4.0 = +12 dB). "
+            "Defaults to `meetings.default_gain` in config.yaml."
+        ),
+    ),
+    auto_normalize: bool = typer.Option(
+        False,
+        "--auto-normalize",
+        help="Auto-gain the WAV so its peak hits -3 dBFS.",
+    ),
+) -> None:
+    """Quick alias for `nina meeting record`. Stops on Ctrl+C.
+
+    Examples:
+
+        nina r "Quarterly planning"
+
+        nina r "Standup" -s system
+
+        nina r --duration 1800
+
+        nina r "Quiet room" --gain 4.0
+
+        nina r "Whatever volume" --auto-normalize
+    """
+    record_meeting(
+        title=title,
+        source=source,
+        device=device,
+        sample_rate=sample_rate,
+        channels=channels,
+        duration=duration,
+        gain=gain,
+        auto_normalize=auto_normalize,
+    )
+
+
+@app.command("h", help="Show compact help.")
+@app.command("help", help="Show compact help. Alias for `nina h`.")
+def nina_h() -> None:
+    """Compact help. Use `nina <command> --help` for command-specific options."""
+    _print_short_help()
+
+
+@app.command("init", help="Initialize a Nina profile (config dir, token, vault, database).")
 def init(
     profile: str = typer.Option("default", help="Profile name"),
     force: bool = typer.Option(False, help="Overwrite existing config"),
@@ -256,14 +382,14 @@ def init(
     console.print(f"  Vault: {get_vault_path(config_dir)}")
 
 
-@app.command()
+@app.command("version", help="Print the Nina version.")
 def version() -> None:
     from nina_core import __version__
 
     console.print(f"Nina {__version__}")
 
 
-@app.command()
+@app.command("status", help="Show daemon health, Codex auth, and config paths.")
 def status(
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
@@ -280,10 +406,10 @@ def status(
         console.print(f"  {name}: {value}")
 
 
-@app.command()
+@app.command("logs", help="Print the daemon log file (use --tail N for the last N lines).")
 def logs(
     profile: str = typer.Option("default", help="Profile name"),
-    tail: int | None = typer.Option(None, help="Show only the last N lines"),
+    tail: int | None = typer.Option(None, "--tail", help="Show only the last N lines"),
 ) -> None:
     config_dir = get_config_dir(profile)
     log_path = get_log_path(config_dir)
@@ -309,17 +435,12 @@ def _get_env(profile: str) -> tuple[dict[str, str], NinaConfig]:
         raise typer.Exit(1)
     config = load_effective_config(config_dir)
     env = os.environ.copy()
+    # Bootstrap-only env vars. All other settings live in `config.yaml` and
+    # are read by the daemon via `load_effective_config`. Keep this list
+    # minimal: profile + config dir + auth token.
     env["NINA_PROFILE"] = profile
     env["NINA_CONFIG_DIR"] = str(config_dir)
     env["NINA_TOKEN"] = read_token(token_path)
-    env["NINA_VAULT_PATH"] = config.vault_path
-    env["NINA_DATABASE_PATH"] = config.database_path
-    env["NINA_DAEMON_HOST"] = config.daemon_host
-    env["NINA_DAEMON_PORT"] = str(config.daemon_port)
-    env["NINA_LLM_PROVIDER"] = config.llm.provider
-    env["NINA_LLM_MODEL"] = config.llm.model
-    env["NINA_LOG_LEVEL"] = config.log_level
-    env["NINA_DAILY_SUMMARY_TIME"] = config.scheduler.daily_summary_time
     return env, config
 
 
@@ -327,7 +448,7 @@ def _resolve_pid_path(profile: str) -> Path:
     return get_pid_path(get_config_dir(profile))
 
 
-@daemon_app.command("start")
+@daemon_app.command("start", help="Start the local Nina daemon.")
 def daemon_start(
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
@@ -353,7 +474,7 @@ def daemon_start(
     console.print(f"Daemon started (pid {proc.pid})")
 
 
-@daemon_app.command("stop")
+@daemon_app.command("stop", help="Stop the local Nina daemon.")
 def daemon_stop(
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
@@ -371,8 +492,8 @@ def daemon_stop(
     console.print("Daemon stopped")
 
 
-@daemon_app.command("r")
-@daemon_app.command("restart")
+@daemon_app.command("r", help="Restart the local Nina daemon.")
+@app.command("restart", help="Restart the local Nina daemon.")
 def daemon_restart(
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
@@ -400,7 +521,7 @@ def daemon_restart(
     console.print(f"Daemon restarted (pid {proc.pid})")
 
 
-@daemon_app.command("status")
+@daemon_app.command("status", help="Print whether the local Nina daemon is running.")
 def daemon_status(
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
@@ -409,6 +530,15 @@ def daemon_status(
 
 
 def main() -> None:
+    if len(sys.argv) == 1:
+        _print_short_help()
+        return
+    if sys.argv[1] == "h":
+        _print_short_help()
+        return
+    if sys.argv[1] in {"-h", "--help"}:
+        # Translate short/full help flags to the full typer help.
+        sys.argv[1] = "--help"
     app()
 
 

@@ -57,7 +57,9 @@ def test_fake_embedding_distinguishes_texts() -> None:
 def test_embedding_store_upsert_and_search(
     isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("NINA_EMBEDDING_PROVIDER", "fake")
+    from nina_core.config.settings import SearchConfig
+
+    cfg = SearchConfig(embedding_provider="fake")
     vault = get_vault_path(isolated_config)
     db_path = str(get_database_path(isolated_config))
     note_dir = vault / "Research"
@@ -65,7 +67,7 @@ def test_embedding_store_upsert_and_search(
     (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\nhello world")
     (note_dir / "b.md").write_text("---\ntitle: B\nnina_type: note\n---\n\ngoodbye world")
     store = EmbeddingStore(db_path, service=FakeEmbeddingService())
-    count = reindex_embeddings(db_path, str(vault))
+    count = reindex_embeddings(db_path, str(vault), config=cfg)
     assert count == 2
 
     # Search for the exact text of a.md; the fake embedding is deterministic
@@ -77,15 +79,17 @@ def test_embedding_store_upsert_and_search(
 def test_embedding_store_skip_unchanged(
     isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("NINA_EMBEDDING_PROVIDER", "fake")
+    from nina_core.config.settings import SearchConfig
+
+    cfg = SearchConfig(embedding_provider="fake")
     vault = get_vault_path(isolated_config)
     db_path = str(get_database_path(isolated_config))
     note_dir = vault / "Research"
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\nhello")
     EmbeddingStore(db_path, service=FakeEmbeddingService())
-    first = reindex_embeddings(db_path, str(vault))
-    second = reindex_embeddings(db_path, str(vault))
+    first = reindex_embeddings(db_path, str(vault), config=cfg)
+    second = reindex_embeddings(db_path, str(vault), config=cfg)
     assert first == 1
     assert second == 0
 

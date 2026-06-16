@@ -58,10 +58,13 @@ def main() -> None:
     app.state.scheduler = scheduler
     scheduler.start()
     watcher = None
-    if config.search.live_indexing:
-        watcher = make_watcher_if_enabled(config.database_path, config.vault_path)
-        if watcher is not None:
-            watcher.start()
+    watcher = make_watcher_if_enabled(
+        config.database_path,
+        config.vault_path,
+        enabled=config.search.live_indexing,
+    )
+    if watcher is not None:
+        watcher.start()
     try:
         uvicorn.run(
             app,

@@ -11,6 +11,11 @@ class LLMConfig(BaseModel):
     api_key: str | None = None
 
 
+class ResearchConfig(BaseModel):
+    provider: str = "openai_web"
+    model: str = "gpt-5"
+
+
 class SchedulerConfig(BaseModel):
     daily_summary_time: str = "07:00"
     reindex_cron: str = "*/15 * * * *"
@@ -22,6 +27,28 @@ class SearchConfig(BaseModel):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
 
+class TranscriptionConfig(BaseModel):
+    backend: str = "local_whisper"
+    model: str = "small"
+    device: str = "cpu"
+    compute_type: str = "int8"
+    language: str | None = None
+
+
+class MeetingsConfig(BaseModel):
+    default_source: str = "mic"
+    auto_summarize: bool = False
+    open_command: str = "xdg-open obsidian://open?path={path}"
+    play_command: str = "xdg-open {path}"
+    sample_rate: int = 16000
+    channels: int = 1
+    # Linear gain applied to every recording by default (e.g. 2.0 = +6 dB,
+    # 4.0 = +12 dB). Useful when the system source volume is low
+    # (PipeWire/PulseAudio sometimes defaults to a low capture volume).
+    # Per-call `--gain` on `nina r` / `nina meeting record` still overrides.
+    default_gain: float = 1.0
+
+
 class NinaConfig(BaseModel):
     profile: str = "default"
     vault_path: str = Field(default="")
@@ -29,8 +56,11 @@ class NinaConfig(BaseModel):
     daemon_host: str = "127.0.0.1"
     daemon_port: int = 8765
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    research: ResearchConfig = Field(default_factory=ResearchConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
+    transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
+    meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
     log_level: str = "INFO"
 
     @classmethod
