@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Mapping, Self
+from typing import Any, Mapping, Self, cast
 
 import yaml
 from pydantic import BaseModel, Field
@@ -95,12 +95,12 @@ def _normalize_path(value: str, default: Path, config_dir: Path) -> str:
 def _deep_update(target: dict[str, Any], patch: Mapping[str, Any]) -> None:
     for key, value in patch.items():
         if isinstance(value, Mapping) and isinstance(target.get(key), dict):
-            _deep_update(target[key], value)
+            _deep_update(target[key], cast(Mapping[str, Any], value))
         else:
             target[key] = value
 
 
 def merge_config(config: NinaConfig, patch: Mapping[str, Any], config_dir: Path) -> NinaConfig:
-    data = config.model_dump()
+    data: dict[str, Any] = config.model_dump()
     _deep_update(data, patch)
     return NinaConfig(**data).with_resolved_paths(config_dir)

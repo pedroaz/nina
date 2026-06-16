@@ -7,19 +7,31 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from nina_core.cli.runner import NinaCommandRunner, build_nina_command, extract_created_id
-from nina_core.config.settings import LLMConfig, SearchConfig
-from nina_core.llm.default_tools import register_default_tools
-from nina_core.llm.provider import LLMRequest, LLMResponse, LLMService, ToolCall
-from nina_core.llm.tools import ToolContext, ToolRegistry
-from nina_core.llm.write_tools import register_write_tools
-from nina_core.models.models import ConversationMessage, ConversationSession
-from nina_core.obsidian.service import ObsidianService
+from nina_core.cli.runner import (  # type: ignore[reportMissingTypeStubs]
+    NinaCommandRunner,
+    build_nina_command,
+    extract_created_id,
+)
+from nina_core.config.settings import LLMConfig, SearchConfig  # type: ignore[reportMissingTypeStubs]
+from nina_core.llm.default_tools import register_default_tools  # type: ignore[reportMissingTypeStubs]
+from nina_core.llm.provider import (  # type: ignore[reportMissingTypeStubs]
+    LLMRequest,
+    LLMResponse,
+    LLMService,
+    ToolCall,
+)
+from nina_core.llm.tools import ToolContext, ToolRegistry  # type: ignore[reportMissingTypeStubs]
+from nina_core.llm.write_tools import register_write_tools  # type: ignore[reportMissingTypeStubs]
+from nina_core.models.models import (  # type: ignore[reportMissingTypeStubs]
+    ConversationMessage,
+    ConversationSession,
+)
+from nina_core.obsidian.service import ObsidianService  # type: ignore[reportMissingTypeStubs]
 
 LAST_CREATED_ID_PLACEHOLDER = "{{last_created_id}}"
 COMMAND_LINE_RE = re.compile(r"(?m)^\s*(?:[-*]\s*)?(nina\s+.+?)\s*$")
@@ -74,7 +86,7 @@ def _extract_commands(text: str) -> list[str]:
 
 
 def _strip_commands(text: str) -> str:
-    lines = []
+    lines: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("nina "):
@@ -339,7 +351,7 @@ class SessionService:
             if message.role in {"user", "assistant", "tool", "system"}:
                 entry: dict[str, Any] = {"role": message.role, "content": message.content}
                 if message.role == "tool":
-                    metadata = _json_loads(message.metadata_json)
+                    metadata = _json_loads(str(message.metadata_json))
                     if isinstance(metadata, dict):
                         if "tool_call_id" in metadata:
                             entry["tool_call_id"] = metadata["tool_call_id"]
@@ -435,7 +447,13 @@ class SessionService:
                     tools_used.append(summary)
                     result = self.tools.execute(call.name, call.arguments or {}, tool_context)
                     if call.name in source_tools:
-                        for hit in result.get("results") or []:
+                        raw_results: Any = result.get("results")
+                        hits: list[dict[str, Any]] = (
+                            cast(list[dict[str, Any]], raw_results)
+                            if isinstance(raw_results, list)
+                            else []
+                        )
+                        for hit in hits:
                             sources.append(hit)
                     payload = json.dumps(result, ensure_ascii=False, default=str)
                     messages.append(
@@ -502,7 +520,9 @@ class SessionService:
         fallback_provider: str | None = None
         fallback_model: str | None = None
         if not result.tools_used and result.finish_reason != "cancelled":
-            from nina_core.search.indexer import ask_obsidian
+            from nina_core.search.indexer import (  # type: ignore[reportMissingTypeStubs]
+                ask_obsidian,
+            )
 
             ask_result = await ask_obsidian(
                 self.db_path,
@@ -653,7 +673,7 @@ class SessionService:
             .all()
         )
         db.close()
-        history_lines = []
+        history_lines: list[str] = []
         for message in reversed(history_messages):
             history_lines.append(f"{message.role}: {message.content}")
         prompt = "\n".join(
@@ -757,27 +777,31 @@ class SessionService:
             "session_id": message.session_id,
             "role": message.role,
             "content": message.content,
-            "metadata": _json_loads(message.metadata_json),
+            "metadata": _json_loads(str(message.metadata_json)),
             "created_at": message.created_at,
         }
 
 
 def _summarize_result(result: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(result, dict):
-        return {"type": str(type(result).__name__)}
     summary: dict[str, Any] = {"keys": sorted(result.keys())}
-    if "results" in result and isinstance(result["results"], list):
-        summary["results_count"] = len(result["results"])
-    if "notes" in result and isinstance(result["notes"], list):
-        summary["notes_count"] = len(result["notes"])
-    if "tickets" in result and isinstance(result["tickets"], list):
-        summary["tickets_count"] = len(result["tickets"])
-    if "ticket" in result and isinstance(result["ticket"], dict):
-        summary["ticket_id"] = result["ticket"].get("id")
-    if "project" in result and isinstance(result["project"], dict):
-        summary["project_id"] = result["project"].get("id")
-    if "note" in result and isinstance(result["note"], dict):
-        summary["note_path"] = result["note"].get("path")
+    results_value: Any = result.get("results")
+    if isinstance(results_value, list):
+        summary["results_count"] = len(cast(list[Any], results_value))
+    notes_value: Any = result.get("notes")
+    if isinstance(notes_value, list):
+        summary["notes_count"] = len(cast(list[Any], notes_value))
+    tickets_value: Any = result.get("tickets")
+    if isinstance(tickets_value, list):
+        summary["tickets_count"] = len(cast(list[Any], tickets_value))
+    ticket_value: Any = result.get("ticket")
+    if isinstance(ticket_value, dict):
+        summary["ticket_id"] = cast(dict[str, Any], ticket_value).get("id")
+    project_value: Any = result.get("project")
+    if isinstance(project_value, dict):
+        summary["project_id"] = cast(dict[str, Any], project_value).get("id")
+    note_value: Any = result.get("note")
+    if isinstance(note_value, dict):
+        summary["note_path"] = cast(dict[str, Any], note_value).get("path")
     if "error" in result:
         summary["error"] = result["error"]
     return summary

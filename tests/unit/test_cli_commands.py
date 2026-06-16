@@ -40,9 +40,7 @@ class FakeHealthResponse:
 runner = CliRunner()
 
 
-def _patch_popen_capture(
-    monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
-) -> None:
+def _patch_popen_capture(monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]) -> None:
     """Patch `subprocess.Popen` to capture the argv into `captured["cmd"]`
     and return a sentinel object that doesn't actually spawn a process.
 
@@ -402,9 +400,7 @@ def test_config_meetings_gain_round_trip(isolated_config) -> None:  # type: igno
     assert on_disk["meetings"]["default_gain"] == 4.0
 
 
-def test_config_edit_uses_explicit_editor(
-    monkeypatch: pytest.MonkeyPatch, isolated_config
-) -> None:  # type: ignore[no-untyped-def]
+def test_config_edit_uses_explicit_editor(monkeypatch: pytest.MonkeyPatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, Any] = {}
     _patch_popen_capture(monkeypatch, captured)
 
@@ -414,9 +410,7 @@ def test_config_edit_uses_explicit_editor(
     assert captured["cmd"] == ["nvim", str(isolated_config / "config.yaml")]
 
 
-def test_config_edit_creates_file_if_missing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:  # type: ignore[no-untyped-def]
+def test_config_edit_creates_file_if_missing(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     config_dir = tmp_path / "nina-config"
     initialize(config_dir=config_dir, force=True)
     monkeypatch.setenv("NINA_CONFIG_DIR", str(config_dir))

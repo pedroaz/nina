@@ -375,9 +375,7 @@ def edit(
     console.print(f"Opening {config_path} in {cmd[0]}...")
 
 
-def _resolve_editor_command(
-    editor: str | None, wait: bool, path: Path
-) -> list[str] | None:
+def _resolve_editor_command(editor: str | None, wait: bool, path: Path) -> list[str] | None:
     """Pick the editor command. Returns the argv list, or None if nothing found.
 
     Resolution order:
@@ -450,8 +448,7 @@ def meetings_gain(
         db = 0.0
     else:
         import math
+
         db = 20.0 * math.log10(actual)
-    console.print(
-        f"Meetings default gain: {actual}x ({db:+.1f} dB)."
-    )
+    console.print(f"Meetings default gain: {actual}x ({db:+.1f} dB).")
     console.print("Applied to the running daemon." if synced else "Saved on disk.")

@@ -318,9 +318,7 @@ def meeting_boost(
     try:
         if normalize:
             before, after = normalize_wav(audio_file, target_dbfs=target_dbfs)
-            console.print(
-                f"Normalized {audio_file.name}: {before:.1f} dBFS → {after:.1f} dBFS."
-            )
+            console.print(f"Normalized {audio_file.name}: {before:.1f} dBFS → {after:.1f} dBFS.")
         else:
             new_peak = boost_wav(audio_file, factor)
             console.print(
@@ -513,17 +511,13 @@ def record_meeting(
         try:
             before_db, after_db = normalize_wav(audio_path, target_dbfs=-3.0)
             if after_db > before_db:
-                console.print(
-                    f"Auto-normalized: peak {before_db:.1f} dBFS → {after_db:.1f} dBFS."
-                )
+                console.print(f"Auto-normalized: peak {before_db:.1f} dBFS → {after_db:.1f} dBFS.")
         except Exception as exc:
             console.print(f"(auto-normalize skipped: {exc})")
     if effective_gain != 1.0:
         try:
             new_peak = boost_wav(audio_path, effective_gain)
-            console.print(
-                f"Applied gain {effective_gain}x → peak now {new_peak:.1f} dBFS."
-            )
+            console.print(f"Applied gain {effective_gain}x → peak now {new_peak:.1f} dBFS.")
         except Exception as exc:
             console.print(f"(gain skipped: {exc})")
 
@@ -539,12 +533,10 @@ def record_meeting(
                     "(quiet). Try one of:[/yellow]"
                 )
                 console.print(
-                    "  [cyan]nina meeting boost <id> --factor 4.0[/cyan]  "
-                    "(+12 dB, safe to rerun)"
+                    "  [cyan]nina meeting boost <id> --factor 4.0[/cyan]  (+12 dB, safe to rerun)"
                 )
                 console.print(
-                    "  [cyan]nina meeting boost <id> --normalize[/cyan]  "
-                    "(auto-gain to -3 dBFS)"
+                    "  [cyan]nina meeting boost <id> --normalize[/cyan]  (auto-gain to -3 dBFS)"
                 )
                 console.print(
                     "  [cyan]wpctl set-default <source> <vol%>[/cyan]   "

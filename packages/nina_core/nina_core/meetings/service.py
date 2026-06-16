@@ -9,8 +9,8 @@ from typing import Any
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from nina_core.models.models import Meeting
-from nina_core.obsidian.service import ObsidianService
+from nina_core.models.models import Meeting  # type: ignore[reportMissingTypeStubs]
+from nina_core.obsidian.service import ObsidianService  # type: ignore[reportMissingTypeStubs]
 
 
 def _now() -> str:
@@ -48,7 +48,7 @@ class MeetingService:
     def _serialize(self, meeting: Meeting) -> dict[str, Any]:
         note_path: str | None = None
         if meeting.started_at and meeting.title:
-            note_path = str(_meeting_path(meeting.title, meeting.started_at))
+            note_path = str(_meeting_path(str(meeting.title), str(meeting.started_at)))
         return {
             "id": meeting.id,
             "title": meeting.title,

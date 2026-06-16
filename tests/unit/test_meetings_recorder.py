@@ -298,7 +298,7 @@ def test_boost_wav_clamps_at_zero_dbfs(tmp_path: Path) -> None:
     _write_tone_wav(path, amplitude=30000)
     new_peak = boost_wav(path, 4.0)
     assert new_peak <= 0.05  # within rounding
-    assert new_peak > -0.5   # not 0 dBFS only by integer saturation
+    assert new_peak > -0.5  # not 0 dBFS only by integer saturation
 
 
 def test_boost_wav_rejects_non_positive_factor(tmp_path: Path) -> None:

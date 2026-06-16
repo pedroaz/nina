@@ -7,6 +7,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import httpx
 import typer
@@ -143,7 +144,7 @@ def _server_command() -> list[str]:
     return [sys.executable, "-m", "nina_server.main"]
 
 
-def _daemon_popen_kwargs() -> dict[str, int | bool]:
+def _daemon_popen_kwargs() -> dict[str, Any]:
     if os.name == "nt":
         return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
     return {"start_new_session": True}

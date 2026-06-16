@@ -6,9 +6,9 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel
 
-from nina_core.config.settings import ResearchConfig
-from nina_core.obsidian.service import ObsidianService
-from nina_core.search.indexer import index_notes
+from nina_core.config.settings import ResearchConfig  # type: ignore[reportMissingTypeStubs]
+from nina_core.obsidian.service import ObsidianService  # type: ignore[reportMissingTypeStubs]
+from nina_core.search.indexer import index_notes  # type: ignore[reportMissingTypeStubs]
 
 
 class ResearchSource(BaseModel):
@@ -84,7 +84,7 @@ class OpenAIWebResearchProvider(ResearchProvider):
                         if not url or url in seen:
                             continue
                         seen.add(url)
-                        sources.append(ResearchSource(title=title, url=url))
+                        sources.append(ResearchSource(title=str(title), url=str(url)))
             elif item_type == "web_search_call":
                 action = getattr(item, "action", None)
                 for source in getattr(action, "sources", []) or []:

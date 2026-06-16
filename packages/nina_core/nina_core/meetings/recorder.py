@@ -117,7 +117,7 @@ class PortAudioSource:
                 self._queue.append(bytes(indata))
 
         try:
-            self._stream = sd.InputStream(
+            stream = sd.InputStream(  # type: ignore[reportUnknownMemberType]
                 samplerate=sample_rate,
                 channels=channels,
                 dtype="int16",
@@ -125,7 +125,8 @@ class PortAudioSource:
                 callback=callback,
                 blocksize=int(sample_rate / 10),
             )
-            self._stream.start()
+            stream.start()  # type: ignore[reportUnknownMemberType]
+            self._stream = stream
         except Exception as exc:
             raise RecorderError(f"Failed to open PortAudio input: {exc}") from exc
 
@@ -168,7 +169,7 @@ class PulseSource:
 
     def __init__(
         self,
-        device: str | None = None,
+        device: str | int | None = None,
         *,
         kind: str = "monitor",
     ) -> None:
@@ -190,7 +191,7 @@ class PulseSource:
         self._sample_rate = sample_rate
         self._channels = channels
         if self._device:
-            device_spec = self._device
+            device_spec = str(self._device)
         elif self._kind == "monitor":
             device_spec = "@DEFAULT_MONITOR@"
         else:
@@ -317,26 +318,26 @@ def list_input_devices() -> list[dict[str, str]]:
     try:
         import sounddevice as sd  # type: ignore[import-untyped]
 
-        host_apis = sd.query_hostapis()
-        for index, info in enumerate(sd.query_devices()):
-            if int(info.get("max_input_channels", 0)) <= 0:
+        host_apis = sd.query_hostapis()  # type: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        for index, info in enumerate(sd.query_devices()):  # type: ignore[reportUnknownMemberType, reportUnknownVariableType]
+            if int(info.get("max_input_channels", 0)) <= 0:  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
                 continue
             host_name = ""
-            host_index = info.get("hostapi")
-            if isinstance(host_index, int) and 0 <= host_index < len(host_apis):
-                host_name = host_apis[host_index].get("name", "")
+            host_index = info.get("hostapi")  # type: ignore[reportUnknownMemberType]
+            if isinstance(host_index, int) and 0 <= host_index < len(host_apis):  # type: ignore[reportUnknownArgumentType]
+                host_name = host_apis[host_index].get("name", "")  # type: ignore[reportUnknownMemberType]
             devices.append(
                 {
                     "index": str(index),
-                    "name": str(info.get("name", "")),
+                    "name": str(info.get("name", "")),  # type: ignore[reportUnknownMemberType]
                     "host": host_name,
-                    "channels": str(info.get("max_input_channels", 0)),
-                    "default_samplerate": str(info.get("default_samplerate", "")),
+                    "channels": str(info.get("max_input_channels", 0)),  # type: ignore[reportUnknownMemberType]
+                    "default_samplerate": str(info.get("default_samplerate", "")),  # type: ignore[reportUnknownMemberType]
                 }
             )
     except Exception:
         return devices
-    return devices
+    return devices  # type: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUnknownArgumentType]
 
 
 def list_pulse_sources() -> list[dict[str, str]]:
@@ -398,7 +399,7 @@ def record_wav(
     writer = _wav_writer(partial, sample_rate, channels)
     started = time.monotonic()
     deadline = started + duration_seconds if duration_seconds else None
-    stream_error: Exception | None = None
+    stream_error: BaseException | None = None
     try:
         for chunk in source.stream():
             writer.writeframes(chunk)
@@ -521,7 +522,7 @@ def peak_dbfs(path: Path) -> float | None:
     want to boost it". Accepts both `str` and `Path`.
     """
     path = Path(path)
-    sample_rate, _n, sw, raw = _read_wav_samples(path)
+    _sample_rate, _n, sw, raw = _read_wav_samples(path)
     samples = _samples_as_int(raw, sw)
     peak = _peak_amplitude(samples)
     if peak == 0:
@@ -531,7 +532,7 @@ def peak_dbfs(path: Path) -> float | None:
     return 20.0 * math.log10(peak / max_int)
 
 
-def boost_wav(path: Path, factor: float) -> int:
+def boost_wav(path: Path, factor: float) -> float:
     """Apply `factor` (linear gain) to every sample in the WAV, clipping in place.
 
     Returns the new peak dBFS after the boost. The file is rewritten
@@ -553,7 +554,7 @@ def boost_wav(path: Path, factor: float) -> int:
     _write_wav_samples(tmp, sample_rate, n_channels, sw, clipped)
     tmp.replace(path)
     if new_peak == 0:
-        return float("-inf")  # type: ignore[return-value]
+        return float("-inf")
     return 20.0 * math.log10(new_peak / max_int)
 
 
@@ -564,7 +565,7 @@ def normalize_wav(path: Path, target_dbfs: float = -3.0) -> tuple[float, float]:
     at or above the target, it's left alone and both values are the same.
     """
     path = Path(path)
-    sample_rate, n_channels, sw, raw = _read_wav_samples(path)
+    _sample_rate, _n_channels, sw, raw = _read_wav_samples(path)
     samples = _samples_as_int(raw, sw)
     peak = _peak_amplitude(samples)
     if peak == 0:
