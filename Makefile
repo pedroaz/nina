@@ -11,7 +11,7 @@ help:
 	@echo "  help              - List available commands"
 	@echo "  build, b          - Build and install the local Nina runtime"
 	@echo "  doctor            - Check local Nina launcher and PATH setup"
-	@echo "  uninstall         - Remove the local launcher from ~/.local/bin"
+	@echo "  uninstall         - Remove Nina launcher, install root, and data"
 	@echo "  format            - Format all code"
 	@echo "  lint              - Static lint checks"
 	@echo "  typecheck         - Type checking"
@@ -35,9 +35,16 @@ help:
 	@echo "  REAL_CONFIG_DIR=$(REAL_CONFIG_DIR)"
 
 build:
-	$(UV) sync
+	$(UV) sync --locked --python 3.12 --no-python-downloads
 	cd apps/tui && bun install --frozen-lockfile
 	$(PYTHON) scripts/sync_version.py
+	$(PYTHON) scripts/nina_build.py
+
+check-python:
+	@uv python find 3.12 --show-version >/dev/null
+
+check-build: check-python
+	$(UV) sync --locked --python 3.12 --no-python-downloads
 	$(PYTHON) scripts/nina_build.py
 
 b: build
@@ -46,9 +53,7 @@ doctor:
 	python3 scripts/nina_doctor.py
 
 uninstall:
-	@echo "Removing nina from ~/.local/bin..."
-	@rm -f $(HOME)/.local/bin/nina
-	@echo "Done."
+	$(UV) run nina uninstall
 
 format:
 	$(UV) run ruff format .
@@ -68,7 +73,7 @@ test-unit:
 test-integration:
 	$(UV) run pytest tests/ -m integration
 
-check: format lint typecheck test
+check: check-python format lint typecheck test
 
 smoke:
 	$(PYTHON) scripts/nina_dev.py smoke --config-dir $(DEV_CONFIG_DIR)

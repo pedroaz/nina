@@ -9,7 +9,7 @@
 2. Tell Nina to use the Codex-backed OpenAI provider:
 
    ```bash
-   nina config llm-provider openai
+   nina config llm-provider codex
    ```
 
 3. Pick the model you want Nina to use:

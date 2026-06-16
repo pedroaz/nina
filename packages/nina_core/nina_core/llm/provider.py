@@ -258,7 +258,7 @@ def _base64url_decode(value: str) -> str:
 
 class CodexAuthProvider(LLMProvider):
     def __init__(self, model: str | None = None) -> None:
-        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-5")
+        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-4-mini")
         self.auth = _load_codex_auth()
         self.client = OpenAI(
             api_key=self.auth.access_token,
@@ -407,7 +407,7 @@ class OpenAIProvider(LLMProvider):
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY is required for the OpenAI provider")
         self.client = OpenAI(api_key=self.api_key)
-        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-5")
+        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-4-mini")
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         return _chat_completions_complete(self.client, self.model, request, provider_name="openai")

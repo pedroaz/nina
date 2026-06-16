@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+REQUIRED_PYTHON = "3.12"
 PYTHON_PROJECTS = [
     REPO_ROOT / "packages" / "nina_core",
     REPO_ROOT / "apps" / "server",
@@ -36,6 +37,28 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
         subprocess.run(cmd, cwd=cwd or REPO_ROOT, check=True)
     except FileNotFoundError as exc:
         raise SystemExit(f"Required command not found: {cmd[0]}") from exc
+
+
+def require_command(name: str) -> None:
+    if shutil.which(name) is None:
+        raise SystemExit(f"Required command not found on PATH: {name}")
+
+
+def require_python_312() -> str:
+    require_command("uv")
+    result = subprocess.run(
+        ["uv", "python", "find", REQUIRED_PYTHON],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "Python 3.12 is required. Install it with 'uv python install 3.12' "
+            "or make sure Python 3.12 is available to uv."
+        )
+    return result.stdout.strip()
 
 
 def remove_path(path: Path) -> None:
@@ -108,7 +131,8 @@ def nina_executable(app_dir: Path) -> Path:
 def install_python_app(app_dir: Path, wheel_dir: Path) -> None:
     print(f"Installing Python app into {app_dir}...")
     remove_path(app_dir)
-    run(["uv", "venv", str(app_dir)])
+    python_interpreter = require_python_312()
+    run(["uv", "venv", "--python", python_interpreter, str(app_dir)])
     python_bin = python_executable(app_dir)
     wheels = sorted(wheel_dir.glob("*.whl"))
     if not wheels:
@@ -152,6 +176,8 @@ def write_launcher(app_dir: Path, launcher_dir: Path, tui_binary: Path) -> Path:
 
 
 def main() -> int:
+    require_command("bun")
+    require_python_312()
     install_root = env_path("NINA_INSTALL_ROOT", Path.home() / ".nina")
     launcher_dir = env_path("NINA_LAUNCHER_DIR", default_launcher_dir())
     app_dir = install_root / "app"
@@ -166,6 +192,8 @@ def main() -> int:
         install_python_app(app_dir, wheel_dir)
         installed_tui = install_tui_binary(bin_dir, built_tui)
         launcher_path = write_launcher(app_dir, launcher_dir, installed_tui)
+
+    run([str(python_executable(app_dir)), "-m", "nina_cli.main", "setup"])
 
     print("Local Nina build complete.")
     print(f"Launcher: {launcher_path}")

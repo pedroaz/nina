@@ -342,10 +342,21 @@ async def test_codex_auth_provider_refreshes_expired_tokens(
     assert stored["tokens"]["account_id"] == "acc-999"
 
 
-def test_llm_service_defaults_to_codex_provider(
+def test_llm_service_defaults_to_openai_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("NINA_LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-api-key")
+    monkeypatch.setattr(provider_module, "OpenAI", FakeOpenAI)
+
+    service = LLMService(str(tmp_path / "nina.db"))
+
+    assert isinstance(service.provider, provider_module.OpenAIProvider)
+
+
+def test_llm_service_can_still_route_to_codex_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(
         "CODEX_AUTH_FILE",
         str(tmp_path / "auth.json"),
@@ -364,7 +375,9 @@ def test_llm_service_defaults_to_codex_provider(
     )
     monkeypatch.setattr(provider_module, "OpenAI", FakeOpenAI)
 
-    service = LLMService(str(tmp_path / "nina.db"))
+    service = LLMService(str(tmp_path / "nina.db"), config=__import__(
+        "nina_core.config.settings", fromlist=["LLMConfig"]
+    ).LLMConfig(provider="codex", model="gpt-4-mini"))
 
     assert isinstance(service.provider, CodexAuthProvider)
 

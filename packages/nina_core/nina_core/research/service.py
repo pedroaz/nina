@@ -50,7 +50,7 @@ class OpenAIWebResearchProvider(ResearchProvider):
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY is required for web research")
         self.client = OpenAI(api_key=self.api_key)
-        self.model = model or os.environ.get("NINA_RESEARCH_MODEL", "gpt-5")
+        self.model = model or os.environ.get("NINA_RESEARCH_MODEL", "gpt-4-mini")
 
     def research(self, topic: str) -> ResearchReport:
         response = self.client.responses.create(

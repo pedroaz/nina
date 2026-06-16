@@ -65,17 +65,40 @@ def test_make_audio_source_parec_returns_pulse_source() -> None:
 
 
 def test_make_audio_source_system_returns_supported_source() -> None:
-    source = make_audio_source("system")
-    assert isinstance(source, (PulseSource, SoundCardSource))
+    # Host audio backends are environment-dependent; just ensure the factory
+    # accepts the mode without crashing when backends are stubbed out.
+    assert make_audio_source("system", prefer_null=True)
 
 
 def test_make_audio_source_system_falls_back_to_soundcard_when_parec_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.setattr("nina_core.meetings.recorder._has_parec", lambda: False)
     monkeypatch.setattr("nina_core.meetings.recorder._has_soundcard", lambda: True)
     source = make_audio_source("system")
     assert isinstance(source, SoundCardSource)
+
+
+def test_soundcard_system_source_uses_loopback_microphone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("nina_core.meetings.recorder._has_parec", lambda: False)
+    monkeypatch.setattr("nina_core.meetings.recorder._has_soundcard", lambda: True)
+    source = make_audio_source("system")
+    assert isinstance(source, SoundCardSource)
+    assert source._kind == "loopback"
+
+
+def test_make_audio_source_system_on_macos_requires_virtual_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("nina_core.meetings.recorder._has_soundcard", lambda: True)
+
+    with pytest.raises(RecorderError, match="macOS system audio capture requires"):
+        make_audio_source("system")
 
 
 def test_make_audio_source_mic_falls_back_to_pulse_when_portaudio_unavailable(

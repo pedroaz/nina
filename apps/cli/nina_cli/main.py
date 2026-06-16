@@ -108,6 +108,32 @@ def _add_alias(parent: typer.Typer, sub_app: typer.Typer, alias: str) -> None:
     parent.add_typer(sub_app, name=alias, hidden=True)
 
 
+def _default_launcher_dir() -> Path:
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data) / "Programs" / "Nina" / "bin"
+        return Path.home() / "AppData" / "Local" / "Programs" / "Nina" / "bin"
+    return Path.home() / ".local" / "bin"
+
+
+def _launcher_path(launcher_dir: Path) -> Path:
+    return launcher_dir / ("nina.cmd" if os.name == "nt" else "nina")
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _config_root_for_uninstall(config_dir: Path) -> Path:
+    if config_dir.parent.name == ".nina":
+        return config_dir.parent
+    return config_dir
+
+
 daemon_app = typer.Typer(help="Daemon commands")
 app.add_typer(daemon_app, name="daemon")
 _add_alias(app, daemon_app, "d")
@@ -153,6 +179,35 @@ def _resolve_tui_binary() -> Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+@app.command(
+    "uninstall",
+    help="Remove the launcher, install root, and all Nina config/data.",
+)
+def uninstall() -> None:
+    config_dir = get_config_dir()
+    install_root = Path(os.environ.get("NINA_INSTALL_ROOT", str(Path.home() / ".nina"))).expanduser()
+    launcher_dir = Path(
+        os.environ.get("NINA_LAUNCHER_DIR", str(_default_launcher_dir()))
+    ).expanduser()
+    launcher = _launcher_path(launcher_dir)
+    config_root = _config_root_for_uninstall(config_dir)
+
+    pid_path = get_pid_path(config_dir)
+    pid = _read_pid(pid_path) if pid_path.exists() else None
+    if pid is not None and _process_exists(pid):
+        _terminate_process(pid)
+
+    targets: list[Path] = []
+    for candidate in [launcher, install_root, config_root]:
+        if candidate not in targets:
+            targets.append(candidate)
+
+    for target in targets:
+        _remove_path(target)
+
+    console.print("Removed Nina launcher, install root, and config data.")
 
 
 def _server_command() -> list[str]:
@@ -288,6 +343,20 @@ def _format_codex_auth_status() -> str:
     return f"LLM auth: disconnected ({detail})"
 
 
+def _format_provider_auth_status(config: NinaConfig) -> str:
+    provider = (config.llm.provider or "").lower()
+    if provider == "openai":
+        has_key = bool(config.llm.api_key or os.environ.get("OPENAI_API_KEY"))
+        if has_key:
+            return "LLM auth: OpenAI API key configured"
+        return "LLM auth: disconnected (OPENAI_API_KEY is not set in the environment)"
+    if provider == "codex":
+        return _format_codex_auth_status()
+    if provider in {"ollama", "openai_compatible", "llamacpp", "vllm", "lmstudio"}:
+        return f"LLM auth: not required for {provider}"
+    return f"LLM auth: provider {provider or 'unknown'}"
+
+
 def _format_llm_status(config: NinaConfig) -> str:
     """Show the LLM provider's reachability, used by `nina status`.
 
@@ -305,7 +374,12 @@ def _format_llm_status(config: NinaConfig) -> str:
     if status.reachable and status.model_present:
         return f"{head} -> ready (model {status.model!r})"
     bits: list[str] = []
-    bits.append("reachable" if status.reachable else "unreachable")
+    if status.reachable:
+        bits.append("reachable")
+    elif status.provider in {"openai", "codex"}:
+        bits.append("disconnected")
+    else:
+        bits.append("unreachable")
     if status.model:
         bits.append(f"model {'present' if status.model_present else 'missing'}")
     line = f"{head} -> {', '.join(bits)}"
@@ -354,6 +428,26 @@ def _format_meeting_pipeline_status(config: NinaConfig) -> str:
     elif llm.model and not llm.model_present:
         issues.append(f"LLM model {llm.model!r} not present")
     return f"Meeting pipeline: degraded ({'; '.join(issues)})"
+
+
+def _format_config_warnings(config: NinaConfig) -> list[str]:
+    warnings: list[str] = []
+    provider = (config.llm.provider or "").lower()
+    llm_status = check_provider_status(config.llm, timeout=1.0)
+    transcription = check_transcription_status(config.transcription)
+
+    if provider == "openai" and not (config.llm.api_key or os.environ.get("OPENAI_API_KEY")):
+        warnings.append("OpenAI provider selected but OPENAI_API_KEY is not set")
+    elif provider == "codex" and not llm_status.reachable:
+        warnings.append(f"Codex auth disconnected ({llm_status.detail or 'unknown error'})")
+    elif provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"} and not config.llm.base_url:
+        warnings.append(f"{provider} provider selected but llm.base_url is not set")
+
+    if llm_status.reachable and llm_status.model and not llm_status.model_present:
+        warnings.append(f"LLM model {llm_status.model!r} is not present")
+    if not transcription.available:
+        warnings.append(f"Transcription backend unavailable ({transcription.detail or 'unknown error'})")
+    return warnings
 
 
 @app.command("ask", help="Ask a question over the local Obsidian vault.")
@@ -511,11 +605,17 @@ def status(
     daemon_state, running = _daemon_status(profile)
     console.print(daemon_state)
     console.print(f"Health: {_daemon_health() if running else 'offline'}")
-    console.print(_format_codex_auth_status())
+    console.print(_format_provider_auth_status(config))
     console.print()
     console.print(_format_llm_status(config))
     console.print(_format_transcription_status(config))
     console.print(_format_meeting_pipeline_status(config))
+    warnings = _format_config_warnings(config)
+    if warnings:
+        console.print()
+        console.print("Warnings:")
+        for warning in warnings:
+            console.print(f"  - {warning}")
     console.print()
     console.print("Configuration paths:")
     for name, value in _configuration_entries(config_dir, config):

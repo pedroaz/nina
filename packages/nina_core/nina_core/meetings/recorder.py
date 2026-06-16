@@ -140,6 +140,7 @@ class SoundCardSource:
     def __init__(self, device: str | None = None, *, kind: str = "mic") -> None:
         self._device = device
         self._kind = kind
+        self._include_loopback = kind == "loopback"
         self._card: Any | None = None
         self._recorder: Any | None = None
         self._recorder_cm: Any | None = None
@@ -164,7 +165,11 @@ class SoundCardSource:
             if self._kind == "speaker":
                 card = sc.get_speaker(self._device) if self._device else sc.default_speaker()
             else:
-                card = sc.get_microphone(self._device) if self._device else sc.default_microphone()
+                card = (
+                    sc.get_microphone(self._device, include_loopback=self._include_loopback)
+                    if self._device
+                    else sc.default_microphone(include_loopback=self._include_loopback)
+                )
         except Exception as exc:
             raise RecorderError(f"Failed to resolve SoundCard {self._kind}: {exc}") from exc
         if card is None:
@@ -640,8 +645,19 @@ def make_audio_source(
             return PulseSource(device=device if isinstance(device, str) else None, kind="monitor")
         if sys.platform.startswith("win") and _has_sounddevice():
             return WasapiLoopbackSource(device=device)
+        if sys.platform == "darwin":
+            if device is not None:
+                if _has_soundcard():
+                    return SoundCardSource(device=device if isinstance(device, str) else None, kind="mic")
+                if _has_sounddevice():
+                    return PortAudioSource(device=device)
+            raise RecorderError(
+                "macOS system audio capture requires a native CoreAudio tap or a virtual loopback "
+                "input such as BlackHole/Loopback. Nina currently supports macOS mic capture; "
+                "use `nina config meetings-source mic` or pass a virtual input with --system-device."
+            )
         if _has_soundcard():
-            return SoundCardSource(device=device if isinstance(device, str) else None, kind="speaker")
+            return SoundCardSource(device=device if isinstance(device, str) else None, kind="loopback")
         if _has_sounddevice() and device is not None:
             return PortAudioSource(device=device)
         if _has_parec():

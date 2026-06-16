@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,10 @@ class MeetingRecordingManager:
         request: RecordingRequest,
     ) -> dict[str, Any]:
         source_name = (request.source or config.meetings.default_source or "mic").strip() or "mic"
+        if request.source is None and sys.platform == "darwin" and source_name in {"mixed", "system"}:
+            # macOS has no Python-level system loopback equivalent to Linux `parec`.
+            # Default to a working mic capture; explicit system/mixed requests still fail clearly.
+            source_name = "mic"
         sample_rate = request.sample_rate or config.meetings.sample_rate
         channels = request.channels or config.meetings.channels
         duration_seconds = request.duration_seconds

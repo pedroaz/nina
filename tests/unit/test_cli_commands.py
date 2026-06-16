@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import pytest
@@ -225,6 +226,7 @@ def test_status_reports_running_daemon_and_configuration_paths(
     monkeypatch, isolated_config
 ) -> None:  # type: ignore[no-untyped-def]
     (isolated_config / "daemon.pid").write_text("4321")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-api-key")
     monkeypatch.setattr(main_module, "_process_exists", lambda pid: True)
     monkeypatch.setattr(
         main_module.httpx,
@@ -245,14 +247,15 @@ def test_status_reports_running_daemon_and_configuration_paths(
             },
         )(),
     )
+    monkeypatch.setattr(config_module, "_sync_daemon", lambda *args, **kwargs: False)
 
     result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0
     assert "Daemon running (pid 4321)" in result.stdout
     assert "Health: ok" in result.stdout
-    assert "LLM auth: Codex OAuth connected, account acc-123" in result.stdout
-    assert "LLM provider: codex" in result.stdout
+    assert "LLM auth: OpenAI API key configured" in result.stdout
+    assert "LLM provider: openai" in result.stdout
     assert "Transcription:" in result.stdout
     assert "Meeting pipeline:" in result.stdout
     assert "Configuration paths:" in result.stdout
@@ -298,10 +301,10 @@ def test_setup_transcription_calls_uv_pip_install(
     """
     from nina_cli import setup_commands as setup_module
 
-    called: dict[str, object] = {}
+    called: list[list[str]] = []
 
     def fake_call(cmd: list[str]) -> int:
-        called["cmd"] = cmd
+        called.append(list(cmd))
         return 0
 
     monkeypatch.setattr(setup_module.shutil, "which", lambda name: "/usr/bin/uv")
@@ -312,8 +315,8 @@ def test_setup_transcription_calls_uv_pip_install(
     result = runner.invoke(app, ["setup", "transcription"])
 
     assert result.exit_code == 0, result.stdout
-    cmd = called["cmd"]
-    assert isinstance(cmd, list)
+    assert called
+    cmd = called[0]
     # The command must pin --python to the nina Python (sys.executable).
     assert "--python" in cmd
     assert cmd[cmd.index("--python") + 1] == __import__("sys").executable
@@ -336,9 +339,23 @@ def test_setup_transcription_surfaces_install_failure(
     assert "uv pip install" in result.stdout
 
 
+def test_setup_default_runs_unified_installer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from nina_cli import setup_commands as setup_module
+
+    called: dict[str, object] = {}
+
+    monkeypatch.setattr(setup_module, "setup_runtime", lambda python=None: called.setdefault("ok", True))
+
+    result = runner.invoke(app, ["setup"])
+
+    assert result.exit_code == 0, result.stdout
+    assert called == {"ok": True}
+
+
 def test_status_reports_offline_daemon_and_configuration_paths(
     monkeypatch, isolated_config
 ) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(config_module, "_sync_daemon", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         main_module.httpx,
         "get",
@@ -366,10 +383,51 @@ def test_status_reports_offline_daemon_and_configuration_paths(
     assert result.exit_code == 0
     assert "Daemon not running" in result.stdout
     assert "Health: offline" in result.stdout
-    assert "LLM auth: disconnected (Codex auth file not found)" in result.stdout
-    assert "LLM provider: codex" in result.stdout
+    assert "LLM auth: disconnected (OPENAI_API_KEY is not set in the environment)" in result.stdout
+    assert "LLM provider: openai" in result.stdout
+    assert "Warnings:" in result.stdout
     assert "Configuration paths:" in result.stdout
     assert "Config dir:" in result.stdout
+
+
+def test_config_open_launches_vs_code(monkeypatch: pytest.MonkeyPatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, Any] = {}
+    _patch_popen_capture(monkeypatch, captured)
+    monkeypatch.setattr(config_module.shutil, "which", lambda name: "/usr/bin/code" if name == "code" else None)
+
+    result = runner.invoke(app, ["config", "open"])
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["cmd"] == ["code", str(isolated_config)]
+
+
+def test_uninstall_removes_install_root_and_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    install_root = tmp_path / "nina-root"
+    launcher_dir = tmp_path / "launcher"
+    config_dir = install_root / "default"
+    vault_dir = config_dir / "vault"
+    (config_dir / "logs").mkdir(parents=True, exist_ok=True)
+    vault_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.yaml").write_text("llm:\n  provider: openai\n")
+    (config_dir / "token").write_text("token")
+    (config_dir / "nina.db").write_text("db")
+    (config_dir / "daemon.pid").write_text("4321")
+    (launcher_dir).mkdir(parents=True, exist_ok=True)
+    (launcher_dir / "nina").write_text("launcher")
+
+    monkeypatch.setattr(main_module, "get_config_dir", lambda profile="default": config_dir)
+    monkeypatch.setattr(main_module, "_default_launcher_dir", lambda: launcher_dir)
+    monkeypatch.setenv("NINA_INSTALL_ROOT", str(install_root))
+    monkeypatch.setenv("NINA_LAUNCHER_DIR", str(launcher_dir))
+    monkeypatch.setattr(main_module, "_read_pid", lambda path: 4321)
+    monkeypatch.setattr(main_module, "_process_exists", lambda pid: False)
+    monkeypatch.setattr(main_module, "_terminate_process", lambda pid: None)
+
+    result = runner.invoke(app, ["uninstall"])
+
+    assert result.exit_code == 0, result.stdout
+    assert not install_root.exists()
+    assert not (launcher_dir / "nina").exists()
 
 
 def test_api_base_prefers_runtime_state(monkeypatch, isolated_config) -> None:  # type: ignore[no-untyped-def]

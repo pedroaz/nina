@@ -169,12 +169,12 @@ The daemon is the source of truth for state. The CLI and TUI are clients, and th
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.12
 - `uv`
 - `bun`
 - An Obsidian vault path
-- Codex auth file for chat and agent mode
-- An OpenAI API key for research mode
+- An OpenAI API key for chat, agent, and research modes
+- Codex auth file if you want to use the Codex provider explicitly
 
 ### Setup
 
@@ -184,6 +184,27 @@ nina init
 ```
 
 That builds and installs the local Nina runtime and launcher, then creates the local Nina profile, SQLite database, token, and vault structure. Make sure `~/.local/bin` is on your PATH before running `nina init`.
+
+`make build` and `make check-build` now fail fast if Python 3.12 is not available to `uv`.
+
+Use `nina config open` to open the active profile folder in VS Code.
+
+Install commands:
+
+```bash
+nina setup
+nina setup transcription
+nina setup python
+```
+
+Uninstall commands:
+
+```bash
+nina uninstall
+make uninstall
+```
+
+`nina uninstall` removes the launcher, install root, and Nina config/data by default.
 
 ## Quick Start
 
@@ -199,7 +220,7 @@ Check status:
 uv run nina status
 ```
 
-`nina status` shows daemon health plus whether Codex OAuth is connected.
+`nina status` shows daemon health plus the current LLM, transcription, and meeting setup state.
 
 Create a ticket:
 
@@ -238,7 +259,7 @@ External credentials (not Nina's config) still come from the environment:
 - `CODEX_AUTH_FILE`: path to the Codex auth JSON used by the `codex` provider. Default: `~/.codex/auth.json`.
 - `OPENAI_API_KEY`: required for the explicit `openai` LLM provider and research mode.
 
-The default chat/agent path is `codex`, which uses the Codex auth file directly; `openai` and research remain API-key-only.
+The default chat/agent path is `openai`, which uses `OPENAI_API_KEY`; Codex is still available if you switch the provider explicitly.
 
 Saved config covers the vault path, database path, daemon host/port, log level, LLM provider/model, research provider/model, daily summary schedule, transcription backend/model/device/compute-type/language, and meetings default source. Inspect it with `nina config show`, change it with `nina config vault`, `nina config database`, `nina config daemon-host`, `nina config daemon-port`, `nina config log-level`, `nina config llm-provider`, `nina config llm-model`, `nina config research-provider`, `nina config research-model`, `nina config daily-summary-time`, `nina config transcription-backend`, `nina config transcription-model`, `nina config transcription-device`, `nina config transcription-compute-type`, `nina config transcription-language`, `nina config meetings-source`, and `nina config auto-summarize`, or edit the same fields from the TUI Settings tab. The daemon writes a small `daemon.json` runtime file in the config directory so CLI and TUI clients keep talking to the live host and port until the next restart.
 

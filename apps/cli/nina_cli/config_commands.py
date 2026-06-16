@@ -397,6 +397,31 @@ def edit(
     console.print(f"Opening {config_path} in {cmd[0]}...")
 
 
+@config_app.command(
+    "open",
+    help="Open the active profile config folder in VS Code.",
+)
+def open_config_folder(
+    profile: str = typer.Option("default", help="Profile name"),
+    wait: bool = typer.Option(False, "--wait", "-w", help="Block until VS Code closes."),
+) -> None:
+    config_dir, _ = _load_config(profile)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    vscode_cmd = ["code"]
+    if wait:
+        vscode_cmd.append("--wait")
+    if shutil.which("code"):
+        subprocess.Popen([*vscode_cmd, str(config_dir)])
+        console.print(f"Opening {config_dir} in VS Code...")
+        return
+    if os.name == "darwin":
+        subprocess.Popen(["open", "-a", "Visual Studio Code", str(config_dir)])
+        console.print(f"Opening {config_dir} in VS Code...")
+        return
+    console.print("[red]VS Code (`code`) is not on PATH.[/red]")
+    raise typer.Exit(1) from None
+
+
 def _resolve_editor_command(editor: str | None, wait: bool, path: Path) -> list[str] | None:
     """Pick the editor command. Returns the argv list, or None if nothing found.
 

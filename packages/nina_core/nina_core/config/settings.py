@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class LLMConfig(BaseModel):
-    provider: str = "codex"
-    model: str = "gpt-5"
+    provider: str = "openai"
+    model: str = "gpt-4-mini"
     api_key: str | None = None
     # Used by ollama and openai_compatible (llama.cpp, vLLM, LM Studio).
     # Ignored by codex and openai.
@@ -16,7 +16,7 @@ class LLMConfig(BaseModel):
 
 class ResearchConfig(BaseModel):
     provider: str = "openai_web"
-    model: str = "gpt-5"
+    model: str = "gpt-4-mini"
 
 
 class SchedulerConfig(BaseModel):
