@@ -1,20 +1,17 @@
+from ._protocols import AudioSource, RecorderError
+from .aligned_mixer import AlignedMixer
+from .backends.macos_process_tap import MacosProcessTapSource
+from .backends.soundcard_backend import (
+    SoundcardBackend,
+    list_loopback_devices,
+    list_microphones,
+)
 from .manager import MeetingRecordingManager, RecordingRequest, RecordingSession
 from .recorder import (
-    AudioSource,
-    MixedAudioSource,
     NullAudioSource,
-    PortAudioSource,
-    PulseMonitorSource,
-    PulseSource,
-    RecorderError,
-    SoundCardSource,
-    WasapiLoopbackSource,
     apply_ffmpeg_noise_reduction,
     boost_wav,
-    is_portaudio_available,
     list_input_devices,
-    list_pulse_sources,
-    list_soundcard_devices,
     make_audio_source,
     normalize_wav,
     peak_dbfs,
@@ -23,25 +20,21 @@ from .recorder import (
 from .service import MeetingService
 
 __all__ = [
+    "AlignedMixer",
     "AudioSource",
+    "MacosProcessTapSource",
     "MeetingRecordingManager",
     "MeetingService",
-    "MixedAudioSource",
     "NullAudioSource",
-    "PortAudioSource",
-    "PulseMonitorSource",
-    "PulseSource",
     "RecorderError",
     "RecordingRequest",
     "RecordingSession",
-    "SoundCardSource",
-    "WasapiLoopbackSource",
+    "SoundcardBackend",
     "apply_ffmpeg_noise_reduction",
     "boost_wav",
-    "is_portaudio_available",
     "list_input_devices",
-    "list_pulse_sources",
-    "list_soundcard_devices",
+    "list_loopback_devices",
+    "list_microphones",
     "make_audio_source",
     "normalize_wav",
     "peak_dbfs",

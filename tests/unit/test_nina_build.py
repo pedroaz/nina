@@ -26,10 +26,18 @@ def test_main_invokes_setup_after_install(monkeypatch: pytest.MonkeyPatch, tmp_p
     monkeypatch.setattr(nina_build, "build_python_wheels", lambda out_dir: None)
     monkeypatch.setattr(nina_build, "build_tui_binary", lambda out_dir: tmp_path / "nina-tui")
     monkeypatch.setattr(nina_build, "install_python_app", lambda app_dir, wheel_dir: None)
-    monkeypatch.setattr(nina_build, "install_tui_binary", lambda bin_dir, binary_path: tmp_path / "nina-tui")
-    monkeypatch.setattr(nina_build, "write_launcher", lambda app_dir, launcher_dir, tui_binary: tmp_path / "nina")
+    monkeypatch.setattr(
+        nina_build, "install_tui_binary", lambda bin_dir, binary_path: tmp_path / "nina-tui"
+    )
+    monkeypatch.setattr(
+        nina_build, "write_launcher", lambda app_dir, launcher_dir, tui_binary: tmp_path / "nina"
+    )
     monkeypatch.setattr(nina_build, "run", lambda cmd, cwd=None: calls.append(list(cmd)))
-    monkeypatch.setattr(nina_build, "env_path", lambda name, default: app_dir.parent if name == "NINA_INSTALL_ROOT" else default)
+    monkeypatch.setattr(
+        nina_build,
+        "env_path",
+        lambda name, default: app_dir.parent if name == "NINA_INSTALL_ROOT" else default,
+    )
 
     assert nina_build.main() == 0
     assert calls[-1][-2:] == ["nina_cli.main", "setup"]

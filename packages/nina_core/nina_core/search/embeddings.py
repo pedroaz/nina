@@ -3,15 +3,34 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import warnings
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from nina_core.models.models import NoteEmbedding
+
+
+@contextmanager
+def _suppress_hf_unauth_warning() -> Any:
+    """Suppress `huggingface_hub`'s "unauthenticated requests" `UserWarning`
+    when no `HF_TOKEN` is set. See `transcription.py` for the rationale."""
+    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"):
+        yield
+        return
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*unauthenticated requests to the HF Hub.*",
+            category=UserWarning,
+        )
+        yield
 
 
 def _now() -> str:
@@ -135,18 +154,21 @@ class FastembedEmbeddingService(EmbeddingService):
         from fastembed import TextEmbedding
 
         self.model_name = model_name
-        self._model = TextEmbedding(model_name=model_name)
+        with _suppress_hf_unauth_warning():
+            self._model = TextEmbedding(model_name=model_name)
         # fastembed lazy-loads the model on first embed; get_dim via first call
-        try:
-            probe = next(iter(self._model.embed(["probe"])))
-            self.dim = len(probe)
-        except Exception as exc:  # pragma: no cover - depends on model
-            raise RuntimeError(f"Failed to initialize fastembed model {model_name}: {exc}")
+        with _suppress_hf_unauth_warning():
+            try:
+                probe = next(iter(self._model.embed(["probe"])))
+                self.dim = len(probe)
+            except Exception as exc:  # pragma: no cover - depends on model
+                raise RuntimeError(f"Failed to initialize fastembed model {model_name}: {exc}")
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        embeddings = list(self._model.embed(texts))
+        with _suppress_hf_unauth_warning():
+            embeddings = list(self._model.embed(texts))
         return [list(map(float, vec)) for vec in embeddings]
 
 

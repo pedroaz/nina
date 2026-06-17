@@ -23,6 +23,8 @@ dependencies = [
     "numpy>=1.26.0",
     "watchdog>=4.0.0",
     "selectolax>=0.3.0",
+    "soundcard>=0.4.2",
+    "soxr>=0.3.7",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +32,12 @@ dependencies = [
 # needs this extra; install with `pip install nina-core[transcription]`. From
 # inside an installed nina you can also run `nina setup transcription`.
 transcription = ["faster-whisper>=1.0.0"]
+# macOS Process Tap support (Core Audio private API via PyObjC). Nina's
+# `nina setup` installs this automatically on Darwin.
+darwin = [
+    "pyobjc-framework-CoreAudio>=10.0",
+    "pyobjc-framework-AVFoundation>=10.0",
+]
 
 [build-system]
 requires = ["hatchling"]

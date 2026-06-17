@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import threading
 import time
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -80,27 +79,31 @@ class MeetingRecordingManager:
         request: RecordingRequest,
     ) -> dict[str, Any]:
         source_name = (request.source or config.meetings.default_source or "mic").strip() or "mic"
-        if request.source is None and sys.platform == "darwin" and source_name in {"mixed", "system"}:
-            # macOS has no Python-level system loopback equivalent to Linux `parec`.
-            # Default to a working mic capture; explicit system/mixed requests still fail clearly.
-            source_name = "mic"
         sample_rate = request.sample_rate or config.meetings.sample_rate
         channels = request.channels or config.meetings.channels
         duration_seconds = request.duration_seconds
         gain = request.gain if request.gain is not None else config.meetings.default_gain
         auto_normalize = (
-            request.auto_normalize if request.auto_normalize is not None else config.meetings.auto_normalize
+            request.auto_normalize
+            if request.auto_normalize is not None
+            else config.meetings.auto_normalize
         )
         normalize_target_dbfs = (
             request.normalize_target_dbfs
             if request.normalize_target_dbfs is not None
             else config.meetings.normalize_target_dbfs
         )
-        noise_reduction = (request.noise_reduction or config.meetings.noise_reduction or "off").strip().lower()
+        noise_reduction = (
+            (request.noise_reduction or config.meetings.noise_reduction or "off").strip().lower()
+        )
         device = request.device
         mic_device = request.mic_device
         system_device = request.system_device
-        device_name = self._describe_device(source_name, device=device, mic_device=mic_device, system_device=system_device)
+        if device is None and mic_device is None and config.meetings.default_device:
+            device = config.meetings.default_device
+        device_name = self._describe_device(
+            source_name, device=device, mic_device=mic_device, system_device=system_device
+        )
 
         with self._lock:
             if any(not session.done_event.is_set() for session in self._sessions.values()):
@@ -123,6 +126,8 @@ class MeetingRecordingManager:
                 device=device,
                 mic_device=mic_device,
                 system_device=system_device,
+                sample_rate=sample_rate,
+                channels=channels,
             )
             source.open(sample_rate, channels)
         except Exception as exc:
@@ -172,7 +177,9 @@ class MeetingRecordingManager:
                 session.source,
                 sample_rate=session.sample_rate,
                 channels=session.channels,
-                duration_seconds=float(session.duration_seconds) if session.duration_seconds else None,
+                duration_seconds=float(session.duration_seconds)
+                if session.duration_seconds
+                else None,
                 stop_event=session.stop_event,
             )
             session.size_bytes = size_bytes
@@ -198,7 +205,9 @@ class MeetingRecordingManager:
             except Exception as stop_exc:
                 session.error = error or str(stop_exc)
                 try:
-                    session.service.update_status(session.meeting_id, status="failed", error=session.error)
+                    session.service.update_status(
+                        session.meeting_id, status="failed", error=session.error
+                    )
                 except Exception:
                     pass
             with self._lock:

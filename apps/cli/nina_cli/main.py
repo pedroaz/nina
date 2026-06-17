@@ -58,8 +58,7 @@ def _print_short_help() -> None:
         '  [cyan]nina r  "title"[/cyan]      record a meeting (alias for `meeting record`)\n'
         "  [cyan]nina mt list[/cyan]         list meetings (alias for `meeting list`)\n"
         "  [cyan]nina mt stop[/cyan]         stop the active recording\n"
-        "  [cyan]nina mt t <id>[/cyan]       transcribe a meeting (local faster-whisper)\n"
-        "  [cyan]nina mt m <id>[/cyan]       summarize a meeting (LLM)\n"
+        "  [cyan]nina mt e <id>[/cyan]       transcribe + summarize a meeting (Ctrl+E in TUI)\n"
         "  [cyan]nina t[/cyan]               launch the TUI\n"
         '  [cyan]nina ask "q?"[/cyan]        ask a question over the vault\n'
         '  [cyan]nina search "q"[/cyan]      full-text search the vault\n'
@@ -74,7 +73,7 @@ def _print_short_help() -> None:
         "  rch = research           s = search              ll = llm\n"
         "\n"
         "[bold]Meeting subcommands[/bold] (via `nina mt ...`):\n"
-        "  ls = list    t = transcribe    m = summarize    s = stop\n"
+        "  ls = list    e = pipeline (transcribe + summarize)    s = stop\n"
         "  o = open     p = play          rm = delete      x = show\n"
         "\n"
         "[bold]Run[/bold] [cyan]nina <command> --help[/cyan] [bold]for options.[/bold]"
@@ -187,7 +186,9 @@ def _resolve_tui_binary() -> Path | None:
 )
 def uninstall() -> None:
     config_dir = get_config_dir()
-    install_root = Path(os.environ.get("NINA_INSTALL_ROOT", str(Path.home() / ".nina"))).expanduser()
+    install_root = Path(
+        os.environ.get("NINA_INSTALL_ROOT", str(Path.home() / ".nina"))
+    ).expanduser()
     launcher_dir = Path(
         os.environ.get("NINA_LAUNCHER_DIR", str(_default_launcher_dir()))
     ).expanduser()
@@ -440,13 +441,18 @@ def _format_config_warnings(config: NinaConfig) -> list[str]:
         warnings.append("OpenAI provider selected but OPENAI_API_KEY is not set")
     elif provider == "codex" and not llm_status.reachable:
         warnings.append(f"Codex auth disconnected ({llm_status.detail or 'unknown error'})")
-    elif provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"} and not config.llm.base_url:
+    elif (
+        provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"}
+        and not config.llm.base_url
+    ):
         warnings.append(f"{provider} provider selected but llm.base_url is not set")
 
     if llm_status.reachable and llm_status.model and not llm_status.model_present:
         warnings.append(f"LLM model {llm_status.model!r} is not present")
     if not transcription.available:
-        warnings.append(f"Transcription backend unavailable ({transcription.detail or 'unknown error'})")
+        warnings.append(
+            f"Transcription backend unavailable ({transcription.detail or 'unknown error'})"
+        )
     return warnings
 
 

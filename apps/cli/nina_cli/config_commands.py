@@ -317,6 +317,22 @@ def transcription_device(
     console.print("Applied to the running daemon." if synced else "Saved on disk.")
 
 
+@config_app.command("meetings-default-device")
+def meetings_default_device(
+    device: str | None = typer.Argument(
+        None,
+        help="Audio device name (substring). Pass an empty string or omit to clear.",
+    ),
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    """Set the default mic device used by `nina r` when `--device` is omitted."""
+    new_value = device or None
+    updated, synced = _apply_update(profile, {"meetings": {"default_device": new_value}})
+    shown = updated.meetings.default_device or "(cleared)"
+    console.print(f"Meetings default device: {shown}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
 @config_app.command("transcription-compute-type")
 def transcription_compute_type(
     compute_type: str,

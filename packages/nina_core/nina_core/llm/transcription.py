@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 import uuid
+import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +21,28 @@ from nina_core.models.models import LLMInteraction
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+@contextmanager
+def _suppress_hf_unauth_warning() -> Any:
+    """Suppress `huggingface_hub`'s "unauthenticated requests" `UserWarning`
+    when no `HF_TOKEN` is set in the environment.
+
+    Nina downloads public models (Whisper, BGE) so an auth token is not
+    required. The warning is noisy and confusing for users who haven't
+    signed up for a Hugging Face account. If the user has set `HF_TOKEN`,
+    the library uses it automatically and we don't suppress anything.
+    """
+    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"):
+        yield
+        return
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*unauthenticated requests to the HF Hub.*",
+            category=UserWarning,
+        )
+        yield
 
 
 @dataclass
@@ -83,7 +108,8 @@ class FasterWhisperProvider(TranscriptionProvider):
                 "faster-whisper is not installed. Install with `pip install nina-core[transcription]`."
             ) from exc
         lang = language or self.language
-        whisper = WhisperModel(self.model, device=self.device, compute_type=self.compute_type)
+        with _suppress_hf_unauth_warning():
+            whisper = WhisperModel(self.model, device=self.device, compute_type=self.compute_type)
         segments_iter, info = whisper.transcribe(
             str(audio_path),
             language=lang,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 import pytest
@@ -344,7 +343,9 @@ def test_setup_default_runs_unified_installer(monkeypatch: pytest.MonkeyPatch) -
 
     called: dict[str, object] = {}
 
-    monkeypatch.setattr(setup_module, "setup_runtime", lambda python=None: called.setdefault("ok", True))
+    monkeypatch.setattr(
+        setup_module, "setup_runtime", lambda python=None: called.setdefault("ok", True)
+    )
 
     result = runner.invoke(app, ["setup"])
 
@@ -393,7 +394,9 @@ def test_status_reports_offline_daemon_and_configuration_paths(
 def test_config_open_launches_vs_code(monkeypatch: pytest.MonkeyPatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, Any] = {}
     _patch_popen_capture(monkeypatch, captured)
-    monkeypatch.setattr(config_module.shutil, "which", lambda name: "/usr/bin/code" if name == "code" else None)
+    monkeypatch.setattr(
+        config_module.shutil, "which", lambda name: "/usr/bin/code" if name == "code" else None
+    )
 
     result = runner.invoke(app, ["config", "open"])
 
@@ -401,7 +404,9 @@ def test_config_open_launches_vs_code(monkeypatch: pytest.MonkeyPatch, isolated_
     assert captured["cmd"] == ["code", str(isolated_config)]
 
 
-def test_uninstall_removes_install_root_and_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_uninstall_removes_install_root_and_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
     install_root = tmp_path / "nina-root"
     launcher_dir = tmp_path / "launcher"
     config_dir = install_root / "default"

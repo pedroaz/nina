@@ -76,10 +76,10 @@ def test_write_transcript_files_writes_text_and_segments(tmp_path: Path) -> None
 
 
 def test_log_transcription_interaction_writes_row(tmp_path: Path) -> None:
+    from nina_core.db import create_database
     from nina_core.llm.transcription import TranscriptResult
 
     db_path = tmp_path / "interactions.db"
-    from nina_core.db import create_database
 
     create_database(str(db_path))
     result = TranscriptResult(text="hi", segments=[], language="en", model="null")
@@ -102,3 +102,48 @@ def test_log_transcription_interaction_writes_row(tmp_path: Path) -> None:
         assert len(rows) == 1
         assert rows[0].purpose == "meeting_transcription"
         assert rows[0].workflow_run_id == "wf_demo"
+
+
+def test_hf_unauth_warning_is_suppressed_when_no_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`huggingface_hub` emits a `UserWarning` when downloading public models
+    without `HF_TOKEN`. Nina should suppress it for the default (unauthenticated)
+    case but pass it through when the user has explicitly set a token."""
+    import warnings
+
+    from nina_core.llm.transcription import _suppress_hf_unauth_warning
+
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with _suppress_hf_unauth_warning():
+            warnings.warn(
+                "You are sending unauthenticated requests to the HF Hub.",
+                UserWarning,
+                stacklevel=2,
+            )
+    assert all("unauthenticated requests" not in str(w.message) for w in caught) or len(caught) == 0
+
+
+def test_hf_unauth_warning_passes_through_when_token_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the user has set `HF_TOKEN`, we don't suppress anything — the
+    library will use the token and the warning should not fire anyway."""
+    import warnings
+
+    from nina_core.llm.transcription import _suppress_hf_unauth_warning
+
+    monkeypatch.setenv("HF_TOKEN", "hf_testtoken")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with _suppress_hf_unauth_warning():
+            warnings.warn(
+                "You are sending unauthenticated requests to the HF Hub.",
+                UserWarning,
+                stacklevel=2,
+            )
+    assert any("unauthenticated requests" in str(w.message) for w in caught)

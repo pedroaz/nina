@@ -4,6 +4,7 @@ import json
 import math
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -16,11 +17,10 @@ from nina_core.config import get_config_dir, load_effective_config
 from nina_core.meetings.recorder import (
     boost_wav,
     list_input_devices,
-    list_pulse_sources,
-    list_soundcard_devices,
     normalize_wav,
     peak_dbfs,
 )
+from nina_core.meetings.backends import list_loopback_devices
 
 from .api import api_base, headers, request
 
@@ -140,41 +140,13 @@ def meeting_stop(
     _print_meeting(data)
 
 
-@meeting_app.command("transcribe", help="Transcribe a meeting (local faster-whisper).")
-def meeting_transcribe(meeting_id: str = typer.Argument(..., help="Meeting id")) -> None:
-    response = request("POST", f"/meetings/{meeting_id}/transcribe", json={})
-    data = response.json()
-    status = data.get("status")
-    output = data.get("output") or {}
-    if status == "completed":
-        console.print(
-            f"Transcribed {meeting_id} -> {output.get('note_path', '')} ({output.get('char_count', 0)} chars)"
-        )
-    else:
-        _print_json(data)
-        raise typer.Exit(1)
-
-
-@meeting_app.command("summarize", help="Summarize a meeting (configured LLM).")
-def meeting_summarize(meeting_id: str = typer.Argument(..., help="Meeting id")) -> None:
-    response = request("POST", f"/meetings/{meeting_id}/summarize", json={})
-    data = response.json()
-    status = data.get("status")
-    output = data.get("output") or {}
-    if status == "completed":
-        console.print(f"Summarized {meeting_id} -> {output.get('note_path', '')}")
-    else:
-        _print_json(data)
-        raise typer.Exit(1)
-
-
 @meeting_app.command(
     "pipeline",
     help=(
-        "Run transcribe and summarize back-to-back for a meeting. Writes the "
+        "Transcribe + summarize a meeting back-to-back. Writes the "
         "transcript to Meetings/<date> - <title> - Transcript.md, the summary "
         "to Meetings/<date> - <title> - Summary.md, and links both from the "
-        "hub note Meetings/<date> - <title>.md."
+        "hub note Meetings/<date> - <title>.md. Bound to Ctrl+E in the TUI."
     ),
 )
 def meeting_pipeline(meeting_id: str = typer.Argument(..., help="Meeting id")) -> None:
@@ -330,45 +302,30 @@ def meeting_boost(
 
 @meeting_app.command("devices")
 def meeting_devices() -> None:
-    """List local audio inputs plus available PulseAudio/PipeWire and SoundCard devices."""
+    """List local audio inputs and loopback devices via the soundcard backend."""
 
     inputs = list_input_devices()
-    soundcard = list_soundcard_devices()
-    sources = list_pulse_sources()
+    loopback = list_loopback_devices()
     if inputs:
-        console.print("[bold]Input devices (PortAudio):[/bold]")
+        console.print("[bold]Input devices (soundcard):[/bold]")
         for dev in inputs:
-            console.print(
-                f"  [{dev['index']}] {dev['name']} (host={dev['host']}, channels={dev['channels']})"
-            )
+            console.print(f"  {dev['name']}")
     else:
-        console.print("No PortAudio input devices found.")
+        console.print("No input devices found.")
 
-    if soundcard.get("microphones"):
-        console.print("[bold]SoundCard microphones:[/bold]")
-        for mic in soundcard["microphones"]:
-            console.print(f"  {mic['name']}")
-    if soundcard.get("speakers"):
-        console.print("[bold]SoundCard speakers:[/bold]")
-        for speaker in soundcard["speakers"]:
-            console.print(f"  {speaker['name']}")
-    if sources:
-        console.print("[bold]PulseAudio / PipeWire sources:[/bold]")
-        for src in sources:
-            desc = src.get("description") or ""
-            is_monitor = ".monitor" in src["name"]
-            kind = " (system output)" if is_monitor else " (input)"
-            console.print(f"  {src['name']}{kind}{(' — ' + desc) if desc else ''}")
-    else:
-        console.print("No PulseAudio sources found.")
+    if loopback:
+        console.print("[bold]System / loopback devices:[/bold]")
+        for dev in loopback:
+            console.print(f"  {dev['name']}")
+    elif sys.platform == "darwin":
+        console.print(
+            "On macOS 14.4+, system audio is captured via the Core Audio Process Tap "
+            "(no virtual device required). On older macOS, install BlackHole for loopback."
+        )
 
-    if not inputs and not soundcard.get("microphones") and sources:
-        mic_sources = [s for s in sources if ".monitor" not in s["name"]]
-        if mic_sources:
-            console.print("")
-            console.print("To record from your mic via PulseAudio, run:")
-            first_mic = mic_sources[0]["name"]
-            console.print(f'  [cyan]nina r "title" --source parec --device {first_mic}[/cyan]')
+    if not inputs:
+        console.print("")
+        console.print("Connect a microphone and run `nina meeting devices` again.")
 
 
 def record_meeting(
@@ -393,6 +350,14 @@ def record_meeting(
     """
     if not title or title.strip().lower() in {"untitled"}:
         title = f"Meeting {time.strftime('%Y-%m-%d %H:%M')}"
+
+    if device is None and mic_device is None and system_device is None:
+        try:
+            config = load_effective_config(get_config_dir())
+        except Exception:
+            config = None
+        if config is not None and getattr(config.meetings, "default_device", None):
+            device = config.meetings.default_device
 
     payload: dict[str, Any] = {"title": title}
     if source is not None:
@@ -463,7 +428,9 @@ def meeting_record(
         "-s",
         "--source",
         help=(
-            "Audio source: mic, system, mixed, or parec (explicit PulseAudio/PipeWire source via `--device`)"
+            "Audio source: mic, system, or mixed. "
+            "On macOS 14.4+ `system` uses the Core Audio Process Tap (no BlackHole). "
+            "On Linux/Windows it uses the OS-native loopback (Pulse monitor / WASAPI loopback)."
         ),
     ),
     device: str | None = typer.Option(
@@ -545,8 +512,6 @@ _ALIASES: dict[str, str] = {
     "r": "record",
     "ls": "list",
     "rm": "delete",
-    "t": "transcribe",
-    "m": "summarize",
     "s": "stop",
     "o": "open",
     "p": "play",

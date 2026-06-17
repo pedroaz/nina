@@ -1243,48 +1243,6 @@ async def stop_meeting(
     return meeting
 
 
-@app.post("/meetings/{meeting_id}/transcribe")
-async def transcribe_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
-    import asyncio
-    import concurrent.futures
-
-    from nina_core.workflows.runner import WorkflowRunner
-
-    db_path = _active_config_path()
-
-    def _run() -> dict[str, Any]:
-        runner = WorkflowRunner(db_path, config=_request_config(request))
-        return runner.run("transcribe-meeting", {"meeting_id": meeting_id, "input": {}})
-
-    loop = asyncio.get_running_loop()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        result = await loop.run_in_executor(executor, _run)
-    if result.get("status") != "completed":
-        return JSONResponse(status_code=400, content=result)
-    return result
-
-
-@app.post("/meetings/{meeting_id}/summarize")
-async def summarize_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
-    import asyncio
-    import concurrent.futures
-
-    from nina_core.workflows.runner import WorkflowRunner
-
-    db_path = _active_config_path()
-
-    def _run() -> dict[str, Any]:
-        runner = WorkflowRunner(db_path, config=_request_config(request))
-        return runner.run("summarize-meeting", {"meeting_id": meeting_id, "input": {}})
-
-    loop = asyncio.get_running_loop()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        result = await loop.run_in_executor(executor, _run)
-    if result.get("status") != "completed":
-        return JSONResponse(status_code=400, content=result)
-    return result
-
-
 @app.post("/meetings/{meeting_id}/pipeline")
 async def pipeline_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
     """Run transcribe + summarize back-to-back for an existing meeting.

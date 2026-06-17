@@ -39,11 +39,12 @@ class TranscriptionConfig(BaseModel):
 
 
 class MeetingsConfig(BaseModel):
-    default_source: str = "mixed"
+    default_source: str = "mic"
+    default_device: str | None = None
     auto_summarize: bool = False
     open_command: str = "xdg-open obsidian://open?path={path}"
     play_command: str = "xdg-open {path}"
-    sample_rate: int = 16000
+    sample_rate: int = 48000
     channels: int = 1
     # Linear gain applied to every recording by default (e.g. 2.0 = +6 dB,
     # 4.0 = +12 dB). Useful when the system source volume is low

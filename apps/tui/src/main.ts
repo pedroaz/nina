@@ -273,7 +273,7 @@ const PAGE_HELP: Record<PageName, string> = {
   Chat: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt. Use @path/to/note.md in the prompt to attach a note. While waiting, a loading card shows elapsed time. Ctrl+Q clears the chat and starts a new context. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom. Ctrl+R refreshes the page.",
   Agent: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt and may execute tool calls automatically. While waiting, a loading card shows elapsed time. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom.",
   Research: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter runs OpenAI web research and writes a note into Obsidian. While waiting, a loading card shows elapsed time. PageUp/PageDown scroll the report.",
-  Meetings: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Up/Down moves the selection. Type a title and press Enter to start a recording. All other actions use Ctrl so the text input does not swallow them: Ctrl+T transcribe, Ctrl+Y summarize, Ctrl+X stop active recording, Ctrl+O open in Obsidian, Ctrl+P play audio, Ctrl+D delete. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
+  Meetings: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Up/Down moves the selection. Type a title and press Enter to start a recording. All other actions use Ctrl so the text input does not swallow them: Ctrl+E transcribe + summarize (pipeline), Ctrl+X stop active recording, Ctrl+O open in Obsidian, Ctrl+P play audio, Ctrl+D delete. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
   Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it. F6 toggles between the history and the tab strip. PageUp/PageDown and Home/End scroll the history. Ctrl+R refreshes the page.",
   Config: "Esc returns to the tab strip. Click a tab to switch pages. Click the list or the value field to focus it. F6 toggles between the editable list and the value field. Up and Down change the selected setting. Enter saves the current value. Tab and Shift+Tab change pages. Ctrl+R refreshes the page. Ctrl+C quits.",
 };
@@ -1479,7 +1479,7 @@ async function main(): Promise<void> {
       "Keys (all require Ctrl)",
       THEME.subtle,
       [
-        "Ctrl+T transcribe    Ctrl+Y summarize    Ctrl+X stop active",
+        "Ctrl+E transcribe + summarize    Ctrl+X stop active",
         "Ctrl+O open in Obsidian    Ctrl+P play audio    Ctrl+D delete",
         "Up/Down move the selection",
         "Type a title below and press Enter to start recording.",
@@ -1679,24 +1679,24 @@ async function main(): Promise<void> {
     state.meetings = response.meetings || [];
   }
 
-  async function triggerMeetingWorkflow(meetingId: string, kind: "transcribe" | "summarize"): Promise<void> {
+  async function triggerMeetingPipeline(meetingId: string): Promise<void> {
     if (!token) {
       throw new Error("No Nina token found. Run `nina init` first.");
     }
-    const result = await apiFetch<{ status: string; output?: { note_path?: string | null } }>(
+    const result = await apiFetch<{
+      status: string;
+      output?: { note_path?: string | null };
+    }>(
       token,
-      `/meetings/${meetingId}/${kind}`,
+      `/meetings/${meetingId}/pipeline`,
       { method: "POST", body: JSON.stringify({}) },
     );
     if (result.status !== "completed") {
-      throw new Error(`${kind} did not complete`);
+      throw new Error(`pipeline did not complete (status: ${result.status})`);
     }
     state.banner = {
       kind: "success",
-      text:
-        kind === "transcribe"
-          ? `Transcribed ${meetingId}.`
-          : `Summarized ${meetingId}.`,
+      text: `Transcribed + summarized ${meetingId}.`,
     };
     if (result.output?.note_path) {
       state.banner = { ...state.banner, text: `${state.banner.text} Note: ${result.output.note_path}` };
@@ -2314,19 +2314,9 @@ async function main(): Promise<void> {
         key.stopPropagation();
         return;
       }
-      if (key.name === "t" && selected) {
-        // Ctrl+T — transcribe
-        void triggerMeetingWorkflow(selected.id, "transcribe").catch((err: unknown) => {
-          state.lastError = err instanceof Error ? err.message : String(err);
-          renderPage("Meetings");
-        });
-        key.preventDefault();
-        key.stopPropagation();
-        return;
-      }
-      if (key.name === "y" && selected) {
-        // Ctrl+Y — summarize (Y for summarYze, avoids Ctrl+M = Enter)
-        void triggerMeetingWorkflow(selected.id, "summarize").catch((err: unknown) => {
+      if (key.name === "e" && selected) {
+        // Ctrl+E — transcribe + summarize (pipeline)
+        void triggerMeetingPipeline(selected.id).catch((err: unknown) => {
           state.lastError = err instanceof Error ? err.message : String(err);
           renderPage("Meetings");
         });

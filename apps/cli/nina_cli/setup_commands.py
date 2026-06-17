@@ -16,9 +16,14 @@ setup_app = typer.Typer(
     invoke_without_command=True,
 )
 console = Console()
-PYTHON_PACKAGES = ("faster-whisper", "sounddevice", "soundcard")
-MACOS_PACKAGES = ("portaudio", "ffmpeg")
-LINUX_PACKAGES = ("libportaudio2", "portaudio19-dev", "pulseaudio-utils", "ffmpeg")
+PYTHON_PACKAGES = ("faster-whisper", "soundcard", "soxr")
+MACOS_PYTHON_PACKAGES = (
+    "pyobjc-framework-CoreAudio",
+    "pyobjc-framework-AVFoundation",
+)
+MACOS_PACKAGES = ("ffmpeg",)
+LINUX_PACKAGES = ("ffmpeg",)
+WINDOWS_PACKAGES: tuple[str, ...] = ()
 
 
 class SetupError(RuntimeError):
@@ -50,10 +55,12 @@ def _run_command(cmd: Sequence[str]) -> int:
 
 
 def _verify_imports(python: str, modules: Sequence[str]) -> None:
-    code = ";".join(f"import {module}" for module in modules)
+    code = "import sys; sys.argv=['verify'];" + ";".join(f"import {module}" for module in modules)
     rc = subprocess.call([python, "-c", code])
     if rc != 0:
-        raise SetupError(f"Installed packages were not importable from {python}: {', '.join(modules)}")
+        raise SetupError(
+            f"Installed packages were not importable from {python}: {', '.join(modules)}"
+        )
 
 
 def _install_python_packages(python: str, packages: Sequence[str]) -> None:
@@ -98,6 +105,12 @@ def _install_system_packages() -> None:
         if rc != 0:
             raise SetupError("apt-get install failed.")
         return
+    if system == "Windows":
+        if WINDOWS_PACKAGES:
+            console.print(f"Installing Windows tools: {WINDOWS_PACKAGES}")
+        else:
+            console.print("No system packages required on Windows.")
+        return
     raise SetupError(f"Automatic system package installation is not supported on {system}.")
 
 
@@ -110,7 +123,12 @@ def setup_runtime(python: str | None = None) -> None:
         failures.append(str(exc))
     try:
         _install_python_packages(python, PYTHON_PACKAGES)
-        _verify_imports(python, ["faster_whisper", "sounddevice", "soundcard"])
+        if sys.platform == "darwin":
+            _install_python_packages(python, MACOS_PYTHON_PACKAGES)
+        verify_modules = ["faster_whisper", "soundcard", "soxr"]
+        if sys.platform == "darwin":
+            verify_modules.append("CoreAudio")
+        _verify_imports(python, verify_modules)
     except SetupError as exc:
         failures.append(str(exc))
     if failures:

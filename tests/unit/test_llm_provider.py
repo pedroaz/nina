@@ -375,9 +375,12 @@ def test_llm_service_can_still_route_to_codex_provider(
     )
     monkeypatch.setattr(provider_module, "OpenAI", FakeOpenAI)
 
-    service = LLMService(str(tmp_path / "nina.db"), config=__import__(
-        "nina_core.config.settings", fromlist=["LLMConfig"]
-    ).LLMConfig(provider="codex", model="gpt-4-mini"))
+    service = LLMService(
+        str(tmp_path / "nina.db"),
+        config=__import__("nina_core.config.settings", fromlist=["LLMConfig"]).LLMConfig(
+            provider="codex", model="gpt-4-mini"
+        ),
+    )
 
     assert isinstance(service.provider, CodexAuthProvider)
 
