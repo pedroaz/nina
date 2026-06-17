@@ -1,14 +1,20 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from croniter import croniter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from nina_core.models.models import JobRun, ScheduledJob
+from nina_core.models.models import JobRun, ScheduledJob, WorkflowRun
 from nina_core.workflows.runner import WorkflowRunner
+
+
+RETRY_BACKOFFS_SECONDS: tuple[int, ...] = (30, 300, 1800)
+MAX_ATTEMPTS: int = 3
+STALE_RUN_ERROR: str = "daemon restarted"
 
 
 def _now() -> str:
@@ -20,6 +26,15 @@ def _cron_trigger(value: str) -> CronTrigger:
         return CronTrigger.from_crontab(value)
     except ValueError as exc:
         raise ValueError(f"Invalid cron expression '{value}'") from exc
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 class SchedulerService:
@@ -36,6 +51,8 @@ class SchedulerService:
     def start(self) -> None:
         self.scheduler.start()
         self.reload()
+        self._sweep_stale_running_runs()
+        self._backfill_missed_runs()
 
     def shutdown(self) -> None:
         if self.scheduler.running:
@@ -164,18 +181,152 @@ class SchedulerService:
             db.add(run)
             job.last_run_at = now
             db.commit()
-            try:
-                runner = WorkflowRunner(self.db_path)
-                workflow_run = runner.run(str(job.workflow_name), {})
-                run.workflow_run_id = workflow_run.get("id")
-                run.status = "completed"
-                run.completed_at = _now()
-            except Exception as exc:
-                run.status = "failed"
-                run.error = str(exc)
+            success = self._execute_workflow(db, job, run)
             job.updated_at = _now()
             db.commit()
+            if not success:
+                self._maybe_schedule_retry(job_name)
             return self._run_to_dict(run)
+        finally:
+            db.close()
+
+    def _execute_workflow(self, db: Session, job: ScheduledJob, run: JobRun) -> bool:
+        """Run the job's workflow, update the run, return True on success.
+
+        Exceptions are caught here so the caller can decide whether to
+        schedule a retry; the run row's status/error reflect the outcome.
+        Workflows that fail gracefully inside `WorkflowRunner.run` (e.g.
+        `Unknown workflow '...'`) still come back through the inner
+        try/except, so the outer wrapper checks the returned `status`.
+        """
+        try:
+            runner = WorkflowRunner(self.db_path)
+            workflow_run = runner.run(str(job.workflow_name), {})
+        except Exception as exc:
+            run.status = "failed"
+            run.error = str(exc)
+            run.completed_at = _now()
+            return False
+        run.workflow_run_id = workflow_run.get("id")
+        run.completed_at = _now()
+        if workflow_run.get("status") == "completed":
+            run.status = "completed"
+            return True
+        run.status = "failed"
+        output = workflow_run.get("output") or {}
+        run.error = str(output.get("error") or "workflow did not complete")
+        return False
+
+    def _maybe_schedule_retry(self, job_name: str) -> None:
+        """Schedule a retry for a failed job run using backoff.
+
+        Counts consecutive failed `JobRun` rows since the last successful
+        run and, if under `MAX_ATTEMPTS`, enqueues a one-shot `date`
+        trigger so the worker thread is freed for other jobs.
+        """
+        db = self._session()
+        try:
+            job = db.query(ScheduledJob).filter(ScheduledJob.name == job_name).first()
+            if job is None or not job.enabled:
+                return
+            last_success = (
+                db.query(JobRun)
+                .filter(JobRun.scheduled_job_id == job.id, JobRun.status == "completed")
+                .order_by(JobRun.completed_at.desc())
+                .first()
+            )
+            if last_success and last_success.completed_at:
+                failures = (
+                    db.query(JobRun)
+                    .filter(
+                        JobRun.scheduled_job_id == job.id,
+                        JobRun.status == "failed",
+                        JobRun.completed_at > last_success.completed_at,
+                    )
+                    .count()
+                )
+            else:
+                failures = (
+                    db.query(JobRun)
+                    .filter(JobRun.scheduled_job_id == job.id, JobRun.status == "failed")
+                    .count()
+                )
+            attempts_done = failures
+            if attempts_done >= MAX_ATTEMPTS:
+                return
+            delay = RETRY_BACKOFFS_SECONDS[attempts_done - 1]
+            run_date = datetime.now(timezone.utc) + timedelta(seconds=delay)
+            self.scheduler.add_job(
+                self._run_job,
+                "date",
+                run_date=run_date,
+                args=[str(job.name)],
+                id=f"retry:{job.name}:{attempts_done - 1}",
+                replace_existing=True,
+            )
+        finally:
+            db.close()
+
+    def _sweep_stale_running_runs(self) -> None:
+        """Mark runs left in 'running' from a prior daemon as 'interrupted'.
+
+        APScheduler does not persist job state, so anything in 'running'
+        on startup is by definition stale (the worker thread that owned
+        it no longer exists). Without this sweep the UI would show
+        permanently-running rows after every daemon restart.
+        """
+        db = self._session()
+        try:
+            now = _now()
+            stale_job_runs = db.query(JobRun).filter(JobRun.status == "running").all()
+            for run in stale_job_runs:
+                run.status = "interrupted"
+                run.error = STALE_RUN_ERROR
+                run.completed_at = now
+            stale_workflow_runs = (
+                db.query(WorkflowRun).filter(WorkflowRun.status == "running").all()
+            )
+            for run in stale_workflow_runs:
+                run.status = "interrupted"
+                run.error = STALE_RUN_ERROR
+                run.completed_at = now
+            if stale_job_runs or stale_workflow_runs:
+                db.commit()
+        finally:
+            db.close()
+
+    def _backfill_missed_runs(self) -> None:
+        """Fire missed cron firings on startup.
+
+        Nina runs on a personal computer; the daemon can be off for days
+        while a job's cron keeps ticking. APScheduler's in-memory
+        scheduler loses those firings, so on startup we compute the next
+        cron tick after the last run (or after the job was created) and,
+        if that tick has already passed, enqueue a single one-shot run.
+        At most one backfill per job per daemon-up window.
+        """
+        db = self._session()
+        try:
+            now = datetime.now(timezone.utc)
+            for job in db.query(ScheduledJob).filter(ScheduledJob.enabled == 1).all():
+                anchor = _parse_iso(job.last_run_at) or _parse_iso(job.created_at)
+                if anchor is None:
+                    continue
+                try:
+                    itr = croniter(str(job.schedule_value), anchor)
+                    next_fire = itr.get_next(datetime)
+                except Exception:
+                    continue
+                if next_fire is None or next_fire > now:
+                    continue
+                self.scheduler.add_job(
+                    self._run_job,
+                    "date",
+                    run_date=now,
+                    args=[str(job.name)],
+                    id=f"backfill:{job.name}:{next_fire.isoformat()}",
+                    replace_existing=True,
+                )
         finally:
             db.close()
 

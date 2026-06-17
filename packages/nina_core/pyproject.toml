@@ -19,6 +19,7 @@ dependencies = [
     "markdown>=3.6.0",
     "python-dateutil>=2.9.0",
     "apscheduler>=3.10.0",
+    "croniter>=2.0.0",
     "openai>=1.30.0",
     "numpy>=1.26.0",
     "watchdog>=4.0.0",

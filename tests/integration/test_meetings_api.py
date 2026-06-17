@@ -151,10 +151,13 @@ def test_workflow_list_includes_meetings(
 ) -> None:
     response = api_client.get("/workflows", headers=auth_headers)
     assert response.status_code == 200
-    names = response.json()
+    workflows = response.json()
+    names = [wf["name"] for wf in workflows]
     assert "transcribe-meeting" in names
     assert "summarize-meeting" in names
     assert "meeting-pipeline" in names
+    for wf in workflows:
+        assert isinstance(wf.get("description"), str)
 
 
 def test_meeting_pipeline_endpoint_writes_all_three_files(

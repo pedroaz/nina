@@ -17,6 +17,45 @@ from nina_core.models.models import WorkflowRun, WorkflowStep
 from nina_core.research.service import ResearchService
 
 
+WORKFLOW_DESCRIPTIONS: dict[str, str] = {
+    "summarize-last-day": (
+        "Builds a daily summary note for the configured target date: collects "
+        "tasks touched and completed on that day, workflow and job events, and "
+        "Markdown notes created or updated, then calls the LLM to write "
+        "`Daily/YYYY-MM-DD.md` with a summary, completed items, open loops, and "
+        "suggested next actions. (Currently scaffolded — the LLM call is a "
+        "no-op stub.)"
+    ),
+    "research-topic": (
+        "Plans a research brief on the given topic, runs web research via the "
+        "configured provider, and writes a structured `Research/<topic>.md` "
+        "note into Obsidian with cited sources and a written answer."
+    ),
+    "reindex-vault": (
+        "Rebuilds both the FTS5 full-text search index and the embedding index "
+        "for every Markdown note in the vault, so search and semantic recall "
+        "reflect the current on-disk state."
+    ),
+    "transcribe-meeting": (
+        "Loads the meeting's audio file, transcribes it through the configured "
+        "transcription backend (default: local faster-whisper, 16 kHz mono, VAD "
+        "on), writes `<recording>.txt` and `<recording>.segments.json` next to "
+        "the audio, updates the meeting note's `## Transcript` section, and "
+        "logs the interaction to the LLM log."
+    ),
+    "summarize-meeting": (
+        "Loads the meeting's transcript, asks the configured LLM to produce a "
+        "3–6 bullet summary plus `## Action items` and `## Decisions` blocks, "
+        "and writes a sibling summary note linked from the meeting hub note."
+    ),
+    "meeting-pipeline": (
+        "Runs `transcribe-meeting` and `summarize-meeting` back-to-back on a "
+        "single meeting inside one workflow run, streaming progress events to "
+        "the TUI's meeting page (the `Ctrl+E` hotkey in the TUI hits this)."
+    ),
+}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

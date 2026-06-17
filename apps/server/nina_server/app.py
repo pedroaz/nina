@@ -26,7 +26,7 @@ from nina_core.scheduler.service import SchedulerService
 from nina_core.search.indexer import ask_obsidian, index_notes, search, create_fts_table
 from nina_core.sessions.service import SessionService
 import nina_core
-from nina_core.workflows.runner import WorkflowRunner
+from nina_core.workflows.runner import WORKFLOW_DESCRIPTIONS, WorkflowRunner
 
 app = FastAPI(title="Nina Daemon", version=nina_core.__version__)
 
@@ -1017,14 +1017,22 @@ async def run_research(request: Request, data: ResearchRunInput) -> dict[str, An
 
 
 @app.get("/workflows")
-async def list_workflows(request: Request) -> list[str]:
+async def list_workflows(request: Request) -> list[dict[str, str]]:
+    """Return the known workflow names with a short description of each.
+
+    Clients (CLI, TUI) use this to render "what does this job do?"
+    context next to a scheduled job's cron entry.
+    """
     return [
-        "summarize-last-day",
-        "research-topic",
-        "reindex-vault",
-        "transcribe-meeting",
-        "summarize-meeting",
-        "meeting-pipeline",
+        {"name": name, "description": WORKFLOW_DESCRIPTIONS.get(name, "")}
+        for name in [
+            "summarize-last-day",
+            "research-topic",
+            "reindex-vault",
+            "transcribe-meeting",
+            "summarize-meeting",
+            "meeting-pipeline",
+        ]
     ]
 
 
@@ -1253,8 +1261,6 @@ async def pipeline_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
     """
     import asyncio
     import concurrent.futures
-
-    from nina_core.workflows.runner import WorkflowRunner
 
     db_path = _active_config_path()
 

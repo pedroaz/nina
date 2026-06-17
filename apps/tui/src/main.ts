@@ -52,6 +52,11 @@ interface JobRun {
   error: string | null;
 }
 
+interface WorkflowInfo {
+  name: string;
+  description: string;
+}
+
 interface MessageMetadata {
   [key: string]: unknown;
 }
@@ -274,7 +279,7 @@ const PAGE_HELP: Record<PageName, string> = {
   Agent: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt and may execute tool calls automatically. While waiting, a loading card shows elapsed time. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom.",
   Research: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter runs OpenAI web research and writes a note into Obsidian. While waiting, a loading card shows elapsed time. PageUp/PageDown scroll the report.",
   Meetings: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Up/Down moves the selection. Type a title and press Enter to start a recording. All other actions use Ctrl so the text input does not swallow them: Ctrl+E transcribe + summarize (pipeline), Ctrl+X stop active recording, Ctrl+O open in Obsidian, Ctrl+P play audio, Ctrl+D delete. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
-  Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it. F6 toggles between the history and the tab strip. PageUp/PageDown and Home/End scroll the history. Ctrl+R refreshes the page.",
+  Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. On the Jobs page, Ctrl+Up/Down select a job, Ctrl+A opens that job's runs, Ctrl+E runs it now, Esc (in the runs view) returns to the list, Ctrl+PageUp/PageDown and Home/End scroll. Ctrl+R refreshes the page.",
   Config: "Esc returns to the tab strip. Click a tab to switch pages. Click the list or the value field to focus it. F6 toggles between the editable list and the value field. Up and Down change the selected setting. Enter saves the current value. Tab and Shift+Tab change pages. Ctrl+R refreshes the page. Ctrl+C quits.",
 };
 const PAGE_INTRO: Record<PageName, string> = {
@@ -805,7 +810,11 @@ async function main(): Promise<void> {
     kanban: KanbanBoard | null;
     kanbanSelectionIndex: number;
     jobs: Job[];
-    jobRuns: JobRun[];
+    workflows: Record<string, string>;
+    jobsView: "list" | "detail";
+    jobsSelectionIndex: number;
+    jobsDetailJobName: string | null;
+    jobsDetailRuns: JobRun[];
     meetings: Meeting[];
     meetingSelectedId: string | null;
     chatSession: SessionRecord | null;
@@ -828,7 +837,11 @@ async function main(): Promise<void> {
     kanban: null,
     kanbanSelectionIndex: -1,
     jobs: [],
-    jobRuns: [],
+    workflows: {},
+    jobsView: "list",
+    jobsSelectionIndex: 0,
+    jobsDetailJobName: null,
+    jobsDetailRuns: [],
     meetings: [],
     meetingSelectedId: null,
     chatSession: null,
@@ -1381,46 +1394,126 @@ async function main(): Promise<void> {
   function renderJobsPage(pageRoot: BoxRenderable): void {
     const scroll = makeScrollArea(pageRoot, accentForPage("Jobs"));
     activeScrollArea = scroll;
-    if (state.jobs.length === 0) {
-      scroll.add(buildCard(renderer, "No jobs", accentForPage("Jobs"), "No scheduled jobs were returned by the daemon."));
-    } else {
-      for (const job of state.jobs) {
+    if (state.jobsView === "detail") {
+      const jobName = state.jobsDetailJobName;
+      const job = state.jobs.find((j) => j.name === jobName) ?? null;
+      const description = job ? workflowDescription(job.workflow_name) : "";
+      const headerLines = job
+        ? [
+            `Workflow: ${job.workflow_name}`,
+            description,
+            "",
+            `Schedule: ${job.schedule}`,
+            `Enabled: ${job.enabled ? "yes" : "no"}`,
+            `Last run: ${formatTime(job.last_run_at)}`,
+            `Next run: ${formatTime(job.next_run_at)}`,
+          ]
+        : ["Job no longer exists. Press Esc or Ctrl+A to return to the list."];
+      scroll.add(
+        buildCard(
+          renderer,
+          `Job: ${jobName ?? "unknown"}`,
+          accentForPage("Jobs"),
+          headerLines.filter((line) => line.length > 0).join("\n"),
+        ),
+      );
+      if (state.jobsDetailRuns.length === 0) {
         scroll.add(
           buildCard(
             renderer,
-            job.name,
-            accentForPage("Jobs"),
-            [
-              `Workflow: ${job.workflow_name}`,
-              `Schedule: ${job.schedule}`,
-              `Enabled: ${job.enabled ? "yes" : "no"}`,
-              `Last run: ${formatTime(job.last_run_at)}`,
-              `Next run: ${formatTime(job.next_run_at)}`,
-            ].join("\n"),
+            "No runs",
+            THEME.subtle,
+            "No job runs have been recorded for this job yet.",
+            THEME.subtle,
           ),
         );
-      }
-      if (state.jobRuns.length > 0) {
-        for (const run of state.jobRuns) {
+      } else {
+        for (const run of state.jobsDetailRuns) {
+          const accent = run.status === "completed" ? THEME.success : THEME.subtle;
           scroll.add(
             buildCard(
               renderer,
-              `Run: ${run.job_name}`,
-              "#94a3b8",
+              `Run: ${run.id.slice(0, 8)}…`,
+              accent,
               [
                 `Status: ${run.status}`,
                 `Started: ${formatTime(run.started_at)}`,
                 `Completed: ${formatTime(run.completed_at)}`,
+                run.workflow_run_id ? `Workflow: ${run.workflow_run_id.slice(0, 8)}…` : "",
                 run.error ? `Error: ${run.error}` : "",
               ]
                 .filter((line) => line.length > 0)
                 .join("\n"),
-              THEME.subtle,
+              THEME.text,
             ),
           );
         }
       }
+      scroll.add(
+        buildCard(
+          renderer,
+          "Keys",
+          THEME.subtle,
+          [
+            "Esc or Ctrl+A back to jobs",
+            "Ctrl+E run this job now",
+            "Ctrl+Up/Down/PageUp/PageDown/Home/End scroll",
+            "Ctrl+R refresh",
+          ].join("\n"),
+          THEME.subtle,
+        ),
+      );
+      return;
     }
+    if (state.jobs.length === 0) {
+      scroll.add(
+        buildCard(
+          renderer,
+          "No jobs",
+          accentForPage("Jobs"),
+          "No scheduled jobs were returned by the daemon.",
+        ),
+      );
+      return;
+    }
+    for (let i = 0; i < state.jobs.length; i++) {
+      const job = state.jobs[i];
+      const isSelected = i === state.jobsSelectionIndex;
+      const titlePrefix = isSelected ? "▶ " : "  ";
+      const description = workflowDescription(job.workflow_name);
+      const body = [
+        `Workflow: ${job.workflow_name}`,
+        description,
+        "",
+        `Schedule: ${job.schedule}`,
+        `Enabled: ${job.enabled ? "yes" : "no"}`,
+        `Last run: ${formatTime(job.last_run_at)}`,
+        `Next run: ${formatTime(job.next_run_at)}`,
+      ];
+      scroll.add(
+        buildCard(
+          renderer,
+          `${titlePrefix}${job.name}`,
+          isSelected ? THEME.text : accentForPage("Jobs"),
+          body.join("\n"),
+        ),
+      );
+    }
+    scroll.add(
+      buildCard(
+        renderer,
+        "Keys",
+        THEME.subtle,
+        [
+          "Ctrl+Up/Down select a job",
+          "Ctrl+A open runs for the selected job",
+          "Ctrl+E run the selected job now",
+          "Esc returns to the tab strip",
+          "Ctrl+R refresh",
+        ].join("\n"),
+        THEME.subtle,
+      ),
+    );
   }
 
   function renderMeetingsPage(pageRoot: BoxRenderable): void {
@@ -1668,7 +1761,50 @@ async function main(): Promise<void> {
       throw new Error("No Nina token found. Run `nina init` first.");
     }
     state.jobs = await apiFetch<Job[]>(token, "/jobs");
-    state.jobRuns = await apiFetch<JobRun[]>(token, "/job-runs?limit=8");
+    state.workflows = await apiFetch<WorkflowInfo[]>(token, "/workflows").then(
+      (list) => Object.fromEntries(list.map((w) => [w.name, w.description])),
+    );
+    if (state.jobs.length > 0) {
+      if (state.jobsSelectionIndex < 0 || state.jobsSelectionIndex >= state.jobs.length) {
+        state.jobsSelectionIndex = 0;
+      }
+    } else {
+      state.jobsSelectionIndex = 0;
+    }
+  }
+
+  function workflowDescription(name: string): string {
+    return state.workflows[name] ?? "";
+  }
+
+  async function refreshJobRuns(jobName: string): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    state.jobsDetailRuns = await apiFetch<JobRun[]>(
+      token,
+      `/job-runs?job_name=${encodeURIComponent(jobName)}&limit=50`,
+    );
+  }
+
+  async function triggerJobRun(jobName: string): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    const result = await apiFetch<{ id: string; status: string; job_name: string }>(
+      token,
+      `/jobs/${encodeURIComponent(jobName)}/run`,
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    state.banner = {
+      kind: "success",
+      text: `Triggered ${result.job_name} (run ${result.id} → ${result.status}).`,
+    };
+    if (state.jobsView === "detail" && state.jobsDetailJobName === jobName) {
+      await refreshJobRuns(jobName);
+    }
+    await refreshJobs();
+    renderPage(state.currentPage);
   }
 
   async function refreshMeetings(): Promise<void> {
@@ -2190,6 +2326,9 @@ async function main(): Promise<void> {
         break;
       case "Jobs":
         await refreshJobs();
+        if (state.jobsView === "detail" && state.jobsDetailJobName) {
+          await refreshJobRuns(state.jobsDetailJobName);
+        }
         break;
       case "Config":
         state.config = await apiFetch<ConfigSnapshot>(token, "/config");
@@ -2349,6 +2488,89 @@ async function main(): Promise<void> {
         void deleteMeeting(selected.id).catch((err: unknown) => {
           state.lastError = err instanceof Error ? err.message : String(err);
           renderPage("Meetings");
+        });
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+    }
+    if (state.currentPage === "Jobs") {
+      // Ctrl+Up/Down navigate the jobs list. In detail view the keys
+      // fall through to the general Ctrl+Up/Down scroll handler below.
+      if (
+        key.ctrl &&
+        !key.meta &&
+        !key.option &&
+        !key.super &&
+        (key.name === "up" || key.name === "down") &&
+        state.jobsView === "list"
+      ) {
+        if (state.jobs.length > 0) {
+          const delta = key.name === "up" ? -1 : 1;
+          state.jobsSelectionIndex =
+            (state.jobsSelectionIndex + delta + state.jobs.length) % state.jobs.length;
+          renderPage("Jobs");
+        }
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      // Esc in detail mode returns to the list before the global Esc
+      // (which always jumps focus to the tab strip).
+      if (
+        state.jobsView === "detail" &&
+        (key.name === "escape" || key.name === "esc")
+      ) {
+        state.jobsView = "list";
+        state.jobsDetailJobName = null;
+        renderPage("Jobs");
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      if (key.ctrl && key.name === "a") {
+        // Ctrl+A — toggle between the jobs list and a job's runs view.
+        if (state.jobsView === "list") {
+          const job = state.jobs[state.jobsSelectionIndex];
+          if (!job) {
+            state.lastError = "No job selected.";
+            renderPage("Jobs");
+            key.preventDefault();
+            key.stopPropagation();
+            return;
+          }
+          state.jobsDetailJobName = job.name;
+          state.jobsView = "detail";
+          renderPage("Jobs");
+          void refreshJobRuns(job.name).catch((err: unknown) => {
+            state.lastError = err instanceof Error ? err.message : String(err);
+            renderPage("Jobs");
+          });
+        } else {
+          state.jobsView = "list";
+          state.jobsDetailJobName = null;
+          renderPage("Jobs");
+        }
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      if (key.ctrl && key.name === "e") {
+        // Ctrl+E — run the selected job (or the open detail job) now.
+        const jobName =
+          state.jobsView === "detail"
+            ? state.jobsDetailJobName
+            : state.jobs[state.jobsSelectionIndex]?.name;
+        if (!jobName) {
+          state.lastError = "No job selected.";
+          renderPage("Jobs");
+          key.preventDefault();
+          key.stopPropagation();
+          return;
+        }
+        void triggerJobRun(jobName).catch((err: unknown) => {
+          state.lastError = err instanceof Error ? err.message : String(err);
+          renderPage("Jobs");
         });
         key.preventDefault();
         key.stopPropagation();
