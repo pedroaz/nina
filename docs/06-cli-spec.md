@@ -48,32 +48,68 @@ Short aliases:
 
 ## Project Commands
 
-```text
-nina project list
-nina project create "Supplier onboarding" --description "..."
-nina project show <project-id>
-nina project update <project-id> --name "..."
-nina project delete <project-id>
-```
+Nina no longer ships a `nina project` subcommand. Project identity is owned
+by the supervised opencode server; see `nina opencode projects ...` below.
 
 ## Task Commands
 
 ```text
-nina task list
-nina task create "Draft plan" --project <project-id> --description "..."
+nina task list [--type unclassified] [--status idle]
+nina task create "Draft plan" --opencode-project-id <id> --description "..." [--type coding] [--no-classify]
 nina task show <task-id>
 nina task update <task-id> --title "..." --description "..."
-nina task move <task-id> --column Doing --position 0
-nina task done <task-id>
+nina task type <task-id> <task-type>     # set task_type directly, bypassing the AI
+nina task classify <task-id>             # re-run the AI classifier
+nina task run <task-id>                  # route to the task's handler (placeholder for now)
+nina task board                          # show the type-grouped view
+nina task archive <task-id>
+nina task unarchive <task-id>
 nina task delete <task-id>
 ```
 
-## Kanban Commands
+`nina task create` accepts `--opencode-project-id <id>` to attach the task to
+an opencode worktree. The id is the server-assigned value from
+`nina opencode projects list`.
+
+`nina task type` accepts one of `unclassified`, `reminder`, `research`,
+`coding`, `blocked`, `done`, `human`. It bypasses the LLM and is the right
+choice when the user knows better than the classifier.
+
+`nina task classify` is the LLM path. It re-runs the classifier workflow and
+patches the task's `task_type`, `classified_at`, `classification_reason`, and
+`classification_model` fields.
+
+`nina task run` runs the `run-task` workflow. For `human`, `reminder`, and
+`blocked` tasks it prints a "skipped" message; for `done` it is a no-op. For
+`coding` it routes to the agent placeholder; for `research` it routes to the
+research-topic workflow placeholder.
+
+## Opencode Commands
+
+The Nina daemon supervises an `opencode serve` child. These commands are
+client views onto the supervisor's state and onto the opencode server's
+project list.
 
 ```text
-nina kanban show
-nina kanban move <task-id> --to Doing --position 2
+nina opencode status
+nina opencode projects list
+nina opencode projects current
 ```
+
+`nina opencode status` prints the supervisor's view of the opencode child:
+state (`disabled`, `not_installed`, `starting`, `running`, `stopped`,
+`failed`), version, pid, host/port, uptime, and the resolved binary path.
+Add `--json` for a machine-friendly payload.
+
+`nina opencode projects list` prints a table with `ID | Worktree | VCS |
+Created | Updated`. Add `--json` for the same shape as `GET /opencode/projects`.
+
+`nina opencode projects current` prints the single project the opencode
+server considers current. Same `--json` flag.
+
+The sub-app alias is `oc` (`nina oc status`).
+
+## Search Commands
 
 ## Search Commands
 

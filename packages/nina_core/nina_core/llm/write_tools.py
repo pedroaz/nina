@@ -18,57 +18,67 @@ def _require(value: Any, name: str) -> Any:
 
 
 def _tickets_create(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import TaskService
+    from nina_core.tasks.service import TaskService
 
     title = _require(args.get("title"), "title")
     description = args.get("description") or ""
-    project_id = args.get("project_id")
-    kanban_column = args.get("kanban_column")
+    opencode_project_id = args.get("opencode_project_id")
+    task_type = args.get("task_type")
+    auto_classify = bool(args.get("auto_classify", True))
     service = TaskService(ctx.db, ctx.obsidian)
-    task = service.create(title, description, project_id)
-    if kanban_column and kanban_column != task.kanban_column:
-        from nina_core.projects.kanban import move_task
-
-        moved = move_task(ctx.db, task.id, kanban_column, 0)
-        if moved is not None:
-            ctx.obsidian.update_task_note(moved)
-            task = moved
+    task = service.create(
+        title,
+        description,
+        opencode_project_id,
+        task_type=task_type or "unclassified",
+        auto_classify=auto_classify,
+    )
     return {"ticket": _ticket_summary(task)}
 
 
 def _tickets_update(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import TaskService
+    from nina_core.tasks.service import TaskService
 
     ticket_id = _require(args.get("id"), "id")
     service = TaskService(ctx.db, ctx.obsidian)
-    task = service.update(
-        ticket_id,
-        title=args.get("title"),
-        description=args.get("description"),
-        status=args.get("status"),
-        kanban_column=args.get("kanban_column"),
-        kanban_position=args.get("kanban_position"),
-    )
+    try:
+        task = service.update(
+            ticket_id,
+            title=args.get("title"),
+            description=args.get("description"),
+            task_type=args.get("task_type"),
+            status=args.get("status"),
+            opencode_project_id=(
+                args.get("opencode_project_id") if "opencode_project_id" in args else None
+            ),
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
     if task is None:
         return {"error": f"Ticket not found: {ticket_id}"}
     return {"ticket": _ticket_summary(task)}
 
 
-def _tickets_move(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.kanban import move_task
+def _tickets_classify(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    from nina_core.workflows.runner import WorkflowRunner
 
     ticket_id = _require(args.get("id"), "id")
-    column = _require(args.get("column"), "column")
-    position = int(args.get("position") or 0)
-    task = move_task(ctx.db, ticket_id, column, position)
-    if task is None:
-        return {"error": f"Ticket not found or column invalid: {ticket_id}"}
-    ctx.obsidian.update_task_note(task)
-    return {"ticket": _ticket_summary(task)}
+    runner = WorkflowRunner(ctx.db_path)
+    result = runner.run("classify-task", {"task_id": ticket_id})
+    return result
+
+
+def _tickets_run(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    from nina_core.workflows.runner import WorkflowRunner
+
+    ticket_id = _require(args.get("id"), "id")
+    runner = WorkflowRunner(ctx.db_path)
+    result = runner.run("run-task", {"task_id": ticket_id})
+    return result
 
 
 def _tickets_delete(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import TaskService
+    from nina_core.tasks.service import TaskService
 
     ticket_id = _require(args.get("id"), "id")
     service = TaskService(ctx.db, ctx.obsidian)
@@ -77,7 +87,7 @@ def _tickets_delete(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tickets_archive(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import TaskService
+    from nina_core.tasks.service import TaskService
 
     ticket_id = _require(args.get("id"), "id")
     service = TaskService(ctx.db, ctx.obsidian)
@@ -88,7 +98,7 @@ def _tickets_archive(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tickets_unarchive(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import TaskService
+    from nina_core.tasks.service import TaskService
 
     ticket_id = _require(args.get("id"), "id")
     service = TaskService(ctx.db, ctx.obsidian)
@@ -96,41 +106,6 @@ def _tickets_unarchive(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]
     if task is None:
         return {"error": f"Ticket not found: {ticket_id}"}
     return {"ticket": _ticket_summary(task)}
-
-
-def _projects_create(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import ProjectService
-
-    name = _require(args.get("name"), "name")
-    description = args.get("description") or ""
-    service = ProjectService(ctx.db, ctx.obsidian)
-    project = service.create(name, description)
-    return {"project": _project_summary(project)}
-
-
-def _projects_update(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import ProjectService
-
-    project_id = _require(args.get("id"), "id")
-    service = ProjectService(ctx.db, ctx.obsidian)
-    project = service.update(
-        project_id,
-        name=args.get("name"),
-        description=args.get("description"),
-        status=args.get("status"),
-    )
-    if project is None:
-        return {"error": f"Project not found: {project_id}"}
-    return {"project": _project_summary(project)}
-
-
-def _projects_delete(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import ProjectService
-
-    project_id = _require(args.get("id"), "id")
-    service = ProjectService(ctx.db, ctx.obsidian)
-    deleted = service.delete(project_id)
-    return {"deleted": deleted, "id": project_id}
 
 
 def _notes_create(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -232,25 +207,15 @@ def _ticket_summary(task: Any) -> dict[str, Any]:
         "id": task.id,
         "title": task.title,
         "description": task.description,
+        "task_type": task.task_type,
         "status": task.status,
-        "kanban_column": task.kanban_column,
-        "kanban_position": task.kanban_position,
-        "project_id": task.project_id,
+        "opencode_project_id": task.opencode_project_id,
+        "classified_at": task.classified_at,
+        "classification_reason": task.classification_reason,
+        "classification_model": task.classification_model,
         "note_path": task.note_path,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
-    }
-
-
-def _project_summary(project: Any) -> dict[str, Any]:
-    return {
-        "id": project.id,
-        "name": project.name,
-        "description": project.description,
-        "status": project.status,
-        "note_path": project.note_path,
-        "created_at": project.created_at,
-        "updated_at": project.updated_at,
     }
 
 
@@ -264,15 +229,28 @@ def register_write_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="tickets_create",
-            description="Create a new ticket (task) in the kanban.",
+            description="Create a new task. New tasks default to task_type='unclassified' and trigger background classification unless auto_classify is false.",
             parameters=_string_schema(
                 {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
-                    "project_id": {"type": "string"},
-                    "kanban_column": {
+                    "opencode_project_id": {
                         "type": "string",
-                        "description": "One of Backlog/Todo/Doing/Review/Done",
+                        "description": (
+                            "Server-assigned opencode project id (opaque). "
+                            "Optional; leave unset to create an unlinked task."
+                        ),
+                    },
+                    "task_type": {
+                        "type": "string",
+                        "description": (
+                            "One of unclassified/reminder/research/coding/"
+                            "blocked/done/human. Defaults to unclassified."
+                        ),
+                    },
+                    "auto_classify": {
+                        "type": "boolean",
+                        "description": "If true (default), the AI classifier runs in the background.",
                     },
                 },
                 required=["title"],
@@ -284,15 +262,14 @@ def register_write_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="tickets_update",
-            description="Update fields on an existing ticket.",
+            description="Update fields on an existing task (title, description, task_type, or agent status).",
             parameters=_string_schema(
                 {
                     "id": {"type": "string"},
                     "title": {"type": "string"},
                     "description": {"type": "string"},
-                    "status": {"type": "string"},
-                    "kanban_column": {"type": "string"},
-                    "kanban_position": {"type": "integer"},
+                    "task_type": {"type": "string"},
+                    "status": {"type": "string", "description": "idle or working"},
                 },
                 required=["id"],
             ),
@@ -302,17 +279,25 @@ def register_write_tools(registry: ToolRegistry) -> None:
     )
     registry.register(
         ToolSpec(
-            name="tickets_move",
-            description="Move a ticket to a different kanban column and position.",
+            name="tickets_classify",
+            description="Re-run the AI classifier on a task. Updates task_type and the classification fields.",
             parameters=_string_schema(
-                {
-                    "id": {"type": "string"},
-                    "column": {"type": "string"},
-                    "position": {"type": "integer", "minimum": 0},
-                },
-                required=["id", "column"],
+                {"id": {"type": "string"}},
+                required=["id"],
             ),
-            handler=_tickets_move,
+            handler=_tickets_classify,
+            read_only=False,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="tickets_run",
+            description="Route a task to its handler. Refuses for human/reminder/blocked; placeholder for coding/research.",
+            parameters=_string_schema(
+                {"id": {"type": "string"}},
+                required=["id"],
+            ),
+            handler=_tickets_run,
             read_only=False,
         )
     )
@@ -340,47 +325,6 @@ def register_write_tools(registry: ToolRegistry) -> None:
             description="Restore an archived ticket.",
             parameters=_string_schema({"id": {"type": "string"}}, required=["id"]),
             handler=_tickets_unarchive,
-            read_only=False,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="projects_create",
-            description="Create a new project.",
-            parameters=_string_schema(
-                {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                },
-                required=["name"],
-            ),
-            handler=_projects_create,
-            read_only=False,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="projects_update",
-            description="Update fields on an existing project.",
-            parameters=_string_schema(
-                {
-                    "id": {"type": "string"},
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                    "status": {"type": "string"},
-                },
-                required=["id"],
-            ),
-            handler=_projects_update,
-            read_only=False,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="projects_delete",
-            description="Soft-delete a project (moves the note to System/Deleted).",
-            parameters=_string_schema({"id": {"type": "string"}}, required=["id"]),
-            handler=_projects_delete,
             read_only=False,
         )
     )

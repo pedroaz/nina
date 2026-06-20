@@ -5,7 +5,7 @@
 SQLite is authoritative for operational state:
 
 - Project IDs and status.
-- Task IDs, status, kanban column, and position.
+- Task IDs, task_type, and agent status.
 - Workflow run status.
 - Job run status.
 - LLM prompt/output logs.
@@ -59,9 +59,12 @@ Example task note:
 ---
 nina_type: task
 nina_id: task_01J...
-status: todo
+task_type: coding
+status: idle
 project_id: project_01J...
-kanban_column: Todo
+classified_at: 2026-06-13T10:30:00Z
+classification_model: gpt-4-mini
+classification_reason: refactor is a coding task
 created_at: 2026-06-13T10:00:00Z
 updated_at: 2026-06-13T10:30:00Z
 ---
@@ -74,7 +77,7 @@ updated_at: 2026-06-13T10:30:00Z
 
 ## Activity
 
-- 2026-06-13 10:30: moved to Todo
+- 2026-06-13 10:30: classified as coding by gpt-4-mini
 ```
 
 The frontmatter is intentionally small. Nina should not depend on Obsidian plugins.
@@ -92,7 +95,7 @@ Sync model:
 - If a user changes frontmatter operational fields manually, Nina does not treat that as authoritative.
 - Nina updates frontmatter when operational state changes.
 
-This keeps kanban reliable while still letting Obsidian be the main knowledge surface.
+This keeps the task lifecycle reliable while still letting Obsidian be the main knowledge surface.
 
 ## Task And Project Mirroring
 
@@ -106,8 +109,8 @@ Tasks:
 
 - Stored in SQLite.
 - Have a task note in `Tasks/`.
-- Task status, column, and position are stored in SQLite.
-- Task Markdown is updated when title/status/project changes.
+- Task `task_type`, `status`, and classification fields are stored in SQLite.
+- Task Markdown is updated when title/status/type/project changes.
 
 Not every future DB object must have a note, but projects and tasks should now because they are important for LLM context.
 

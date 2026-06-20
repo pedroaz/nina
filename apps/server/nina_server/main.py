@@ -1,5 +1,6 @@
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -8,14 +9,16 @@ from nina_core.config import (
     ensure_vault_structure,
     get_config_dir,
     get_config_path,
+    get_opencode_log_path,
     get_runtime_path,
     get_token_path,
     load_effective_config,
     read_token,
 )
 from nina_core.db import create_database
-from nina_core.search.indexer import create_fts_table
+from nina_core.opencode import OpencodeSupervisor
 from nina_core.scheduler.service import SchedulerService
+from nina_core.search.indexer import create_fts_table
 from nina_core.search.watcher import make_watcher_if_enabled
 
 from .app import app, apply_runtime_config
@@ -65,6 +68,27 @@ def main() -> None:
     )
     if watcher is not None:
         watcher.start()
+
+    opencode = OpencodeSupervisor(
+        config_dir, config, get_opencode_log_path(config_dir)
+    )
+    opencode.start()
+    app.state.opencode = opencode
+
+    def _shutdown(*_args: object) -> None:
+        # uvicorn traps SIGTERM/SIGINT itself, but the lifespan's `finally`
+        # block doesn't always run when the signal arrives mid-request.
+        # Run the opencode cleanup first so the child is never orphaned
+        # by a CLI-driven `nina daemon stop`.
+        try:
+            opencode.stop()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if os.name != "nt":
+        signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
+
     try:
         uvicorn.run(
             app,
@@ -73,6 +97,10 @@ def main() -> None:
             log_level=config.log_level.lower(),
         )
     finally:
+        try:
+            opencode.stop()
+        except Exception:  # noqa: BLE001
+            pass
         scheduler.shutdown()
         if watcher is not None:
             watcher.stop()

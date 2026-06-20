@@ -103,8 +103,8 @@ The default Nina tool set is built by `default_tool_registry()` in `nina_core.ll
 | `obsidian_hybrid_search` | `query: str, limit: int = 5` | RRF merge of lexical and semantic |
 | `obsidian_get_note` | `path: str` | `{ "path", "title", "nina_type", "frontmatter", "body", "mtime" }` |
 | `obsidian_list_notes` | `folder?, nina_type?, limit?` | `{ "notes": [...] }` |
-| `kanban_get` | none | `{ "columns": { col: [...] } }` |
-| `tickets_list` | `status?, project_id?, include_archived?` | `{ "tickets": [...] }` |
+| `kanban_get` | none | `{ "columns": { task_type: [...] } }` |
+| `tickets_list` | `task_type?, project_id?, include_archived?` | `{ "tickets": [...] }` |
 | `tickets_get` | `id_or_title: str` | `{ "ticket": ... }` or 404 |
 | `projects_list` | none | `{ "projects": [...] }` |
 | `projects_get` | `id_or_name: str` | `{ "project": ... }` or 404 |
@@ -116,9 +116,10 @@ The default Nina tool set is built by `default_tool_registry()` in `nina_core.ll
 
 | Tool | Args | Returns |
 | --- | --- | --- |
-| `tickets_create` | `title, description?, project_id?, kanban_column?` | `{ "ticket": ... }` |
-| `tickets_update` | `id, title?, description?, status?, kanban_column?, kanban_position?` | `{ "ticket": ... }` |
-| `tickets_move` | `id, column, position?` | `{ "ticket": ... }` |
+| `tickets_create` | `title, description?, project_id?, task_type?, auto_classify?` | `{ "ticket": ... }` |
+| `tickets_update` | `id, title?, description?, task_type?, status?` | `{ "ticket": ... }` |
+| `tickets_classify` | `id` | `{ "status": "...", "output": { "task_type": "...", "reason": "..." } }` |
+| `tickets_run` | `id` | `{ "status": "...", "output": { "would_route_to": "...", "reason": "..." } }` |
 | `tickets_delete` | `id` | `{ "deleted": true }` |
 | `tickets_archive` | `id` | `{ "ticket": ... }` |
 | `tickets_unarchive` | `id` | `{ "ticket": ... }` |

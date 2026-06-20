@@ -268,13 +268,17 @@ async def test_agent_session_uses_tickets_create_tool(
     )
     session = service.create_session("agent", "Agent")
 
-    # First call: create ticket; second call: move it to Doing
+    # First call: create ticket; second call: classify it via the AI tool.
     fake.queue_tool_calls(
         [
             ToolCall(
                 id="c1",
                 name="tickets_create",
-                arguments={"title": "Add a CLI flag", "description": "Flag X"},
+                arguments={
+                    "title": "Add a CLI flag",
+                    "description": "Flag X",
+                    "auto_classify": False,
+                },
             )
         ],
         "",
@@ -283,24 +287,25 @@ async def test_agent_session_uses_tickets_create_tool(
         [
             ToolCall(
                 id="c2",
-                name="tickets_move",
-                arguments={"id": "{{last_created_id}}", "column": "Doing"},
+                name="tickets_classify",
+                arguments={"id": "{{last_created_id}}"},
             )
         ],
         "",
     )
-    fake.queue_text("Created and moved the ticket to Doing.")
+    fake.queue_text("Created and classified the ticket.")
 
     response = await service.send_message(
         session["id"],
-        "Add a ticket to add a CLI flag and put it in Doing",
+        "Add a ticket to add a CLI flag and classify it",
     )
 
     assert response["tools_used"][0]["name"] == "tickets_create"
-    assert response["tools_used"][1]["name"] == "tickets_move"
+    assert response["tools_used"][1]["name"] == "tickets_classify"
     # The assistant message confirms completion
     assert (
-        "Doing" in response["assistant"]["content"] or "Created" in response["assistant"]["content"]
+        "classified" in response["assistant"]["content"].lower()
+        or "Created" in response["assistant"]["content"]
     )
 
 

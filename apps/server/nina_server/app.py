@@ -18,13 +18,23 @@ from nina_core.config import (
     merge_config,
 )
 from nina_core.db import create_database
+from nina_core.integrations.registry import get_integration
+from nina_core.integrations.credentials import (
+    delete_credentials,
+    load_credentials,
+    save_credentials,
+)
+from nina_core.integrations.service import IntegrationService
 from nina_core.llm.provider import LLMRequest, LLMService
 from nina_core.obsidian.service import ObsidianService
-from nina_core.projects.kanban import get_kanban_board, move_task
-from nina_core.projects.service import ProjectService, TaskService
+from nina_core.opencode import (
+    OpencodeError,
+    Project,
+)
 from nina_core.scheduler.service import SchedulerService
 from nina_core.search.indexer import ask_obsidian, index_notes, search, create_fts_table
 from nina_core.sessions.service import SessionService
+from nina_core.tasks.service import TaskService
 import nina_core
 from nina_core.workflows.runner import WORKFLOW_DESCRIPTIONS, WorkflowRunner
 
@@ -67,6 +77,17 @@ class MeetingsConfigResponse(BaseModel):
     noise_reduction: str
 
 
+class OpencodeConfigResponse(BaseModel):
+    enabled: bool
+    binary_path: str
+    host: str
+    port: int
+    username: str
+    password_ref: str
+    startup_timeout_seconds: float
+    shutdown_timeout_seconds: float
+
+
 class ConfigResponse(BaseModel):
     profile: str
     config_dir: str
@@ -80,6 +101,7 @@ class ConfigResponse(BaseModel):
     scheduler: SchedulerConfigResponse
     transcription: TranscriptionConfigResponse
     meetings: MeetingsConfigResponse
+    opencode: OpencodeConfigResponse
     log_level: str
 
 
@@ -119,6 +141,17 @@ class MeetingsConfigUpdate(BaseModel):
     noise_reduction: str | None = None
 
 
+class OpencodeConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    binary_path: str | None = None
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password_ref: str | None = None
+    startup_timeout_seconds: float | None = None
+    shutdown_timeout_seconds: float | None = None
+
+
 class ConfigUpdate(BaseModel):
     vault_path: str | None = None
     database_path: str | None = None
@@ -130,6 +163,7 @@ class ConfigUpdate(BaseModel):
     scheduler: SchedulerConfigUpdate | None = None
     transcription: TranscriptionConfigUpdate | None = None
     meetings: MeetingsConfigUpdate | None = None
+    opencode: OpencodeConfigUpdate | None = None
 
 
 def _request_config_dir(request: Request) -> Path:
@@ -185,6 +219,16 @@ def _config_response(config_dir: Path, config: NinaConfig) -> ConfigResponse:
             auto_normalize=config.meetings.auto_normalize,
             normalize_target_dbfs=config.meetings.normalize_target_dbfs,
             noise_reduction=config.meetings.noise_reduction,
+        ),
+        opencode=OpencodeConfigResponse(
+            enabled=config.opencode.enabled,
+            binary_path=config.opencode.binary_path,
+            host=config.opencode.host,
+            port=config.opencode.port,
+            username=config.opencode.username,
+            password_ref=config.opencode.password_ref,
+            startup_timeout_seconds=config.opencode.startup_timeout_seconds,
+            shutdown_timeout_seconds=config.opencode.shutdown_timeout_seconds,
         ),
         log_level=config.log_level,
     )
@@ -255,6 +299,22 @@ def _changed_config_fields(previous: NinaConfig, updated: NinaConfig) -> list[st
         changed.append("meetings.normalize_target_dbfs")
     if previous.meetings.noise_reduction != updated.meetings.noise_reduction:
         changed.append("meetings.noise_reduction")
+    if previous.opencode.enabled != updated.opencode.enabled:
+        changed.append("opencode.enabled")
+    if previous.opencode.binary_path != updated.opencode.binary_path:
+        changed.append("opencode.binary_path")
+    if previous.opencode.host != updated.opencode.host:
+        changed.append("opencode.host")
+    if previous.opencode.port != updated.opencode.port:
+        changed.append("opencode.port")
+    if previous.opencode.username != updated.opencode.username:
+        changed.append("opencode.username")
+    if previous.opencode.password_ref != updated.opencode.password_ref:
+        changed.append("opencode.password_ref")
+    if previous.opencode.startup_timeout_seconds != updated.opencode.startup_timeout_seconds:
+        changed.append("opencode.startup_timeout_seconds")
+    if previous.opencode.shutdown_timeout_seconds != updated.opencode.shutdown_timeout_seconds:
+        changed.append("opencode.shutdown_timeout_seconds")
     return changed
 
 
@@ -319,7 +379,21 @@ async def update_config(request: Request, data: ConfigUpdate) -> dict[str, Any]:
         new_scheduler.start()
 
     restart_required = any(
-        field in {"daemon_host", "daemon_port", "log_level"} for field in changed_fields
+        field
+        in {
+            "daemon_host",
+            "daemon_port",
+            "log_level",
+            "opencode.enabled",
+            "opencode.binary_path",
+            "opencode.host",
+            "opencode.port",
+            "opencode.username",
+            "opencode.password_ref",
+            "opencode.startup_timeout_seconds",
+            "opencode.shutdown_timeout_seconds",
+        }
+        for field in changed_fields
     )
     return {
         "config": _config_response(config_dir, updated).model_dump(),
@@ -375,35 +449,16 @@ def get_session_service(request: Request) -> SessionService:
     )
 
 
-class ProjectResponse(BaseModel):
-    id: str
-    name: str
-    description: str
-    status: str
-    note_path: str | None
-    created_at: str
-    updated_at: str
-
-
-class ProjectCreate(BaseModel):
-    name: str
-    description: str = ""
-
-
-class ProjectUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    status: str | None = None
-
-
 class TaskResponse(BaseModel):
     id: str
-    project_id: str | None
+    opencode_project_id: str | None
     title: str
     description: str
+    task_type: str
     status: str
-    kanban_column: str
-    kanban_position: int
+    classified_at: str | None
+    classification_reason: str | None
+    classification_model: str | None
     note_path: str | None
     created_at: str
     updated_at: str
@@ -412,21 +467,34 @@ class TaskResponse(BaseModel):
 class TaskCreate(BaseModel):
     title: str
     description: str = ""
-    project_id: str | None = None
+    opencode_project_id: str | None = None
+    task_type: str | None = None
+    auto_classify: bool = True
 
 
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    task_type: str | None = None
     status: str | None = None
-    kanban_column: str | None = None
-    kanban_position: int | None = None
+    opencode_project_id: str | None = None
 
 
-class KanbanMove(BaseModel):
-    task_id: str
-    to_column: str
-    to_position: int
+def _task_to_response(t: Any) -> TaskResponse:
+    return TaskResponse(
+        id=t.id,
+        opencode_project_id=t.opencode_project_id,
+        title=t.title,
+        description=t.description,
+        task_type=t.task_type,
+        status=t.status,
+        classified_at=t.classified_at,
+        classification_reason=t.classification_reason,
+        classification_model=t.classification_model,
+        note_path=t.note_path,
+        created_at=t.created_at,
+        updated_at=t.updated_at,
+    )
 
 
 class SearchQuery(BaseModel):
@@ -505,112 +573,22 @@ class MeetingStop(BaseModel):
     error: str | None = None
 
 
-@app.get("/projects")
-async def list_projects(request: Request) -> list[ProjectResponse]:
-    db = get_db()
-    obsidian = get_obsidian()
-    service = ProjectService(db, obsidian)
-    projects = service.list()
-    return [
-        ProjectResponse(
-            id=p.id,
-            name=p.name,
-            description=p.description,
-            status=p.status,
-            note_path=p.note_path,
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-        )
-        for p in projects
-    ]
-
-
-@app.post("/projects")
-async def create_project(request: Request, data: ProjectCreate) -> ProjectResponse:
-    db = get_db()
-    obsidian = get_obsidian()
-    service = ProjectService(db, obsidian)
-    project = service.create(data.name, data.description)
-    return ProjectResponse(
-        id=project.id,
-        name=project.name,
-        description=project.description,
-        status=project.status,
-        note_path=project.note_path,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-    )
-
-
-@app.get("/projects/{project_id}")
-async def get_project(request: Request, project_id: str) -> ProjectResponse:
-    db = get_db()
-    obsidian = get_obsidian()
-    service = ProjectService(db, obsidian)
-    project = service.get(project_id)
-    if not project:
-        return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return ProjectResponse(
-        id=project.id,
-        name=project.name,
-        description=project.description,
-        status=project.status,
-        note_path=project.note_path,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-    )
-
-
-@app.patch("/projects/{project_id}")
-async def update_project(request: Request, project_id: str, data: ProjectUpdate) -> ProjectResponse:
-    db = get_db()
-    obsidian = get_obsidian()
-    service = ProjectService(db, obsidian)
-    project = service.update(project_id, data.name, data.description, data.status)
-    if not project:
-        return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return ProjectResponse(
-        id=project.id,
-        name=project.name,
-        description=project.description,
-        status=project.status,
-        note_path=project.note_path,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-    )
-
-
-@app.delete("/projects/{project_id}")
-async def delete_project(request: Request, project_id: str) -> dict[str, bool]:
-    db = get_db()
-    obsidian = get_obsidian()
-    service = ProjectService(db, obsidian)
-    if not service.delete(project_id):
-        return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return {"deleted": True}
+class IntegrationCredentialsUpdate(BaseModel):
+    credentials: dict[str, Any]
 
 
 @app.get("/tasks")
-async def list_tasks(request: Request) -> list[TaskResponse]:
+async def list_tasks(
+    request: Request,
+    task_type: str | None = None,
+    status: str | None = None,
+    include_archived: bool = False,
+) -> list[TaskResponse]:
     db = get_db()
     obsidian = get_obsidian()
     service = TaskService(db, obsidian)
-    tasks = service.list()
-    return [
-        TaskResponse(
-            id=t.id,
-            project_id=t.project_id,
-            title=t.title,
-            description=t.description,
-            status=t.status,
-            kanban_column=t.kanban_column,
-            kanban_position=t.kanban_position,
-            note_path=t.note_path,
-            created_at=t.created_at,
-            updated_at=t.updated_at,
-        )
-        for t in tasks
-    ]
+    tasks = service.list(task_type=task_type, status=status, include_archived=include_archived)
+    return [_task_to_response(t) for t in tasks]
 
 
 @app.post("/tasks")
@@ -618,24 +596,43 @@ async def create_task(request: Request, data: TaskCreate) -> TaskResponse:
     db = get_db()
     obsidian = get_obsidian()
     service = TaskService(db, obsidian)
-    task = service.create(data.title, data.description, data.project_id)
-    return TaskResponse(
-        id=task.id,
-        project_id=task.project_id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        kanban_column=task.kanban_column,
-        kanban_position=task.kanban_position,
-        note_path=task.note_path,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
+    task = service.create(
+        data.title,
+        data.description,
+        data.opencode_project_id,
+        task_type=data.task_type or "unclassified",
+        auto_classify=data.auto_classify,
     )
+    return _task_to_response(task)
+
+
+@app.get("/tasks/grouped-by-type")
+async def tasks_grouped_by_type(request: Request) -> dict[str, list[TaskResponse]]:
+    """Return active tasks grouped by `task_type`, sorted by `classified_at` desc.
+
+    Replaces the legacy `/kanban` endpoint. The shape is `{type: [task, ...]}`.
+    """
+
+    db = get_db()
+    obsidian = get_obsidian()
+    service = TaskService(db, obsidian)
+    tasks = service.list()
+    grouped: dict[str, list[TaskResponse]] = {}
+    for task in tasks:
+        grouped.setdefault(task.task_type, []).append(_task_to_response(task))
+    return grouped
 
 
 @app.get("/tickets")
-async def list_tickets(request: Request) -> list[TaskResponse]:
-    return await list_tasks(request)
+async def list_tickets(
+    request: Request,
+    task_type: str | None = None,
+    status: str | None = None,
+    include_archived: bool = False,
+) -> list[TaskResponse]:
+    return await list_tasks(
+        request, task_type=task_type, status=status, include_archived=include_archived
+    )
 
 
 @app.post("/tickets")
@@ -658,6 +655,16 @@ async def delete_ticket(request: Request, ticket_id: str) -> dict[str, bool]:
     return await delete_task(request, ticket_id)
 
 
+@app.post("/tickets/{ticket_id}/classify")
+async def classify_ticket(request: Request, ticket_id: str) -> dict[str, Any]:
+    return await classify_task(request, ticket_id)
+
+
+@app.post("/tickets/{ticket_id}/run")
+async def run_ticket(request: Request, ticket_id: str) -> dict[str, Any]:
+    return await run_task(request, ticket_id)
+
+
 @app.get("/tasks/{task_id}")
 async def get_task(request: Request, task_id: str) -> TaskResponse:
     db = get_db()
@@ -666,18 +673,7 @@ async def get_task(request: Request, task_id: str) -> TaskResponse:
     task = service.get(task_id)
     if not task:
         return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return TaskResponse(
-        id=task.id,
-        project_id=task.project_id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        kanban_column=task.kanban_column,
-        kanban_position=task.kanban_position,
-        note_path=task.note_path,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-    )
+    return _task_to_response(task)
 
 
 @app.patch("/tasks/{task_id}")
@@ -685,28 +681,22 @@ async def update_task(request: Request, task_id: str, data: TaskUpdate) -> TaskR
     db = get_db()
     obsidian = get_obsidian()
     service = TaskService(db, obsidian)
-    task = service.update(
-        task_id,
-        data.title,
-        data.description,
-        data.status,
-        data.kanban_column,
-        data.kanban_position,
-    )
+    try:
+        task = service.update(
+            task_id,
+            title=data.title,
+            description=data.description,
+            task_type=data.task_type,
+            status=data.status,
+            opencode_project_id=(
+                data.opencode_project_id if "opencode_project_id" in data.model_fields_set else None
+            ),
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
     if not task:
         return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return TaskResponse(
-        id=task.id,
-        project_id=task.project_id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        kanban_column=task.kanban_column,
-        kanban_position=task.kanban_position,
-        note_path=task.note_path,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-    )
+    return _task_to_response(task)
 
 
 @app.delete("/tasks/{task_id}")
@@ -719,6 +709,28 @@ async def delete_task(request: Request, task_id: str) -> dict[str, bool]:
     return {"deleted": True}
 
 
+@app.post("/tasks/{task_id}/classify")
+async def classify_task(request: Request, task_id: str) -> dict[str, Any]:
+    db_path = _active_config_path()
+    config = _request_config(request)
+    runner = WorkflowRunner(db_path, config=config)
+    result = runner.run("classify-task", {"task_id": task_id})
+    if result.get("status") != "completed":
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.post("/tasks/{task_id}/run")
+async def run_task(request: Request, task_id: str) -> dict[str, Any]:
+    db_path = _active_config_path()
+    config = _request_config(request)
+    runner = WorkflowRunner(db_path, config=config)
+    result = runner.run("run-task", {"task_id": task_id})
+    if result.get("status") != "completed":
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
 @app.post("/tasks/{task_id}/archive")
 async def archive_task(request: Request, task_id: str) -> TaskResponse:
     db = get_db()
@@ -727,18 +739,7 @@ async def archive_task(request: Request, task_id: str) -> TaskResponse:
     task = service.archive(task_id)
     if not task:
         return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return TaskResponse(
-        id=task.id,
-        project_id=task.project_id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        kanban_column=task.kanban_column,
-        kanban_position=task.kanban_position,
-        note_path=task.note_path,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-    )
+    return _task_to_response(task)
 
 
 @app.post("/tasks/{task_id}/unarchive")
@@ -749,57 +750,7 @@ async def unarchive_task(request: Request, task_id: str) -> TaskResponse:
     task = service.unarchive(task_id)
     if not task:
         return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return TaskResponse(
-        id=task.id,
-        project_id=task.project_id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        kanban_column=task.kanban_column,
-        kanban_position=task.kanban_position,
-        note_path=task.note_path,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-    )
-
-
-@app.get("/kanban")
-async def get_kanban(request: Request) -> dict[str, Any]:
-    db = get_db()
-    board = get_kanban_board(db)
-    result: dict[str, Any] = {}
-    for column, tasks in board.items():
-        result[column] = [
-            {
-                "id": t.id,
-                "title": t.title,
-                "status": t.status,
-                "kanban_position": t.kanban_position,
-            }
-            for t in tasks
-        ]
-    return result
-
-
-@app.post("/kanban/move")
-async def kanban_move(request: Request, data: KanbanMove) -> TaskResponse:
-    db = get_db()
-    task = move_task(db, data.task_id, data.to_column, data.to_position)
-    if not task:
-        return JSONResponse(status_code=404, content={"detail": "Not found"})
-    get_obsidian().update_task_note(task)
-    return TaskResponse(
-        id=task.id,
-        project_id=task.project_id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        kanban_column=task.kanban_column,
-        kanban_position=task.kanban_position,
-        note_path=task.note_path,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-    )
+    return _task_to_response(task)
 
 
 @app.post("/search")
@@ -1032,6 +983,8 @@ async def list_workflows(request: Request) -> list[dict[str, str]]:
             "transcribe-meeting",
             "summarize-meeting",
             "meeting-pipeline",
+            "classify-task",
+            "run-task",
         ]
     ]
 
@@ -1316,3 +1269,188 @@ async def list_meeting_devices() -> dict[str, Any]:
         "soundcard_microphones": soundcard.get("microphones", []),
         "soundcard_speakers": soundcard.get("speakers", []),
     }
+
+
+def get_integration_service(request: Request) -> IntegrationService:
+    config = _request_config(request)
+    return IntegrationService(config.database_path, config_dir=_request_config_dir(request))
+
+
+@app.get("/integrations")
+async def list_integrations_endpoint(request: Request) -> dict[str, Any]:
+    return {"integrations": get_integration_service(request).list()}
+
+
+@app.get("/integrations/{name}")
+async def get_integration_endpoint(request: Request, name: str) -> Any:
+    integration = get_integration_service(request).get(name)
+    if integration is None:
+        return JSONResponse(status_code=404, content={"detail": "Unknown integration"})
+    return integration
+
+
+@app.post("/integrations/{name}/test")
+async def test_integration_endpoint(request: Request, name: str) -> Any:
+    if get_integration(name) is None:
+        return JSONResponse(status_code=404, content={"detail": "Unknown integration"})
+    try:
+        result = await get_integration_service(request).test(name)
+    except KeyError:
+        return JSONResponse(status_code=404, content={"detail": "Unknown integration"})
+    return result
+
+
+@app.get("/integrations/{name}/tests")
+async def list_integration_tests_endpoint(request: Request, name: str, limit: int = 10) -> Any:
+    if get_integration(name) is None:
+        return JSONResponse(status_code=404, content={"detail": "Unknown integration"})
+    return {"tests": get_integration_service(request).list_tests(name, limit=limit)}
+
+
+@app.put("/integrations/{name}/credentials")
+async def put_integration_credentials(
+    request: Request, name: str, data: IntegrationCredentialsUpdate
+) -> dict[str, Any]:
+    if get_integration(name) is None:
+        return JSONResponse(status_code=404, content={"detail": "Unknown integration"})
+    if not isinstance(data.credentials, dict) or not data.credentials:
+        return JSONResponse(
+            status_code=400, content={"detail": "credentials must be a non-empty object"}
+        )
+    path = save_credentials(name, data.credentials, config_dir=_request_config_dir(request))
+    return {"saved": True, "path": str(path)}
+
+
+@app.delete("/integrations/{name}/credentials")
+async def delete_integration_credentials(request: Request, name: str) -> dict[str, Any]:
+    if get_integration(name) is None:
+        return JSONResponse(status_code=404, content={"detail": "Unknown integration"})
+    deleted = delete_credentials(name, config_dir=_request_config_dir(request))
+    return {"deleted": deleted}
+
+
+@app.get("/integrations/{name}/credentials")
+async def get_integration_credentials(request: Request, name: str) -> dict[str, Any]:
+    """Return the *shape* of stored credentials without exposing secrets.
+
+    Used by the TUI/CLI to show which fields are configured (`true`/`false`).
+    The actual values are never returned over the API.
+    """
+
+    if get_integration(name) is None:
+        return JSONResponse(status_code=404, content={"detail": "Unknown integration"})
+    creds = load_credentials(name, config_dir=_request_config_dir(request)) or {}
+    return {
+        "configured_fields": {key: bool(value) for key, value in creds.items()},
+    }
+
+
+# --- opencode integration -----------------------------------------------
+
+
+def _opencode_supervisor(request: Request):
+    """Return the live supervisor, or 503 if the daemon didn't start one."""
+
+    supervisor = getattr(request.app.state, "opencode", None)
+    if supervisor is None:
+        return None
+    return supervisor
+
+
+def _serialize_project(project: Project) -> dict[str, Any]:
+    return {
+        "id": project.id,
+        "worktree": project.worktree,
+        "vcs": project.vcs,
+        "time": {
+            "created": project.time.created,
+            "updated": project.time.updated,
+        },
+        "sandboxes": list(project.sandboxes or []),
+    }
+
+
+@app.get("/opencode/status")
+async def opencode_status(request: Request) -> dict[str, Any]:
+    supervisor = _opencode_supervisor(request)
+    if supervisor is None:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "opencode supervisor not initialized"},
+        )
+    return supervisor.status().model_dump()
+
+
+@app.get("/opencode/health")
+async def opencode_health(request: Request) -> dict[str, Any]:
+    """Proxy the opencode server's `/global/health`. Returns 502 if
+    opencode is not reachable."""
+
+    supervisor = _opencode_supervisor(request)
+    if supervisor is None:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "opencode supervisor not initialized"},
+        )
+    status = supervisor.status()
+    if status.state != "running":
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"opencode is {status.state}", "status": status.model_dump()},
+        )
+    client = supervisor.client()
+    try:
+        health = await client.health()
+    except OpencodeError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"detail": str(exc), "status": status.model_dump()},
+        )
+    finally:
+        try:
+            await client.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+    return {"healthy": health.healthy, "version": health.version, "status": status.model_dump()}
+
+
+@app.get("/opencode/projects")
+async def opencode_projects(request: Request) -> list[dict[str, Any]]:
+    supervisor = _opencode_supervisor(request)
+    if supervisor is None:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "opencode supervisor not initialized"},
+        )
+    client = supervisor.client()
+    try:
+        projects = await client.list_projects()
+    except OpencodeError as exc:
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
+    finally:
+        try:
+            await client.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+    return [_serialize_project(p) for p in projects]
+
+
+@app.get("/opencode/projects/current")
+async def opencode_current_project(request: Request) -> dict[str, Any]:
+    supervisor = _opencode_supervisor(request)
+    if supervisor is None:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "opencode supervisor not initialized"},
+        )
+    client = supervisor.client()
+    try:
+        project = await client.current_project()
+    except OpencodeError as exc:
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
+    finally:
+        try:
+            await client.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+    return _serialize_project(project)

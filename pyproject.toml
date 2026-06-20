@@ -56,6 +56,8 @@ exclude = [
   "packages/nina_core/nina_core/llm",
   "packages/nina_core/nina_core/workflows",
   "packages/nina_core/nina_core/scheduler",
+  "packages/nina_core/nina_core/tasks",
+  "packages/nina_core/nina_core/opencode",
   "apps/server",
 ]
 pythonVersion = "3.12"

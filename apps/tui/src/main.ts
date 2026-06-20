@@ -21,16 +21,18 @@ interface Ticket {
   project_id: string | null;
   title: string;
   description: string;
+  task_type: string;
   status: string;
-  kanban_column: string;
-  kanban_position: number;
+  classified_at: string | null;
+  classification_reason: string | null;
+  classification_model: string | null;
   note_path: string | null;
   created_at: string;
   updated_at: string;
 }
 
-interface KanbanBoard {
-  [column: string]: Ticket[];
+interface TaskGroup {
+  [taskType: string]: Ticket[];
 }
 
 interface Job {
@@ -199,6 +201,62 @@ interface Meeting {
   updated_at: string;
 }
 
+interface OpencodeStatus {
+  enabled: boolean;
+  binary_installed: boolean;
+  binary_path: string;
+  state: string;
+  version: string | null;
+  host: string;
+  port: number;
+  uptime_seconds: number | null;
+  pid: number | null;
+  last_error: string | null;
+}
+
+interface OpencodeProjectTime {
+  created: number | null;
+  updated: number | null;
+}
+
+interface OpencodeProject {
+  id: string;
+  worktree: string;
+  vcs: string | null;
+  time: OpencodeProjectTime;
+  sandboxes: unknown[];
+}
+
+interface IntegrationIdentity {
+  account_id: string;
+  display_name: string;
+  email: string | null;
+  workspace: string | null;
+}
+
+interface IntegrationTestSummary {
+  status: string;
+  latency_ms: number;
+  identity: IntegrationIdentity | null;
+  error: string | null;
+  tested_at: string;
+}
+
+interface IntegrationRecord {
+  name: string;
+  display_name: string;
+  description: string;
+  docs_url: string;
+  auth_style: string;
+  configured: boolean;
+  status: string;
+  last_test: IntegrationTestSummary | null;
+}
+
+interface IntegrationsResponse {
+  integrations: IntegrationRecord[];
+}
+
 interface ConfigUpdateResponse {
   config: ConfigSnapshot;
   changed_fields: string[];
@@ -242,7 +300,7 @@ interface Banner {
   text: string;
 }
 
-type PageName = "Tickets" | "Chat" | "Agent" | "Research" | "Jobs" | "Meetings" | "Config";
+type PageName = "Tickets" | "Chat" | "Agent" | "Research" | "Jobs" | "Meetings" | "Integrations" | "OpenCode" | "Config";
 type PageFocusTarget = "tabs" | "scroll" | "input" | "select";
 type MainPageFocusTarget = Exclude<PageFocusTarget, "tabs">;
 
@@ -253,15 +311,19 @@ const PAGE_NAMES: PageName[] = [
   "Research",
   "Meetings",
   "Jobs",
+  "Integrations",
+  "OpenCode",
   "Config",
 ];
 const PAGE_DESCRIPTIONS: Record<PageName, string> = {
-  Tickets: "Create tickets and inspect the board",
+  Tickets: "Create tasks and review the type-grouped inbox",
   Chat: "Ask questions over local Nina context",
   Agent: "Natural language that can auto-run Nina commands",
   Research: "Research a topic and write an Obsidian note",
   Meetings: "Record meetings, transcribe, and summarize",
   Jobs: "Inspect scheduled workflows and recent runs",
+  Integrations: "Read-only health for external services (Confluence, Jira, Slack, Teams)",
+  OpenCode: "Status of the supervised opencode server and its registered projects",
   Config: "Vault, database, daemon, and runtime settings",
 };
 const PAGE_ACCENTS: Record<PageName, string> = {
@@ -271,24 +333,30 @@ const PAGE_ACCENTS: Record<PageName, string> = {
   Research: "#eab308",
   Meetings: "#a855f7",
   Jobs: "#60a5fa",
+  Integrations: "#14b8a6",
+  OpenCode: "#10b981",
   Config: "#94a3b8",
 };
 const PAGE_HELP: Record<PageName, string> = {
-  Tickets: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Ctrl+Up/Down selects a ticket. Ctrl+Left/Right moves the selected ticket between columns. Ctrl+E toggles the detail view. Enter creates a ticket. Ctrl+D deletes a ticket. Ctrl+A archives a ticket. PageUp/PageDown scroll the kanban. Ctrl+R refreshes the page.",
+  Tickets: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Ctrl+X switches between Inbox (unclassified) and All (grouped by type). Ctrl+Up/Down selects a task. Ctrl+E toggles the detail view. Ctrl+G cycles the selected task's task_type. Ctrl+1..Ctrl+7 set task_type directly (1=unclassified, 2=coding, 3=research, 4=reminder, 5=blocked, 6=human, 7=done). Ctrl+L re-runs the AI classifier on the selected task. Ctrl+Enter routes the task to its handler. Enter creates a new task. Ctrl+D deletes a task. Ctrl+A archives a task. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
   Chat: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt. Use @path/to/note.md in the prompt to attach a note. While waiting, a loading card shows elapsed time. Ctrl+Q clears the chat and starts a new context. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom. Ctrl+R refreshes the page.",
   Agent: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter sends the prompt and may execute tool calls automatically. While waiting, a loading card shows elapsed time. Ctrl+. cancels the running response. PageUp/PageDown scroll the history; End jumps to the bottom.",
   Research: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. Click the history to focus it or the prompt to type. F6 toggles between the history and prompt. Enter runs OpenAI web research and writes a note into Obsidian. While waiting, a loading card shows elapsed time. PageUp/PageDown scroll the report.",
   Meetings: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Up/Down moves the selection. Type a title and press Enter to start a recording. All other actions use Ctrl so the text input does not swallow them: Ctrl+E transcribe + summarize (pipeline), Ctrl+X stop active recording, Ctrl+O open in Obsidian, Ctrl+P play audio, Ctrl+D delete. PageUp/PageDown scroll the list. Ctrl+R refreshes the page.",
   Jobs: "Esc returns to the tab strip. Click a tab to switch pages. Tab and Shift+Tab change pages. On the Jobs page, Ctrl+Up/Down select a job, Ctrl+A opens that job's runs, Ctrl+E runs it now, Esc (in the runs view) returns to the list, Ctrl+PageUp/PageDown and Home/End scroll. Ctrl+R refreshes the page.",
+  Integrations: "Esc returns to the tab strip. Tab and Shift+Tab change pages. Read-only view: each card shows the configured integrations, their last identity ping, latency, and any errors. Run `nina integrations configure <name>` and `nina integrations test <name>` from the CLI to add credentials and re-run a test. Ctrl+R refreshes the page.",
+  OpenCode: "Esc returns to the tab strip. Click a tab to switch pages. Read-only view of the supervised opencode server: status (binary, host, port, version, uptime) plus a list of projects the server knows about. Use `nina opencode status` / `nina opencode projects list` from the CLI for the same data with `--json`. Ctrl+R refreshes the page.",
   Config: "Esc returns to the tab strip. Click a tab to switch pages. Click the list or the value field to focus it. F6 toggles between the editable list and the value field. Up and Down change the selected setting. Enter saves the current value. Tab and Shift+Tab change pages. Ctrl+R refreshes the page. Ctrl+C quits.",
 };
 const PAGE_INTRO: Record<PageName, string> = {
-  Tickets: "Tickets are first-class aliases over Nina tasks. Use the prompt below for quick ticket creation, or use Agent mode for natural language and command execution.",
+  Tickets: "Tasks start as `unclassified` and are moved to reminder/research/coding/blocked/done/human by the AI classifier. The Inbox tab shows unclassified work; the All tab groups tasks by type. Use Ctrl+Enter to route a task to its handler (or `nina task run <id>`).",
   Chat: "Chat mode answers questions with LLM-backed Obsidian context via tool calls. Use @path/to/note.md in the prompt to attach a note. It does not run commands or write to the vault.",
-  Agent: "Agent mode can plan and execute tool calls (read + write) against the vault, kanban, and jobs. It is intended for natural-language task creation and other safe Nina operations.",
+  Agent: "Agent mode can plan and execute tool calls (read + write) against the vault, tasks, and jobs. It is intended for natural-language task creation and other safe Nina operations.",
   Research: "Research mode uses OpenAI web search and writes a summary-plus-links note into your Obsidian vault.",
   Meetings: "Meetings are recorded through the daemon-backed CLI or TUI. Each recording creates a Meetings/<date> - <title>.md note in Obsidian. Transcription and summarization are workflows that read the same audio file.",
   Jobs: "Jobs execute Nina workflows on a schedule and keep their run history in SQLite.",
+  Integrations: "External services Nina can reach. All interactions are read-only and limited to an identity ping, but the same service layer will power future tasks and jobs.",
+  OpenCode: "The Nina daemon supervises an `opencode serve` child. This page shows the live status (binary, version, host, port) and the list of projects the opencode server has registered. Use `nina opencode status` from the CLI for the same data with `--json`.",
   Config: "This view lets you inspect and edit the config file that the daemon and CLI read.",
 };
 const PAGE_DEFAULT_FOCUS: Record<PageName, MainPageFocusTarget> = {
@@ -298,10 +366,20 @@ const PAGE_DEFAULT_FOCUS: Record<PageName, MainPageFocusTarget> = {
   Research: "input",
   Meetings: "input",
   Jobs: "scroll",
+  Integrations: "scroll",
+  OpenCode: "scroll",
   Config: "input",
 };
 
-const COLUMN_ORDER = ["Backlog", "Todo", "Doing", "Review", "Done"];
+const TASK_TYPE_ORDER = [
+  "unclassified",
+  "coding",
+  "research",
+  "reminder",
+  "blocked",
+  "human",
+  "done",
+];
 const THEME = {
   background: "#0b0f14",
   panel: "#121821",
@@ -542,21 +620,42 @@ function formatTime(value: string | null): string {
   return value && value.length > 0 ? value : "never";
 }
 
-function orderedColumns(board: KanbanBoard): string[] {
+function orderedTaskTypes(group: TaskGroup): string[] {
   const seen = new Set<string>();
-  const columns: string[] = [];
-  for (const name of COLUMN_ORDER) {
-    if (board[name]) {
-      columns.push(name);
+  const types: string[] = [];
+  for (const name of TASK_TYPE_ORDER) {
+    if (group[name]) {
+      types.push(name);
       seen.add(name);
     }
   }
-  for (const name of Object.keys(board).sort()) {
+  for (const name of Object.keys(group).sort()) {
     if (!seen.has(name)) {
-      columns.push(name);
+      types.push(name);
     }
   }
-  return columns;
+  return types;
+}
+
+function taskTypeAccent(type: string): string {
+  switch (type) {
+    case "coding":
+      return "#22c55e";
+    case "research":
+      return "#eab308";
+    case "reminder":
+      return "#f97316";
+    case "human":
+      return "#ef4444";
+    case "blocked":
+      return "#94a3b8";
+    case "done":
+      return "#22d3ee";
+    case "unclassified":
+      return "#a855f7";
+    default:
+      return "#60a5fa";
+  }
 }
 
 const CONFIG_FIELDS: ConfigFieldDefinition[] = [
@@ -807,8 +906,9 @@ async function main(): Promise<void> {
     currentPage: PageName;
     banner: Banner | null;
     lastError: string | null;
-    kanban: KanbanBoard | null;
-    kanbanSelectionIndex: number;
+    tasks: TaskGroup | null;
+    tasksView: "inbox" | "all";
+    tasksSelectionIndex: number;
     jobs: Job[];
     workflows: Record<string, string>;
     jobsView: "list" | "detail";
@@ -822,6 +922,10 @@ async function main(): Promise<void> {
     researchReport: ResearchRunResult | null;
     config: ConfigSnapshot | null;
     configSelectionIndex: number;
+    integrations: IntegrationRecord[];
+    opencode: OpencodeStatus | null;
+    opencodeProjects: OpencodeProject[];
+    opencodeProjectsError: string | null;
     pageFocus: Record<PageName, PageFocusTarget>;
     pageReturnFocus: Record<PageName, MainPageFocusTarget>;
     pendingAction: { type: "delete" | "archive"; ticket: Ticket } | null;
@@ -834,8 +938,9 @@ async function main(): Promise<void> {
     currentPage: "Tickets",
     banner: health.status === "offline" ? { kind: "error", text: "Daemon is offline. Start it with `nina daemon start` or `make dev`." } : null,
     lastError: null,
-    kanban: null,
-    kanbanSelectionIndex: -1,
+    tasks: null,
+    tasksView: "inbox",
+    tasksSelectionIndex: -1,
     jobs: [],
     workflows: {},
     jobsView: "list",
@@ -849,6 +954,10 @@ async function main(): Promise<void> {
     researchReport: null,
     config: null,
     configSelectionIndex: 0,
+    integrations: [],
+    opencode: null,
+    opencodeProjects: [],
+    opencodeProjectsError: null,
     pageFocus: { ...PAGE_DEFAULT_FOCUS },
     pageReturnFocus: { ...PAGE_DEFAULT_FOCUS },
     pendingAction: null,
@@ -862,23 +971,35 @@ async function main(): Promise<void> {
   const pendingTickers: Partial<Record<"chat" | "agent", ReturnType<typeof setInterval>>> = {};
   let meetingsPollTicker: ReturnType<typeof setInterval> | null = null;
 
-  function getKanbanTickets(): { ticket: Ticket; column: string; index: number }[] {
-    if (!state.kanban) return [];
-    const tickets: { ticket: Ticket; column: string; index: number }[] = [];
-    for (const column of orderedColumns(state.kanban)) {
-      const tasks = state.kanban[column] ?? [];
+  function getVisibleTasks(): { ticket: Ticket; taskType: string; index: number }[] {
+    if (!state.tasks) return [];
+    const out: { ticket: Ticket; taskType: string; index: number }[] = [];
+    if (state.tasksView === "inbox") {
+      const inbox = state.tasks["unclassified"] ?? [];
+      for (let i = 0; i < inbox.length; i++) {
+        out.push({ ticket: inbox[i], taskType: "unclassified", index: i });
+      }
+      return out;
+    }
+    for (const taskType of orderedTaskTypes(state.tasks)) {
+      const tasks = state.tasks[taskType] ?? [];
       for (let i = 0; i < tasks.length; i++) {
-        tickets.push({ ticket: tasks[i], column, index: i });
+        out.push({ ticket: tasks[i], taskType, index: i });
       }
     }
-    return tickets;
+    return out;
   }
 
-  function getSelectedTicket(): { ticket: Ticket; column: string } | null {
-    const tickets = getKanbanTickets();
-    if (state.kanbanSelectionIndex < 0 || state.kanbanSelectionIndex >= tickets.length) return null;
-    const selected = tickets[state.kanbanSelectionIndex];
-    return selected ? { ticket: selected.ticket, column: selected.column } : null;
+  function getSelectedTask(): { ticket: Ticket; taskType: string } | null {
+    const tasks = getVisibleTasks();
+    if (state.tasksSelectionIndex < 0 || state.tasksSelectionIndex >= tasks.length) return null;
+    const selected = tasks[state.tasksSelectionIndex];
+    return selected ? { ticket: selected.ticket, taskType: selected.taskType } : null;
+  }
+
+  function countUnclassified(): number {
+    if (!state.tasks) return 0;
+    return (state.tasks["unclassified"] ?? []).length;
   }
 
   let activeInput: InputRenderable | null = null;
@@ -1216,20 +1337,42 @@ async function main(): Promise<void> {
     } else if (state.detailTicket) {
       const t = state.detailTicket;
       const info = [
-        "Press Ctrl+E or Esc to return to the board.",
+        "Press Ctrl+E or Esc to return. Ctrl+G cycles task_type. Ctrl+1..7 set type directly. Ctrl+L reclassifies. Ctrl+Enter routes.",
         "",
         `ID: ${t.id}`,
         `Title: ${t.title}`,
         `Description: ${t.description || "(none)"}`,
-        `Status: ${t.status}`,
-        `Column: ${t.kanban_column}`,
-        `Position: ${t.kanban_position}`,
+        `Type: ${t.task_type}    Status: ${t.status}${t.status === "working" ? "  (agent is working)" : ""}`,
         `Project: ${t.project_id || "(none)"}`,
         `Note: ${t.note_path || "(none)"}`,
+        t.classified_at
+          ? `Classified at: ${t.classified_at}  by ${t.classification_model || "n/a"}`
+          : "Classified at: (not yet)",
+        t.classification_reason ? `Reason: ${t.classification_reason}` : "",
         `Created: ${t.created_at}`,
         `Updated: ${t.updated_at}`,
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
       scroll.add(buildCard(renderer, "Task Detail", accentForPage("Tickets"), info));
+
+      const nextIdx = (TASK_TYPE_ORDER.indexOf(t.task_type) + 1) % TASK_TYPE_ORDER.length;
+      const typeCard = buildCard(
+        renderer,
+        "Change task type",
+        taskTypeAccent(t.task_type),
+        [
+          `Current: ${t.task_type}`,
+          "",
+          `Press Ctrl+G to cycle to ${TASK_TYPE_ORDER[nextIdx]}.`,
+          `Or press Ctrl+1..Ctrl+7 to set directly.`,
+          "",
+          `Other actions:`,
+          `  Ctrl+L — re-classify with the AI`,
+          `  Ctrl+Enter — route to the task's handler`,
+        ].join("\n"),
+      );
+      scroll.add(typeCard);
     } else if (!token) {
       scroll.add(
         buildCard(
@@ -1240,36 +1383,62 @@ async function main(): Promise<void> {
           THEME.danger,
         ),
       );
-    } else if (!state.kanban) {
-      scroll.add(buildCard(renderer, "No board", accentForPage("Tickets"), "No kanban board data was loaded."));
+    } else if (!state.tasks) {
+      scroll.add(buildCard(renderer, "No tasks", accentForPage("Tickets"), "Tasks have not loaded yet — press Ctrl+R to refresh."));
     } else {
-      const allTickets = getKanbanTickets();
-      let ticketIndex = 0;
-      for (const column of orderedColumns(state.kanban)) {
-        const tasks = state.kanban[column] ?? [];
-        const body =
-          tasks.length === 0
+      const inboxCount = countUnclassified();
+      const viewLabel = state.tasksView === "inbox" ? "Inbox (unclassified)" : "All (grouped by type)";
+      scroll.add(
+        buildCard(
+          renderer,
+          `${viewLabel} — Ctrl+X to switch`,
+          accentForPage("Tickets"),
+          state.tasksView === "inbox"
+            ? inboxCount === 0
+              ? "No unclassified tasks. Press Ctrl+X to see grouped tasks."
+              : "These tasks are waiting for the AI classifier. Press Ctrl+X to see classified tasks grouped by type."
+            : "Each section is a task_type. The Inbox (Ctrl+X) is the unclassified queue.",
+        ),
+      );
+      if (state.tasksView === "inbox") {
+        const tasks = state.tasks["unclassified"] ?? [];
+        const body = tasks.length === 0
+          ? "(empty)"
+          : tasks.map((task, i) => {
+              const isSelected = i === state.tasksSelectionIndex;
+              const description = task.description?.trim() ?? "";
+              const note = task.note_path ? `\n  note: ${task.note_path}` : "";
+              const extra = description ? `\n  ${description}` : "";
+              const prefix = isSelected ? "► " : "- ";
+              return `${prefix}${task.title}${extra}${note}`;
+            }).join("\n\n");
+        scroll.add(buildCard(renderer, `Inbox (${tasks.length})`, taskTypeAccent("unclassified"), body));
+      } else {
+        let taskIndex = 0;
+        for (const taskType of orderedTaskTypes(state.tasks)) {
+          const tasks = state.tasks[taskType] ?? [];
+          const body = tasks.length === 0
             ? "(empty)"
-            : tasks
-                .map((task) => {
-                  const isSelected = ticketIndex === state.kanbanSelectionIndex;
-                  ticketIndex++;
-                  const description = task.description?.trim() ?? "";
-                  const note = task.note_path ? `\n  note: ${task.note_path}` : "";
-                  const extra = description ? `\n  ${description}` : "";
-                  const prefix = isSelected ? "► " : "- ";
-                  return `${prefix}${task.title} [${task.status}]${extra}${note}`;
-                })
-                .join("\n\n");
-        scroll.add(buildCard(renderer, `${column} (${tasks.length})`, accentForPage("Tickets"), body));
+            : tasks.map((task) => {
+                const isSelected = taskIndex === state.tasksSelectionIndex;
+                taskIndex++;
+                const description = task.description?.trim() ?? "";
+                const note = task.note_path ? `\n  note: ${task.note_path}` : "";
+                const extra = description ? `\n  ${description}` : "";
+                const working = task.status === "working" ? " [working]" : "";
+                const prefix = isSelected ? "► " : "- ";
+                return `${prefix}${task.title}${working}${extra}${note}`;
+              }).join("\n\n");
+          scroll.add(buildCard(renderer, `${taskType} (${tasks.length})`, taskTypeAccent(taskType), body));
+        }
       }
     }
 
     if (!state.detailTicket) {
       const input = makeInputSection(
         pageRoot,
-        "Create ticket",
-        "Ticket title | description",
+        "Create task",
+        "Task title | description",
         accentForPage("Tickets"),
       );
       activeInput = input;
@@ -1283,12 +1452,15 @@ async function main(): Promise<void> {
               return;
             }
             input.value = "";
-            const created = await apiFetch<Ticket>(token, "/tickets", {
+            const created = await apiFetch<Ticket>(token, "/tasks", {
               method: "POST",
               body: JSON.stringify({ title: draft.title, description: draft.description }),
             });
-            state.banner = { kind: "success", text: `Created ticket ${created.id}` };
-            await refreshTickets();
+            state.banner = { kind: "success", text: `Created task ${created.id} (AI is classifying…)` };
+            await refreshTasks();
+            // Switch to inbox to show the freshly-created task waiting for classification.
+            state.tasksView = "inbox";
+            state.tasksSelectionIndex = 0;
             renderPage("Tickets");
           } catch (error) {
             state.lastError = error instanceof Error ? error.message : String(error);
@@ -1597,6 +1769,95 @@ async function main(): Promise<void> {
     });
   }
 
+  function integrationStatusLabel(status: string, configured: boolean): string {
+    if (!configured) {
+      return "not configured";
+    }
+    if (status === "ok") {
+      return "ok";
+    }
+    if (status === "failed") {
+      return "failed";
+    }
+    return status || "unknown";
+  }
+
+  function integrationStatusColor(status: string, configured: boolean): string {
+    if (!configured) {
+      return THEME.subtle;
+    }
+    if (status === "ok") {
+      return THEME.success;
+    }
+    if (status === "failed") {
+      return THEME.danger;
+    }
+    return THEME.subtle;
+  }
+
+  function renderIntegrationsPage(pageRoot: BoxRenderable): void {
+    const scroll = makeScrollArea(pageRoot, accentForPage("Integrations"), "Integrations (scrollable)");
+    activeScrollArea = scroll;
+    if (state.integrations.length === 0) {
+      scroll.add(
+        buildCard(
+          renderer,
+          "No integrations registered",
+          accentForPage("Integrations"),
+          "The daemon did not return any integrations. Restart it with `nina daemon start`.",
+        ),
+      );
+    } else {
+      for (const integration of state.integrations) {
+        const last = integration.last_test;
+        const identity = last?.identity ?? null;
+        const statusLabel = integrationStatusLabel(integration.status, integration.configured);
+        const accent = integrationStatusColor(integration.status, integration.configured);
+        const identityLine = identity
+          ? identity.email
+            ? `${identity.display_name} <${identity.email}>`
+            : identity.display_name
+          : "—";
+        const workspaceLine = identity?.workspace ? `\nWorkspace: ${identity.workspace}` : "";
+        const body = [
+          `Name: ${integration.name}`,
+          `Auth style: ${integration.auth_style}`,
+          `Configured: ${integration.configured ? "yes" : "no"}`,
+          `Last test: ${last ? last.tested_at : "never"}`,
+          `Latency: ${last ? `${last.latency_ms}ms` : "—"}`,
+          `Identity: ${identityLine}${workspaceLine}`,
+          last?.error ? `Error: ${last.error}` : "",
+          `Docs: ${integration.docs_url}`,
+        ]
+          .filter((line) => line.length > 0)
+          .join("\n");
+        scroll.add(
+          buildCard(
+            renderer,
+            `${integration.display_name}  •  ${statusLabel}`,
+            accent,
+            body,
+          ),
+        );
+      }
+    }
+    scroll.add(
+      buildCard(
+        renderer,
+        "Read-only",
+        THEME.subtle,
+        [
+          "Tests run from the CLI:",
+          "  nina integrations configure <name>     # set credentials",
+          "  nina integrations test <name>         # run identity ping",
+          "  nina integrations list                # quick status table",
+          "  nina integrations history <name>      # past test results",
+        ].join("\n"),
+        THEME.subtle,
+      ),
+    );
+  }
+
   function renderConfigPage(pageRoot: BoxRenderable): void {
     if (!state.config) {
       pageRoot.add(
@@ -1749,11 +2010,109 @@ async function main(): Promise<void> {
     return await createConversationSession(mode, title);
   }
 
-  async function refreshTickets(): Promise<void> {
+  async function refreshTasks(): Promise<void> {
     if (!token) {
       throw new Error("No Nina token found. Run `nina init` first.");
     }
-    state.kanban = await apiFetch<KanbanBoard>(token, "/kanban");
+    state.tasks = await apiFetch<TaskGroup>(token, "/tasks/grouped-by-type");
+  }
+
+  function cycleType(current: string): string {
+    const idx = TASK_TYPE_ORDER.indexOf(current);
+    if (idx < 0) return TASK_TYPE_ORDER[0];
+    return TASK_TYPE_ORDER[(idx + 1) % TASK_TYPE_ORDER.length];
+  }
+
+  async function setTaskType(ticket: Ticket, newType: string): Promise<void> {
+    if (newType === ticket.task_type) return;
+    try {
+      await apiFetch(token, `/tasks/${ticket.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ task_type: newType }),
+      });
+      state.banner = { kind: "success", text: `Set ${ticket.title} to ${newType}.` };
+      await refreshTasks();
+      const refreshed = state.tasks?.[ticket.task_type]?.find((x) => x.id === ticket.id)
+        ?? state.tasks?.[newType]?.find((x) => x.id === ticket.id)
+        ?? null;
+      state.detailTicket = refreshed;
+      renderPage("Tickets");
+    } catch (error) {
+      state.lastError = error instanceof Error ? error.message : String(error);
+      renderPage("Tickets");
+    }
+  }
+
+  async function classifySelected(): Promise<void> {
+    const selected = getSelectedTask();
+    if (!selected) {
+      state.banner = { kind: "info", text: "Select a task first." };
+      return;
+    }
+    try {
+      state.banner = { kind: "info", text: `Classifying ${selected.ticket.title}…` };
+      renderPage("Tickets");
+      const result = await apiFetch<{ status: string; output?: { task_type?: string } }>(
+        token,
+        `/tasks/${selected.ticket.id}/classify`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      if (result.status === "completed" && result.output?.task_type) {
+        state.banner = {
+          kind: "success",
+          text: `Classified ${selected.ticket.title} as ${result.output.task_type}.`,
+        };
+      } else {
+        state.banner = { kind: "info", text: `Classification: ${result.status}` };
+      }
+      await refreshTasks();
+      renderPage("Tickets");
+    } catch (error) {
+      state.lastError = error instanceof Error ? error.message : String(error);
+      renderPage("Tickets");
+    }
+  }
+
+  async function routeSelected(): Promise<void> {
+    const selected = getSelectedTask();
+    if (!selected) {
+      state.banner = { kind: "info", text: "Select a task first." };
+      return;
+    }
+    if (selected.ticket.task_type === "human"
+        || selected.ticket.task_type === "reminder"
+        || selected.ticket.task_type === "blocked") {
+      state.banner = {
+        kind: "info",
+        text: `AI does not run ${selected.ticket.task_type} tasks — please handle it yourself.`,
+      };
+      renderPage("Tickets");
+      return;
+    }
+    try {
+      state.banner = { kind: "info", text: `Routing ${selected.ticket.title}…` };
+      renderPage("Tickets");
+      const result = await apiFetch<{ status: string; output?: { status?: string; would_route_to?: string } }>(
+        token,
+        `/tasks/${selected.ticket.id}/run`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      const route = result.output?.would_route_to;
+      const status = result.output?.status;
+      if (route) {
+        state.banner = {
+          kind: "success",
+          text: `${selected.ticket.title} routed to ${route} (placeholder).`,
+        };
+      } else {
+        state.banner = { kind: "info", text: `${selected.ticket.title}: ${status ?? "no route"}` };
+      }
+      await refreshTasks();
+      renderPage("Tickets");
+    } catch (error) {
+      state.lastError = error instanceof Error ? error.message : String(error);
+      renderPage("Tickets");
+    }
   }
 
   async function refreshJobs(): Promise<void> {
@@ -1813,6 +2172,201 @@ async function main(): Promise<void> {
     }
     const response = await apiFetch<{ meetings: Meeting[] }>(token, "/meetings?limit=20");
     state.meetings = response.meetings || [];
+  }
+
+  async function refreshIntegrations(): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    const response = await apiFetch<IntegrationsResponse>(token, "/integrations");
+    state.integrations = response.integrations || [];
+  }
+
+  async function refreshOpenCode(): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    state.opencode = await apiFetch<OpencodeStatus>(token, "/opencode/status");
+    state.opencodeProjects = [];
+    state.opencodeProjectsError = null;
+    if (state.opencode.state !== "running") {
+      return;
+    }
+    try {
+      const projects = await apiFetch<OpencodeProject[]>(token, "/opencode/projects");
+      state.opencodeProjects = projects || [];
+    } catch (error) {
+      state.opencodeProjectsError =
+        error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  function opencodeStateColor(state: string): string {
+    switch (state) {
+      case "running":
+        return THEME.success;
+      case "starting":
+        return THEME.accent;
+      case "disabled":
+      case "not_installed":
+      case "stopped":
+        return THEME.subtle;
+      case "failed":
+        return THEME.danger;
+      default:
+        return THEME.subtle;
+    }
+  }
+
+  function formatOpencodeUptime(seconds: number | null): string {
+    if (seconds === null || seconds === undefined) {
+      return "—";
+    }
+    const total = Math.max(0, Math.floor(seconds));
+    if (total < 60) {
+      return `${total}s`;
+    }
+    const minutes = Math.floor(total / 60);
+    if (minutes < 60) {
+      return `${minutes}m`;
+    }
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m`;
+  }
+
+  function formatOpencodeTimestamp(ms: number | null): string {
+    if (ms === null || ms === undefined) {
+      return "—";
+    }
+    try {
+      return new Date(ms).toISOString().replace("T", " ").slice(0, 19);
+    } catch {
+      return String(ms);
+    }
+  }
+
+  function renderOpenCodePage(pageRoot: BoxRenderable): void {
+    const scroll = makeScrollArea(pageRoot, accentForPage("OpenCode"));
+    activeScrollArea = scroll;
+    if (!state.opencode) {
+      scroll.add(
+        buildCard(
+          renderer,
+          "Loading",
+          accentForPage("OpenCode"),
+          "Fetching opencode status from the daemon — press Ctrl+R to refresh.",
+        ),
+      );
+      return;
+    }
+    const status = state.opencode;
+    const stateColor = opencodeStateColor(status.state);
+    const summaryLines = [
+      `State: ${status.state}` + (status.pid ? `  (pid ${status.pid})` : ""),
+      `Binary: ${status.binary_path || "—"}  (enabled=${status.enabled}, installed=${status.binary_installed})`,
+      `Listen: http://${status.host}:${status.port}`,
+      `Version: ${status.version || "—"}`,
+      `Uptime: ${formatOpencodeUptime(status.uptime_seconds)}`,
+    ];
+    if (status.last_error) {
+      summaryLines.push(`Last error: ${status.last_error}`);
+    }
+    scroll.add(
+      buildCard(renderer, "OpenCode server", stateColor, summaryLines.join("\n")),
+    );
+
+    if (status.state === "not_installed") {
+      scroll.add(
+        buildCard(
+          renderer,
+          "Install opencode",
+          THEME.subtle,
+          "The `opencode` binary is not on PATH. Install it from https://opencode.ai or set `opencode.binary_path` in your config (`nina config show`).",
+        ),
+      );
+      return;
+    }
+    if (status.state === "disabled") {
+      scroll.add(
+        buildCard(
+          renderer,
+          "OpenCode disabled",
+          THEME.subtle,
+          "Set `opencode.enabled: true` in config.yaml (or `nina config show`) and restart the daemon to enable it.",
+        ),
+      );
+      return;
+    }
+    if (status.state === "failed") {
+      scroll.add(
+        buildCard(
+          renderer,
+          "OpenCode failed to start",
+          THEME.danger,
+          status.last_error || "No detail available. Check `~/.nina/default/logs/opencode.log`.",
+          THEME.danger,
+        ),
+      );
+      return;
+    }
+    if (status.state !== "running") {
+      scroll.add(
+        buildCard(
+          renderer,
+          "Starting…",
+          THEME.accent,
+          "The supervisor is bringing the opencode server up. Press Ctrl+R to refresh.",
+        ),
+      );
+      return;
+    }
+
+    if (state.opencodeProjectsError) {
+      scroll.add(
+        buildCard(
+          renderer,
+          "Project list unavailable",
+          THEME.danger,
+          `The opencode server is healthy but its project list could not be loaded: ${state.opencodeProjectsError}`,
+          THEME.danger,
+        ),
+      );
+      return;
+    }
+
+    const projects = state.opencodeProjects;
+    if (projects.length === 0) {
+      scroll.add(
+        buildCard(
+          renderer,
+          "No projects",
+          THEME.subtle,
+          "opencode knows about no projects. Run `opencode` in a folder to register one, or pass a path to `opencode serve` to start with a specific worktree.",
+        ),
+      );
+      return;
+    }
+
+    const body = projects
+      .map((project) => {
+        const ts = project.time || { created: null, updated: null };
+        return [
+          `ID: ${project.id}`,
+          `Worktree: ${project.worktree}`,
+          `VCS: ${project.vcs || "—"}`,
+          `Created: ${formatOpencodeTimestamp(ts.created)}`,
+          `Updated: ${formatOpencodeTimestamp(ts.updated)}`,
+        ].join("\n");
+      })
+      .join("\n\n");
+    scroll.add(
+      buildCard(
+        renderer,
+        `All projects (${projects.length})`,
+        accentForPage("OpenCode"),
+        body,
+      ),
+    );
   }
 
   async function triggerMeetingPipeline(meetingId: string): Promise<void> {
@@ -2296,6 +2850,12 @@ async function main(): Promise<void> {
       case "Jobs":
         renderJobsPage(pageRoot);
         break;
+      case "Integrations":
+        renderIntegrationsPage(pageRoot);
+        break;
+      case "OpenCode":
+        renderOpenCodePage(pageRoot);
+        break;
       case "Config":
         renderConfigPage(pageRoot);
         break;
@@ -2311,7 +2871,7 @@ async function main(): Promise<void> {
     state.lastError = null;
     switch (page) {
       case "Tickets":
-        await refreshTickets();
+        await refreshTasks();
         break;
       case "Chat":
         state.chatSession = await loadConversationSession("chat", state.chatSession, "Chat");
@@ -2329,6 +2889,12 @@ async function main(): Promise<void> {
         if (state.jobsView === "detail" && state.jobsDetailJobName) {
           await refreshJobRuns(state.jobsDetailJobName);
         }
+        break;
+      case "Integrations":
+        await refreshIntegrations();
+        break;
+      case "OpenCode":
+        await refreshOpenCode();
         break;
       case "Config":
         state.config = await apiFetch<ConfigSnapshot>(token, "/config");
@@ -2599,58 +3165,69 @@ async function main(): Promise<void> {
       key.stopPropagation();
       return;
     }
+    if (state.currentPage === "Tickets" && key.ctrl && key.name === "x") {
+      state.tasksView = state.tasksView === "inbox" ? "all" : "inbox";
+      state.tasksSelectionIndex = -1;
+      renderPage("Tickets");
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
     if (state.currentPage === "Tickets" && key.ctrl && (key.name === "up" || key.name === "down")) {
-      const tickets = getKanbanTickets();
-      if (tickets.length === 0) return;
+      const tasks = getVisibleTasks();
+      if (tasks.length === 0) return;
       const direction = key.name === "up" ? -1 : 1;
-      if (state.kanbanSelectionIndex === -1) {
-        state.kanbanSelectionIndex = direction > 0 ? 0 : tickets.length - 1;
+      if (state.tasksSelectionIndex === -1) {
+        state.tasksSelectionIndex = direction > 0 ? 0 : tasks.length - 1;
       } else {
-        state.kanbanSelectionIndex = (state.kanbanSelectionIndex + direction + tickets.length) % tickets.length;
+        state.tasksSelectionIndex = (state.tasksSelectionIndex + direction + tasks.length) % tasks.length;
       }
       renderPage("Tickets");
       key.preventDefault();
       key.stopPropagation();
       return;
     }
-    if (state.currentPage === "Tickets" && key.ctrl && (key.name === "right" || key.name === "left")) {
-      const selected = getSelectedTicket();
-      if (!selected) {
-        const tickets = getKanbanTickets();
-        if (tickets.length > 0) {
-          state.kanbanSelectionIndex = 0;
-          key.preventDefault();
-          key.stopPropagation();
-          return;
-        }
+    if (state.currentPage === "Tickets" && key.ctrl && key.name === "l" && !state.detailTicket) {
+      void classifySelected();
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
+    if (state.currentPage === "Tickets" && key.ctrl && key.name === "g") {
+      const selected = getSelectedTask();
+      if (selected) {
+        void setTaskType(selected.ticket, cycleType(selected.ticket.task_type));
       } else {
-        const columns = orderedColumns(state.kanban ?? {});
-        const currentIndex = columns.indexOf(selected.column);
-        const nextIndex = key.name === "right"
-          ? Math.min(currentIndex + 1, columns.length - 1)
-          : Math.max(currentIndex - 1, 0);
-        const nextColumn = columns[nextIndex];
-        if (nextColumn !== selected.column) {
-          void (async () => {
-            try {
-              await apiFetch(token, "/kanban/move", {
-                method: "POST",
-                body: JSON.stringify({
-                  task_id: selected.ticket.id,
-                  to_column: nextColumn,
-                  to_position: 0,
-                }),
-              });
-              state.banner = { kind: "success", text: `Moved ${selected.ticket.title} to ${nextColumn}` };
-              await refreshTickets();
-              renderPage("Tickets");
-            } catch (error) {
-              state.lastError = error instanceof Error ? error.message : String(error);
-              renderPage("Tickets");
-            }
-          })();
+        state.banner = { kind: "info", text: "Select a task first." };
+        renderPage("Tickets");
+      }
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
+    if (
+      state.currentPage === "Tickets"
+      && key.ctrl
+      && key.name >= "1"
+      && key.name <= "7"
+    ) {
+      const idx = Number.parseInt(key.name, 10) - 1;
+      const newType = TASK_TYPE_ORDER[idx];
+      if (newType) {
+        const selected = getSelectedTask();
+        if (selected) {
+          void setTaskType(selected.ticket, newType);
+        } else {
+          state.banner = { kind: "info", text: "Select a task first." };
+          renderPage("Tickets");
         }
       }
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
+    if (state.currentPage === "Tickets" && key.ctrl && (key.name === "return" || key.name === "enter" || key.name === "kpenter") && !state.detailTicket) {
+      void routeSelected();
       key.preventDefault();
       key.stopPropagation();
       return;
@@ -2660,12 +3237,12 @@ async function main(): Promise<void> {
       state.pendingAction = null;
       void (async () => {
         try {
-          const endpoint = type === "delete" ? `/tickets/${ticket.id}` : `/tasks/${ticket.id}/archive`;
+          const endpoint = type === "delete" ? `/tasks/${ticket.id}` : `/tasks/${ticket.id}/archive`;
           const method = type === "delete" ? "DELETE" : "POST";
           await apiFetch(token, endpoint, { method });
-          state.banner = { kind: "success", text: `${type === "delete" ? "Deleted" : "Archived"} ticket ${ticket.id}` };
-          state.kanbanSelectionIndex = -1;
-          await refreshTickets();
+          state.banner = { kind: "success", text: `${type === "delete" ? "Deleted" : "Archived"} task ${ticket.id}` };
+          state.tasksSelectionIndex = -1;
+          await refreshTasks();
           renderPage("Tickets");
         } catch (error) {
           state.lastError = error instanceof Error ? error.message : String(error);
@@ -2684,7 +3261,7 @@ async function main(): Promise<void> {
       return;
     }
     if (state.currentPage === "Tickets" && key.ctrl && key.name === "d") {
-      const selected = getSelectedTicket();
+      const selected = getSelectedTask();
       if (selected) {
         state.pendingAction = { type: "delete", ticket: selected.ticket };
         renderPage("Tickets");
@@ -2694,7 +3271,7 @@ async function main(): Promise<void> {
       return;
     }
     if (state.currentPage === "Tickets" && key.ctrl && key.name === "a") {
-      const selected = getSelectedTicket();
+      const selected = getSelectedTask();
       if (selected) {
         state.pendingAction = { type: "archive", ticket: selected.ticket };
         renderPage("Tickets");
@@ -2715,7 +3292,7 @@ async function main(): Promise<void> {
         state.detailTicket = null;
         renderPage("Tickets");
       } else {
-        const selected = getSelectedTicket();
+        const selected = getSelectedTask();
         if (selected) {
           state.detailTicket = selected.ticket;
           renderPage("Tickets");

@@ -34,27 +34,29 @@ def test_tickets_create(tool_context: ToolContext) -> None:
     register_write_tools(registry)
     result = registry.execute(
         "tickets_create",
-        {"title": "Test ticket", "description": "A test"},
+        {"title": "Test ticket", "description": "A test", "auto_classify": False},
         tool_context,
     )
     assert "ticket" in result
     assert result["ticket"]["title"] == "Test ticket"
-    assert result["ticket"]["kanban_column"] == "Todo"
+    assert result["ticket"]["task_type"] == "unclassified"
+    assert result["ticket"]["status"] == "idle"
 
 
-def test_tickets_create_and_move(tool_context: ToolContext) -> None:
+def test_tickets_update_changes_task_type(tool_context: ToolContext) -> None:
     registry = ToolRegistry()
     register_default_tools(registry)
     register_write_tools(registry)
     result = registry.execute(
         "tickets_create",
-        {"title": "Test", "kanban_column": "Doing"},
+        {"title": "Test", "auto_classify": False},
         tool_context,
     )
     ticket_id = result["ticket"]["id"]
-    moved = registry.execute("tickets_move", {"id": ticket_id, "column": "Review"}, tool_context)
-    assert moved["ticket"]["kanban_column"] == "Review"
-    assert moved["ticket"]["status"] == "review"
+    updated = registry.execute(
+        "tickets_update", {"id": ticket_id, "task_type": "coding"}, tool_context
+    )
+    assert updated["ticket"]["task_type"] == "coding"
 
 
 def test_notes_create_appends_to_vault(tool_context: ToolContext) -> None:

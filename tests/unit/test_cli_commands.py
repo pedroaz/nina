@@ -58,26 +58,25 @@ def _patch_popen_capture(monkeypatch: pytest.MonkeyPatch, captured: dict[str, An
     monkeypatch.setattr(config_module.subprocess, "Popen", _fake_popen)
 
 
-def test_task_move_calls_kanban_move_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_task_classify_calls_classify_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, str, dict[str, Any]]] = []
 
     def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
         calls.append((method, path, kwargs))
-        return FakeResponse({"id": "task-1", "kanban_column": "Doing", "kanban_position": 2})
+        return FakeResponse(
+            {
+                "status": "completed",
+                "output": {"task_type": "coding", "reason": "clearly a coding task"},
+            }
+        )
 
     monkeypatch.setattr("nina_cli.task_commands.request", fake_request)
 
-    result = runner.invoke(app, ["task", "move", "task-1", "--column", "Doing", "--position", "2"])
+    result = runner.invoke(app, ["task", "classify", "task-1"])
 
     assert result.exit_code == 0
-    assert calls == [
-        (
-            "POST",
-            "/kanban/move",
-            {"json": {"task_id": "task-1", "to_column": "Doing", "to_position": 2}},
-        )
-    ]
-    assert "Moved task task-1 to Doing:2" in result.stdout
+    assert calls == [("POST", "/tasks/task-1/classify", {})]
+    assert "Classified task task-1 as coding" in result.stdout
 
 
 def test_job_create_and_run_call_expected_endpoints(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -463,7 +462,7 @@ def test_config_vault_command_updates_config_and_vault_structure(
     assert result.exit_code == 0
     config = load_effective_config(isolated_config)
     assert config.vault_path == str(custom_vault)
-    assert (custom_vault / "Projects").exists()
+    assert (custom_vault / "Tasks").exists()
     assert (custom_vault / "System" / "Deleted").exists()
     assert "Vault path:" in result.stdout
 
@@ -662,7 +661,7 @@ def test_ticket_create_calls_ticket_endpoint(monkeypatch) -> None:  # type: igno
 
     def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
         calls.append((method, path, kwargs))
-        return FakeResponse({"id": "ticket-1"})
+        return FakeResponse({"id": "ticket-1", "task_type": "unclassified"})
 
     monkeypatch.setattr("nina_cli.ticket_commands.request", fake_request)
 
@@ -671,7 +670,7 @@ def test_ticket_create_calls_ticket_endpoint(monkeypatch) -> None:  # type: igno
         ["ticket", "create", "Fix daemon stop", "--description", "Recursion bug"],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert calls == [
         (
             "POST",

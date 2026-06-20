@@ -6,70 +6,63 @@ All timestamps should be stored in UTC using ISO 8601 text.
 
 ## projects
 
-```sql
-CREATE TABLE projects (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT "",
-  status TEXT NOT NULL DEFAULT "active",
-  note_path TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-```
-
-Status values:
-
-- `active`
-- `paused`
-- `done`
-- `deleted`
+This table was removed when Nina dropped its own project concept in favor of
+letting the supervised opencode server own "project = folder" identity. The
+hand-written migration in `db/init.py` drops it on next `create_database()`.
 
 ## tasks
 
 ```sql
 CREATE TABLE tasks (
   id TEXT PRIMARY KEY,
-  project_id TEXT REFERENCES projects(id),
+  opencode_project_id TEXT,            -- server-assigned opencode project id (no FK)
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT "",
-  status TEXT NOT NULL DEFAULT "todo",
-  kanban_column TEXT NOT NULL DEFAULT "Todo",
-  kanban_position INTEGER NOT NULL DEFAULT 0,
+  task_type TEXT NOT NULL DEFAULT "unclassified",
+  status TEXT NOT NULL DEFAULT "idle",
+  classified_at TEXT,
+  classification_reason TEXT,
+  classification_model TEXT,
   note_path TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 ```
 
-Initial status values:
+`task_type` is the lifecycle axis. The classifier workflow chooses one of these
+on creation (or the user can set it directly via `PATCH /tasks/{id}`):
 
-- `backlog`
-- `todo`
-- `doing`
-- `review`
-- `done`
-- `deleted`
+- `unclassified` — the inbox marker. The AI has not decided yet.
+- `reminder` — a personal reminder the user needs to act on.
+- `research` — open-ended investigation the AI can answer by reading/writing notes.
+- `coding` — a development task the AI can work on.
+- `blocked` — waiting on someone or something else.
+- `done` — the work is already complete.
+- `human` — needs the user to do something the AI cannot.
+
+`status` is the agent's working/idle flag:
+
+- `idle`
+- `working` — flipped by the `run-task` workflow while a real handler runs.
+
+`opencode_project_id` is the opaque id the supervised opencode server returns
+for a registered worktree (`GET /project`). Nina does not validate it; if
+opencode forgets that id, the task is unlinked but its note and DB row stay
+intact. The hand-written migration in `db/init.py` renames the legacy
+`project_id` column to `opencode_project_id` (best-effort) and drops the
+`projects` table on next `create_database()`.
+
+Archived tasks use `task_type = "archived"`. Soft-deleted tasks use
+`task_type = "deleted"`.
+
+The legacy `kanban_column` + `kanban_position` columns and the `kanban_columns`
+table were dropped when this model landed. The lightweight migration in
+`db/init.py` removes them on next `create_database()`.
 
 ## kanban_columns
 
-```sql
-CREATE TABLE kanban_columns (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  position INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-```
-
-Seed columns:
-
-1. Backlog
-2. Todo
-3. Doing
-4. Review
-5. Done
+This table was removed when tasks were moved to the type-grouped model. The
+lightweight migration in `db/init.py` drops it if present.
 
 ## notes
 

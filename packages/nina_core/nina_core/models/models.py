@@ -1,5 +1,4 @@
 from sqlalchemy import Column, ForeignKey, Integer, Text
-from sqlalchemy.orm import relationship
 
 from nina_core.db.engine import Base  # type: ignore[import-untyped]
 
@@ -10,37 +9,33 @@ def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class Project(Base):
-    __tablename__ = "projects"
-    id = Column(Text, primary_key=True)
-    name = Column(Text, nullable=False)
-    description = Column(Text, nullable=False, default="")
-    status = Column(Text, nullable=False, default="active")
-    note_path = Column(Text)
-    created_at = Column(Text, nullable=False, default=now_utc)
-    updated_at = Column(Text, nullable=False, default=now_utc)
+TASK_TYPES = (
+    "unclassified",
+    "reminder",
+    "research",
+    "coding",
+    "blocked",
+    "done",
+    "human",
+)
+TASK_AGENT_STATUSES = ("idle", "working")
 
 
 class Task(Base):
     __tablename__ = "tasks"
     id = Column(Text, primary_key=True)
-    project_id = Column(Text, ForeignKey("projects.id"))
+    # Server-assigned opencode project id (no FK — opaque to Nina).
+    # Tasks whose work lives in an opencode-managed folder set this to the
+    # id returned by `GET /project`. Nullable: a task can be unlinked.
+    opencode_project_id = Column(Text)
     title = Column(Text, nullable=False)
     description = Column(Text, nullable=False, default="")
-    status = Column(Text, nullable=False, default="todo")
-    kanban_column = Column(Text, nullable=False, default="Todo")
-    kanban_position = Column(Integer, nullable=False, default=0)
+    task_type = Column(Text, nullable=False, default="unclassified")
+    status = Column(Text, nullable=False, default="idle")
+    classified_at = Column(Text)
+    classification_reason = Column(Text)
+    classification_model = Column(Text)
     note_path = Column(Text)
-    created_at = Column(Text, nullable=False, default=now_utc)
-    updated_at = Column(Text, nullable=False, default=now_utc)
-    project = relationship("Project")
-
-
-class KanbanColumn(Base):
-    __tablename__ = "kanban_columns"
-    id = Column(Text, primary_key=True)
-    name = Column(Text, nullable=False, unique=True)
-    position = Column(Integer, nullable=False)
     created_at = Column(Text, nullable=False, default=now_utc)
     updated_at = Column(Text, nullable=False, default=now_utc)
 
@@ -170,6 +165,17 @@ class NoteEmbedding(Base):
     content_hash = Column(Text, nullable=False)
     created_at = Column(Text, nullable=False, default=now_utc)
     updated_at = Column(Text, nullable=False, default=now_utc)
+
+
+class IntegrationTest(Base):
+    __tablename__ = "integration_tests"
+    id = Column(Text, primary_key=True)
+    integration_name = Column(Text, nullable=False, index=True)
+    status = Column(Text, nullable=False)
+    latency_ms = Column(Integer, nullable=False, default=0)
+    identity_json = Column(Text)
+    error = Column(Text)
+    created_at = Column(Text, nullable=False, default=now_utc, index=True)
 
 
 class Meeting(Base):

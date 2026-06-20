@@ -1,4 +1,4 @@
-.PHONY: help build b doctor uninstall format lint typecheck test test-unit test-integration check smoke dev-init dev-reset dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs start stop status logs cli c chat tui t promote
+.PHONY: help build b doctor uninstall format lint typecheck test test-unit test-integration check smoke dev-init dev-reset dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs start stop status logs cli c chat tui promote
 
 PYTHON := uv run python
 UV := uv
@@ -28,7 +28,7 @@ help:
 	@echo "  dev-reset         - Delete isolated dev config, DB, and vault"
 	@echo "  promote           - Copy temp data to real data with a backup"
 	@echo "  cli, c ARGS=...   - Run CLI against isolated dev daemon"
-	@echo "  tui, t            - Run TUI against isolated dev daemon"
+	@echo "  tui               - Run TUI against isolated dev daemon"
 	@echo ""
 	@echo "Config variables:"
 	@echo "  DEV_CONFIG_DIR=$(DEV_CONFIG_DIR)"
@@ -127,8 +127,6 @@ chat:
 
 tui:
 	@cd apps/tui && NINA_CONFIG_DIR=../../$(DEV_CONFIG_DIR) bun run src/main.ts
-
-t: tui
 
 promote:
 	$(PYTHON) scripts/nina_dev.py promote --source $(DEV_CONFIG_DIR) --dest $(REAL_CONFIG_DIR)

@@ -13,7 +13,6 @@ from typing import Sequence
 ALLOWED_TOP_LEVEL_COMMANDS = {
     "ask",
     "job",
-    "kanban",
     "project",
     "research",
     "task",

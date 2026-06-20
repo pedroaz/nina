@@ -13,12 +13,31 @@ task_app = typer.Typer(help="Task commands")
 
 
 @task_app.command("list")
-def task_list() -> None:
-    resp = request("GET", "/tasks")
+def task_list(
+    task_type: str | None = typer.Option(None, "--type", help="Filter by task_type"),
+    status: str | None = typer.Option(None, help="Filter by agent status (idle/working)"),
+    include_archived: bool = typer.Option(False, "--all", help="Include archived tasks"),
+) -> None:
+    params: dict[str, Any] = {}
+    if task_type:
+        params["task_type"] = task_type
+    if status:
+        params["status"] = status
+    if include_archived:
+        params["include_archived"] = "true"
+    qs = "&".join(f"{k}={v}" for k, v in params.items())
+    path = "/tasks" + (f"?{qs}" if qs else "")
+    resp = request("GET", path)
     tasks = resp.json()
-    table = Table("ID", "Title", "Status", "Column")
+    table = Table("ID", "Title", "Type", "Status", "opencode_project_id")
     for t in tasks:
-        table.add_row(t["id"], t["title"], t["status"], t["kanban_column"])
+        table.add_row(
+            t["id"],
+            t["title"],
+            t["task_type"],
+            t["status"],
+            t.get("opencode_project_id") or "",
+        )
     console.print(table)
 
 
@@ -26,14 +45,28 @@ def task_list() -> None:
 def task_create(
     title: str,
     description: str = typer.Option("", help="Description"),
-    project_id: str = typer.Option(None, help="Project ID"),
+    opencode_project_id: str = typer.Option(
+        None, "--opencode-project-id", help="Server-assigned opencode project id"
+    ),
+    task_type: str = typer.Option(
+        None,
+        "--type",
+        help="Initial task_type (defaults to unclassified, which triggers AI classification)",
+    ),
+    no_classify: bool = typer.Option(
+        False, "--no-classify", help="Skip the background AI classifier"
+    ),
 ) -> None:
     data: dict[str, Any] = {"title": title, "description": description}
-    if project_id:
-        data["project_id"] = project_id
+    if opencode_project_id:
+        data["opencode_project_id"] = opencode_project_id
+    if task_type:
+        data["task_type"] = task_type
+    if no_classify:
+        data["auto_classify"] = False
     resp = request("POST", "/tasks", json=data)
     t = resp.json()
-    console.print(f"Created task {t['id']}")
+    console.print(f"Created task {t['id']} (type={t['task_type']})")
 
 
 @task_app.command("show")
@@ -42,8 +75,15 @@ def task_show(task_id: str) -> None:
     t = resp.json()
     console.print(f"ID: {t['id']}")
     console.print(f"Title: {t['title']}")
+    console.print(f"Type: {t['task_type']}")
     console.print(f"Status: {t['status']}")
-    console.print(f"Column: {t['kanban_column']}")
+    if t.get("opencode_project_id"):
+        console.print(f"opencode_project_id: {t['opencode_project_id']}")
+    console.print(f"Classified at: {t['classified_at'] or '(not yet)'}")
+    if t["classification_reason"]:
+        console.print(f"Reason: {t['classification_reason']}")
+    if t["classification_model"]:
+        console.print(f"Model: {t['classification_model']}")
     console.print(f"Note: {t['note_path']}")
 
 
@@ -53,65 +93,69 @@ def task_delete(task_id: str) -> None:
     console.print(f"Deleted task {task_id}")
 
 
-@task_app.command("update")
-def task_update(
-    task_id: str,
-    title: str = typer.Option(None, help="Title"),
-    status: str = typer.Option(None, help="Status"),
-    column: str = typer.Option(None, help="Kanban column"),
-) -> None:
-    data: dict[str, Any] = {}
-    if title:
-        data["title"] = title
-    if status:
-        data["status"] = status
-    if data:
-        request("PATCH", f"/tasks/{task_id}", json=data)
-    if column:
-        request(
-            "POST",
-            "/kanban/move",
-            json={"task_id": task_id, "to_column": column, "to_position": 0},
-        )
-    console.print(f"Updated task {task_id}")
+@task_app.command("classify")
+def task_classify(task_id: str) -> None:
+    """Re-run the AI classifier on a task."""
 
-
-@task_app.command("move")
-def task_move(
-    task_id: str,
-    column: str = typer.Option(..., "--column", "--to", help="Target kanban column"),
-    position: int = typer.Option(0, help="Target zero-based position"),
-) -> None:
-    resp = request(
-        "POST",
-        "/kanban/move",
-        json={"task_id": task_id, "to_column": column, "to_position": position},
+    resp = request("POST", f"/tasks/{task_id}/classify")
+    payload = resp.json()
+    if payload.get("status") != "completed":
+        console.print(f"Classification failed: {payload}")
+        raise typer.Exit(1)
+    output = payload.get("output", {})
+    console.print(
+        f"Classified task {task_id} as {output.get('task_type')}"
+        + (f" — {output.get('reason')}" if output.get("reason") else "")
     )
-    task = resp.json()
-    console.print(f"Moved task {task['id']} to {task['kanban_column']}:{task['kanban_position']}")
 
 
-@task_app.command("done")
-def task_done(task_id: str) -> None:
-    request("PATCH", f"/tasks/{task_id}", json={"status": "done"})
-    resp = request(
-        "POST",
-        "/kanban/move",
-        json={"task_id": task_id, "to_column": "Done", "to_position": 0},
-    )
-    task = resp.json()
-    console.print(f"Completed task {task['id']}")
+@task_app.command("type")
+def task_type(task_id: str, new_type: str) -> None:
+    """Set the task_type directly, bypassing the AI classifier."""
+
+    request("PATCH", f"/tasks/{task_id}", json={"task_type": new_type})
+    console.print(f"Task {task_id} is now {new_type}")
+
+
+@task_app.command("run")
+def task_run(task_id: str) -> None:
+    """Route the task to its handler. Stub for now."""
+
+    resp = request("POST", f"/tasks/{task_id}/run")
+    payload = resp.json()
+    if payload.get("status") != "completed":
+        console.print(f"Run failed: {payload}")
+        raise typer.Exit(1)
+    output = payload.get("output", {})
+    would = output.get("would_route_to")
+    if would:
+        console.print(f"Task {task_id} routed to {would} (placeholder).")
+    else:
+        console.print(f"Task {task_id} skipped: {output.get('reason', 'no route')}")
 
 
 @task_app.command("archive")
 def task_archive(task_id: str) -> None:
     resp = request("POST", f"/tasks/{task_id}/archive")
     task = resp.json()
-    console.print(f"Archived task {task['id']} -> {task['status']}")
+    console.print(f"Archived task {task['id']}")
 
 
 @task_app.command("unarchive")
 def task_unarchive(task_id: str) -> None:
     resp = request("POST", f"/tasks/{task_id}/unarchive")
     task = resp.json()
-    console.print(f"Unarchived task {task['id']} -> {task['status']}")
+    console.print(f"Unarchived task {task['id']}")
+
+
+@task_app.command("board")
+def task_board() -> None:
+    """Print the type-grouped view (replaces `nina kanban show`)."""
+
+    resp = request("GET", "/tasks/grouped-by-type")
+    grouped = resp.json()
+    table = Table("Type", "Count", "IDs")
+    for task_type, items in grouped.items():
+        ids = ", ".join(item["id"] for item in items)
+        table.add_row(task_type, str(len(items)), ids)
+    console.print(table)

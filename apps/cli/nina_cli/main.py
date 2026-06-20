@@ -29,16 +29,16 @@ from nina_core.config import (
 from nina_core.llm.provider import check_provider_status, codex_auth_status
 from nina_core.llm.transcription import check_transcription_status
 
-from .api import api_base, request
+from .api import api_base, headers, request
 from .chat_commands import chat_app
 from .config_commands import config_app
+from .integrations_commands import integrations_app
 from .job_commands import job_app
-from .kanban_commands import kanban_app
 from .setup_commands import setup_app
 from .llm_commands import llm_app
 from .meeting_commands import meeting_app, record_meeting
 from .notes_commands import note_app
-from .project_commands import project_app
+from .opencode_commands import opencode_app
 from .providers_commands import providers_app
 from .research_commands import research_app
 from .search_commands import search_app
@@ -69,12 +69,18 @@ def _print_short_help() -> None:
         "  help = compact help (alias for `h`)\n"
         "  t = tui                  d = daemon              -h = --help\n"
         "  n = note                 p = project             tk = ticket\n"
-        "  k = kanban               j = job                 c = config\n"
+        "  j = job                  c = config\n"
         "  rch = research           s = search              ll = llm\n"
+        "  int = integrations\n"
         "\n"
         "[bold]Meeting subcommands[/bold] (via `nina mt ...`):\n"
         "  ls = list    e = pipeline (transcribe + summarize)    s = stop\n"
         "  o = open     p = play          rm = delete      x = show\n"
+        "\n"
+        "[bold]Task subcommands[/bold] (via `nina task ...` or `nina tk ...`):\n"
+        "  list / ls       create         show          type <id> <t>\n"
+        "  classify <id>   run <id>       archive       unarchive     delete\n"
+        "  board                                          (type-grouped view)\n"
         "\n"
         "[bold]Run[/bold] [cyan]nina <command> --help[/cyan] [bold]for options.[/bold]"
     )
@@ -141,14 +147,12 @@ app.add_typer(config_app, name="config")
 _add_alias(app, config_app, "c")
 app.add_typer(note_app, name="note")
 _add_alias(app, note_app, "n")
-app.add_typer(project_app, name="project")
-_add_alias(app, project_app, "p")
+app.add_typer(opencode_app, name="opencode")
+_add_alias(app, opencode_app, "oc")
 app.add_typer(providers_app, name="providers")
 app.add_typer(task_app, name="task")
 app.add_typer(ticket_app, name="ticket")
 _add_alias(app, ticket_app, "tk")
-app.add_typer(kanban_app, name="kanban")
-_add_alias(app, kanban_app, "k")
 app.add_typer(job_app, name="job")
 _add_alias(app, job_app, "j")
 app.add_typer(llm_app, name="llm")
@@ -160,6 +164,8 @@ _add_alias(app, research_app, "rch")
 app.add_typer(search_app, name="search")
 _add_alias(app, search_app, "s")
 app.add_typer(setup_app, name="setup")
+app.add_typer(integrations_app, name="integrations")
+_add_alias(app, integrations_app, "int")
 
 
 def _resolve_tui_binary() -> Path | None:
@@ -431,6 +437,35 @@ def _format_meeting_pipeline_status(config: NinaConfig) -> str:
     return f"Meeting pipeline: degraded ({'; '.join(issues)})"
 
 
+def _format_opencode_status() -> str:
+    """Surface the supervised opencode server state in `nina status`.
+
+    Goes through the daemon's `/opencode/status` endpoint so we don't need
+    to know whether the daemon was started in this process. Falls back to
+    a clean "not running" line if the daemon is offline.
+    """
+    try:
+        resp = httpx.get(f"{api_base()}/opencode/status", headers=headers(), timeout=2)
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError, TypeError):
+        return "OpenCode: (unknown — daemon offline)"
+    state = data.get("state", "unknown")
+    if state == "running":
+        version = data.get("version") or "?"
+        host = data.get("host", "?")
+        port = data.get("port", "?")
+        return f"OpenCode: {version} (running) @ http://{host}:{port}"
+    if state == "disabled":
+        return "OpenCode: disabled (set `opencode.enabled: true` in config)"
+    if state == "not_installed":
+        return "OpenCode: not installed (binary not on PATH)"
+    detail = data.get("last_error") or ""
+    if detail:
+        return f"OpenCode: {state} — {detail}"
+    return f"OpenCode: {state}"
+
+
 def _format_config_warnings(config: NinaConfig) -> list[str]:
     warnings: list[str] = []
     provider = (config.llm.provider or "").lower()
@@ -616,6 +651,8 @@ def status(
     console.print(_format_llm_status(config))
     console.print(_format_transcription_status(config))
     console.print(_format_meeting_pipeline_status(config))
+    if running:
+        console.print(_format_opencode_status())
     warnings = _format_config_warnings(config)
     if warnings:
         console.print()

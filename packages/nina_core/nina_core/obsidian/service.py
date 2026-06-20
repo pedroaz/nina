@@ -6,7 +6,7 @@ from typing import Any, Iterable, Mapping
 
 import frontmatter
 
-from nina_core.models.models import Project, Task
+from nina_core.models.models import Task
 
 
 def _slugify(value: str) -> str:
@@ -25,51 +25,8 @@ class ObsidianService:
         path.write_text(frontmatter.dumps(post))
         return path
 
-    def _project_path(self, project: Project) -> Path:
-        return self.vault_path / "Projects" / f"{project.name.replace(' ', '-').lower()}.md"
-
     def _task_path(self, task: Task) -> Path:
         return self.vault_path / "Tasks" / f"{task.title.replace(' ', '-').lower()}.md"
-
-    def create_project_note(self, project: Project) -> None:
-        path = self._project_path(project)
-        post = frontmatter.Post(
-            f"""# {project.name}
-
-## Description
-
-{project.description}
-""",
-            nina_type="project",
-            nina_id=project.id,
-            status=project.status,
-            created_at=project.created_at,
-            updated_at=project.updated_at,
-        )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(frontmatter.dumps(post))
-        project.note_path = str(path.relative_to(self.vault_path))
-
-    def update_project_note(self, project: Project) -> None:
-        path = self._project_path(project)
-        if path.exists():
-            post = frontmatter.loads(path.read_text())
-            post.content = f"""# {project.name}
-
-## Description
-
-{project.description}
-"""
-            post.metadata["status"] = project.status
-            post.metadata["updated_at"] = project.updated_at
-            path.write_text(frontmatter.dumps(post))
-
-    def delete_project_note(self, project: Project) -> None:
-        path = self._project_path(project)
-        if path.exists():
-            deleted_dir = self.vault_path / "System" / "Deleted"
-            deleted_dir.mkdir(parents=True, exist_ok=True)
-            os.rename(path, deleted_dir / path.name)
 
     def create_task_note(self, task: Task) -> None:
         path = self._task_path(task)
@@ -82,9 +39,12 @@ class ObsidianService:
 """,
             nina_type="task",
             nina_id=task.id,
+            task_type=task.task_type,
             status=task.status,
-            project_id=task.project_id,
-            kanban_column=task.kanban_column,
+            opencode_project_id=task.opencode_project_id,
+            classified_at=task.classified_at,
+            classification_reason=task.classification_reason,
+            classification_model=task.classification_model,
             created_at=task.created_at,
             updated_at=task.updated_at,
         )
@@ -102,9 +62,12 @@ class ObsidianService:
 
 {task.description}
 """
+            post.metadata["task_type"] = task.task_type
             post.metadata["status"] = task.status
-            post.metadata["project_id"] = task.project_id
-            post.metadata["kanban_column"] = task.kanban_column
+            post.metadata["opencode_project_id"] = task.opencode_project_id
+            post.metadata["classified_at"] = task.classified_at
+            post.metadata["classification_reason"] = task.classification_reason
+            post.metadata["classification_model"] = task.classification_model
             post.metadata["updated_at"] = task.updated_at
             path.write_text(frontmatter.dumps(post))
 

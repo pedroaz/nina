@@ -9,48 +9,71 @@ from fastapi.testclient import TestClient
 pytestmark = pytest.mark.integration
 
 
-def test_task_creation_and_kanban_move_update_status_and_note(
+def test_task_creation_and_classification_patches_task_and_note(
     api_client: TestClient,
     auth_headers: dict[str, str],
     isolated_config: Path,
+    fake_llm,
 ) -> None:
+    fake_llm.queue_text('{"task_type": "coding", "reason": "refactor is a coding task"}')
+    fake_llm.queue_text('{"task_type": "reminder", "reason": "messaging a colleague"}')
+
     first = api_client.post(
         "/tasks",
         headers=auth_headers,
-        json={"title": "First task", "description": ""},
+        json={"title": "Refactor the auth module", "description": "Split it into smaller files."},
     )
     assert first.status_code == 200
-    assert first.json()["kanban_column"] == "Todo"
-    assert first.json()["kanban_position"] == 0
+    first_id = first.json()["id"]
+    assert first.json()["task_type"] == "unclassified"
+    assert first.json()["status"] == "idle"
 
     second = api_client.post(
         "/tasks",
         headers=auth_headers,
-        json={"title": "Second task", "description": ""},
+        json={"title": "Email Sarah about Q3 numbers", "description": ""},
     )
     assert second.status_code == 200
-    task_id = second.json()["id"]
-    assert second.json()["kanban_position"] == 1
+    second_id = second.json()["id"]
+    assert second.json()["task_type"] == "unclassified"
 
-    moved = api_client.post(
-        "/kanban/move",
-        headers=auth_headers,
-        json={"task_id": task_id, "to_column": "Doing", "to_position": 0},
-    )
-    assert moved.status_code == 200
-    assert moved.json()["kanban_column"] == "Doing"
-    assert moved.json()["kanban_position"] == 0
-    assert moved.json()["status"] == "doing"
+    # The background classifier runs in a thread; give it a moment.
+    _wait_for_classification(api_client, auth_headers, first_id, expected="coding")
+    _wait_for_classification(api_client, auth_headers, second_id, expected="reminder")
 
-    board = api_client.get("/kanban", headers=auth_headers)
-    assert board.status_code == 200
-    assert [task["title"] for task in board.json()["Todo"]] == ["First task"]
-    assert [task["title"] for task in board.json()["Doing"]] == ["Second task"]
+    first_now = api_client.get(f"/tasks/{first_id}", headers=auth_headers).json()
+    assert first_now["task_type"] == "coding"
+    assert first_now["classified_at"]
+    assert first_now["classification_model"]
+    assert first_now["classification_reason"]
 
-    note_path = isolated_config / "vault" / moved.json()["note_path"]
+    note_path = isolated_config / "vault" / first_now["note_path"]
     note = frontmatter.loads(note_path.read_text())
-    assert note.metadata["status"] == "doing"
-    assert note.metadata["kanban_column"] == "Doing"
+    assert note.metadata["task_type"] == "coding"
+    assert note.metadata["classified_at"] == first_now["classified_at"]
+
+
+def _wait_for_classification(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    task_id: str,
+    *,
+    expected: str,
+    timeout: float = 5.0,
+) -> dict[str, object]:
+    """Poll the task until the background classifier finishes."""
+
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        resp = api_client.get(f"/tasks/{task_id}", headers=auth_headers)
+        assert resp.status_code == 200
+        payload = resp.json()
+        if payload["task_type"] == expected:
+            return payload
+        time.sleep(0.05)
+    raise AssertionError(f"Task {task_id} did not classify as {expected!r} within {timeout}s")
 
 
 def test_ask_answers_from_obsidian_notes(
@@ -127,11 +150,14 @@ def test_jobs_can_be_created_toggled_run_and_observed(
     assert [job_run["status"] for job_run in runs.json()] == ["completed"]
 
 
-def test_ticket_alias_creates_moves_and_reads_same_note(
+def test_ticket_alias_creates_and_classifies_via_ticket_routes(
     api_client: TestClient,
     auth_headers: dict[str, str],
     isolated_config: Path,
+    fake_llm,
 ) -> None:
+    fake_llm.queue_text('{"task_type": "coding", "reason": "default to coding for now"}')
+
     created = api_client.post(
         "/tickets",
         headers=auth_headers,
@@ -139,14 +165,9 @@ def test_ticket_alias_creates_moves_and_reads_same_note(
     )
     assert created.status_code == 200
     ticket_id = created.json()["id"]
+    assert created.json()["task_type"] == "unclassified"
 
-    moved = api_client.post(
-        "/kanban/move",
-        headers=auth_headers,
-        json={"task_id": ticket_id, "to_column": "Doing", "to_position": 0},
-    )
-    assert moved.status_code == 200
-    assert moved.json()["kanban_column"] == "Doing"
+    _wait_for_classification(api_client, auth_headers, ticket_id, expected="coding")
 
     listed = api_client.get("/tickets", headers=auth_headers)
     assert listed.status_code == 200
@@ -154,13 +175,12 @@ def test_ticket_alias_creates_moves_and_reads_same_note(
 
     show = api_client.get(f"/tickets/{ticket_id}", headers=auth_headers)
     assert show.status_code == 200
-    assert show.json()["kanban_column"] == "Doing"
+    assert show.json()["task_type"] == "coding"
 
     note_path = isolated_config / "vault" / show.json()["note_path"]
     note = frontmatter.loads(note_path.read_text())
     assert note.metadata["nina_type"] == "task"
-    assert note.metadata["status"] == "doing"
-    assert note.metadata["kanban_column"] == "Doing"
+    assert note.metadata["task_type"] == "coding"
 
 
 def test_chat_sessions_use_obsidian_context(
@@ -355,7 +375,7 @@ def test_config_endpoint_updates_runtime_and_reports_restart_requirement(
     assert payload["config"]["daemon_port"] == 9123
     assert payload["config"]["llm"]["provider"] == "fake"
     assert payload["config"]["scheduler"]["daily_summary_time"] == "08:30"
-    assert (custom_vault / "Projects").exists()
+    assert (custom_vault / "Tasks").exists()
 
     health = api_client.get("/health", headers=auth_headers)
     assert health.status_code == 200

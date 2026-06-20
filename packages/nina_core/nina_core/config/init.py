@@ -15,7 +15,6 @@ from .settings import NinaConfig
 from .token import generate_token, write_token
 
 VAULT_FOLDERS = [
-    "Projects",
     "Tasks",
     "Daily",
     "Meetings",
@@ -48,6 +47,14 @@ def initialize(
 
     config_path = get_config_path(config_dir)
     if config_path.exists() and not force:
+        # Even on a no-op re-init, make sure the opencode password exists
+        # so the daemon can boot a supervised opencode child.
+        from nina_core.opencode.password import (  # type: ignore[import-untyped]
+            ensure_password_file,
+        )
+
+        config = NinaConfig.load(config_path)
+        ensure_password_file(config_dir, config.opencode.password_ref, force=False)
         return
 
     config = NinaConfig(profile=profile).with_resolved_paths(config_dir)
@@ -66,6 +73,12 @@ def initialize(
     if not db_path.exists():
         create_database(str(db_path))
         create_fts_table(str(db_path))
+
+    from nina_core.opencode.password import (  # type: ignore[import-untyped]
+        ensure_password_file,
+    )
+
+    ensure_password_file(config_dir, config.opencode.password_ref, force=force)
 
     log_path = get_log_path(config_dir)
     if not log_path.exists():

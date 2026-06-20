@@ -4,16 +4,17 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from .engine import Base  # type: ignore[import-untyped]
-from .seed import seed_kanban_columns, seed_scheduled_jobs
+from .seed import seed_scheduled_jobs
 
 
 def create_database(db_path: str) -> None:
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
     Base.metadata.create_all(engine)  # type: ignore[union-attr]
     _apply_lightweight_migrations(engine)
+    _drop_legacy_kanban_columns(engine)
+    _drop_projects_rename_task_column(engine)
     SessionLocal: Any = sessionmaker(bind=engine)
     db = SessionLocal()
-    seed_kanban_columns(db)
     seed_scheduled_jobs(db)
     db.commit()
     db.close()
@@ -49,6 +50,81 @@ def _apply_lightweight_migrations(engine: Any) -> None:
                     f"ALTER TABLE {table_name} ADD COLUMN {column.name} {type_sql}{default_clause}"
                 )
                 conn.execute(text(statement))
+        conn.commit()
+
+
+def _drop_legacy_kanban_columns(engine: Any) -> None:
+    """Remove the kanban column artifacts from older Nina databases.
+
+    The pre-2026 task model had a `kanban_column` + `kanban_position` pair plus
+    a `kanban_columns` table. The new model drops both. SQLite supports
+    `ALTER TABLE DROP COLUMN` since 3.35.0; we run best-effort `DROP`s and
+    ignore failures on older builds so the rest of the migration still applies.
+    """
+
+    inspector = inspect(engine)
+    with engine.connect() as conn:
+        if inspector.has_table("tasks"):
+            existing = {c["name"] for c in inspector.get_columns("tasks")}
+            for column in ("kanban_column", "kanban_position"):
+                if column in existing:
+                    try:
+                        conn.execute(text(f"ALTER TABLE tasks DROP COLUMN {column}"))
+                    except Exception:  # noqa: BLE001
+                        pass
+        if inspector.has_table("kanban_columns"):
+            try:
+                conn.execute(text("DROP TABLE kanban_columns"))
+            except Exception:  # noqa: BLE001
+                pass
+        conn.commit()
+
+
+def _drop_projects_rename_task_column(engine: Any) -> None:
+    """One-shot migration: drop the `projects` table and rename
+    `tasks.project_id` to `tasks.opencode_project_id`.
+
+    Safe to run on databases that never had `projects` (no-op) and on
+    databases that already migrated (no-op). All statements are best-effort
+    and ignore failures so a partial legacy database does not block init.
+    """
+
+    inspector = inspect(engine)
+    with engine.connect() as conn:
+        # Drop the projects table if it exists. The Project model and
+        # ProjectService are gone; nothing else references it.
+        if inspector.has_table("projects"):
+            try:
+                conn.execute(text("DROP TABLE projects"))
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Rename tasks.project_id -> tasks.opencode_project_id if needed.
+        if inspector.has_table("tasks"):
+            existing = {c["name"] for c in inspector.get_columns("tasks")}
+            if "project_id" in existing and "opencode_project_id" not in existing:
+                try:
+                    conn.execute(
+                        text("ALTER TABLE tasks RENAME COLUMN project_id TO opencode_project_id")
+                    )
+                except Exception:  # noqa: BLE001
+                    # Older SQLite (pre-3.25) cannot RENAME COLUMN. Fall back
+                    # to the explicit 12-step procedure: create the new
+                    # column, copy, drop the old.
+                    try:
+                        conn.execute(text("ALTER TABLE tasks ADD COLUMN opencode_project_id TEXT"))
+                        conn.execute(
+                            text(
+                                "UPDATE tasks SET opencode_project_id = project_id "
+                                "WHERE project_id IS NOT NULL"
+                            )
+                        )
+                        # SQLite 3.35.0+ supports DROP COLUMN; older builds
+                        # simply leave the orphan column behind. Nothing else
+                        # reads it.
+                        conn.execute(text("ALTER TABLE tasks DROP COLUMN project_id"))
+                    except Exception:  # noqa: BLE001
+                        pass
         conn.commit()
 
 

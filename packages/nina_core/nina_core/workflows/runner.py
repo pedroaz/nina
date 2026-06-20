@@ -53,6 +53,19 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
         "single meeting inside one workflow run, streaming progress events to "
         "the TUI's meeting page (the `Ctrl+E` hotkey in the TUI hits this)."
     ),
+    "classify-task": (
+        "Reads a freshly-created task (title + description), calls the LLM "
+        "to pick one of `reminder | research | coding | blocked | human | done`, "
+        "and patches the task's `task_type`, `classified_at`, "
+        "`classification_reason`, and `classification_model`. Falls back to "
+        "`human` when the model output is unparseable."
+    ),
+    "run-task": (
+        "Routing stub for the 'AI decides if it will work on it' flow. Refuses "
+        "to do anything for `human`/`reminder`/`blocked` tasks. For "
+        "`coding` and `research` tasks it flips the task's `status` to "
+        "`working`, records a routing decision, and flips it back to `idle`."
+    ),
 }
 
 
@@ -121,6 +134,10 @@ class WorkflowRunner:
                 output = self._run_summarize_meeting(db, run, input_data)
             elif workflow_name == "meeting-pipeline":
                 output = self._run_meeting_pipeline(db, run, input_data)
+            elif workflow_name == "classify-task":
+                output = self._run_classify_task(db, run, input_data)
+            elif workflow_name == "run-task":
+                output = self._run_run_task(db, run, input_data)
             else:
                 raise ValueError(f"Unknown workflow '{workflow_name}'")
             run.output_json = json.dumps(output)
@@ -534,6 +551,162 @@ class WorkflowRunner:
         if not path.is_file():
             return ""
         return path.read_text()
+
+    def _run_classify_task(
+        self, db: Session, run: WorkflowRun, input_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Run the LLM classifier on a single task and patch the row.
+
+        Inputs: `{"task_id": "<id>"}`. The task must already exist. On
+        success the task's `task_type`, `classified_at`, `classification_reason`,
+        and `classification_model` fields are written and the Obsidian note
+        frontmatter is updated.
+        """
+
+        from nina_core.llm.provider import LLMRequest, LLMService
+        from nina_core.obsidian.service import ObsidianService
+        from nina_core.tasks.service import TaskService
+        from nina_core.tasks.classifier import CLASSIFY_PROMPT, parse_classify_response
+
+        task_id = self._extract_task_id(input_data)
+        vault_path = str(self.vault_path)
+
+        service = TaskService(db, ObsidianService(vault_path))
+        task = service.get(task_id)
+        if task is None:
+            raise RuntimeError(f"Task not found: {task_id}")
+
+        step = self._create_step(db, run, "load_task")
+        title = task.title or ""
+        description = task.description or ""
+        self._complete_step(
+            db,
+            step,
+            {"title_chars": len(title), "description_chars": len(description)},
+        )
+
+        step = self._create_step(db, run, "classify")
+        prompt = (
+            CLASSIFY_PROMPT
+            + f"\n\nTask title: {title}\nTask description: {description or '(none)'}"
+        )
+        llm = LLMService(self.db_path, config=self.config.llm)
+        request = LLMRequest(
+            purpose="task_classification",
+            prompt=prompt,
+            workflow_run_id=run.id,
+        )
+        response = self._run_async(llm.complete(request))
+        result = parse_classify_response(response.response)
+        self._complete_step(
+            db,
+            step,
+            {
+                "task_type": result.task_type,
+                "reason_chars": len(result.reason),
+                "model": response.model,
+            },
+        )
+
+        step = self._create_step(db, run, "patch_task")
+        service.update(task_id, task_type=result.task_type)
+        now = _now()
+        task = service.get(task_id)
+        if task is not None:
+            task.classified_at = now
+            task.classification_reason = result.reason or (
+                f"auto-classified as {result.task_type} by {response.model}"
+            )
+            task.classification_model = response.model
+            db.commit()
+            ObsidianService(vault_path).update_task_note(task)
+        self._complete_step(
+            db,
+            step,
+            {"task_id": task_id, "task_type": result.task_type},
+        )
+
+        return {
+            "task_id": task_id,
+            "task_type": result.task_type,
+            "reason": result.reason,
+            "model": response.model,
+        }
+
+    def _run_run_task(
+        self, db: Session, run: WorkflowRun, input_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Routing stub: decide which workflow should handle this task and
+        flip the agent status accordingly. No real agent work happens here.
+
+        Inputs: `{"task_id": "<id>"}`. Refuses for `human`, `reminder`, and
+        `blocked` tasks. For `coding` and `research` it briefly flips the
+        task's `status` to `working` and back to `idle`. For `done` it's a
+        no-op success.
+        """
+
+        from nina_core.obsidian.service import ObsidianService
+        from nina_core.tasks.service import TaskService
+
+        task_id = self._extract_task_id(input_data)
+        vault_path = str(self.vault_path)
+
+        service = TaskService(db, ObsidianService(vault_path))
+        task = service.get(task_id)
+        if task is None:
+            raise RuntimeError(f"Task not found: {task_id}")
+
+        task_type = task.task_type
+
+        if task_type in ("human", "reminder", "blocked"):
+            return {
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": "skipped",
+                "reason": f"AI does not work on {task_type} tasks",
+                "would_route_to": None,
+            }
+
+        if task_type == "done":
+            return {
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": "noop",
+                "reason": "task is already done",
+                "would_route_to": None,
+            }
+
+        would_route_to = "agent" if task_type == "coding" else "research-topic"
+
+        step = self._create_step(db, run, "flip_to_working")
+        service.set_agent_status(task_id, "working")
+        self._complete_step(db, step, {"status": "working"})
+
+        step = self._create_step(db, run, "flip_to_idle")
+        service.set_agent_status(task_id, "idle")
+        self._complete_step(
+            db,
+            step,
+            {"would_route_to": would_route_to, "status": "idle"},
+        )
+
+        return {
+            "task_id": task_id,
+            "task_type": task_type,
+            "status": "completed",
+            "reason": "routing stub; no real agent action",
+            "would_route_to": would_route_to,
+        }
+
+    def _extract_task_id(self, input_data: dict[str, Any]) -> str:
+        task_id = input_data.get("task_id") if isinstance(input_data, dict) else None
+        if not task_id:
+            inner = input_data.get("input") if isinstance(input_data, dict) else None
+            if isinstance(inner, dict):
+                task_id = inner.get("task_id")
+        if not task_id:
+            raise ValueError("Workflow requires a 'task_id' field")
+        return str(task_id)
 
 
 def _split_summary_sections(text: str) -> tuple[str, str, str]:

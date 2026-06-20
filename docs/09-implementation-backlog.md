@@ -184,7 +184,10 @@ Acceptance:
 ## Later Work
 
 - Multiple profiles.
-- OpenCode integration.
+- Driving opencode sessions from task `run` (sending a task as a prompt in
+  its worktree, streaming events back to the TUI). The supervisor, schema,
+  and config plumbing already exist; this is the "second cut" on top of
+  Phase 13.
 - GitHub plugin.
 - Jira plugin.
 - Hard delete support.
@@ -237,3 +240,15 @@ The chat and agent features use a shared LLM tool loop. See
 29. Add `nina_core/pricing/` with pydantic models, JSON cache, fetcher, and per-provider parsers using `selectolax`. Cache lives at `$NINA_CONFIG_DIR/provider_pricing.json`.
 30. Add `nina providers`, `nina providers list`, `nina providers show <substring>`, and `nina providers refresh [--provider ...] [--source <provider>:<path>]`. Empty cache prints a hint to run `refresh`; the row matching `config.llm.model` is highlighted in the table.
 31. Support the Anthropic pricing page (`https://platform.claude.com/docs/en/about-claude/pricing`) and the OpenAI platform pricing page (`https://platform.openai.com/docs/pricing`). Parsers extract model, input, output, and cache read prices in USD per 1M tokens.
+
+## Phase 13: opencode integration (first cut)
+
+1. Add `OpencodeConfig` to `NinaConfig` (enabled, binary_path, host, port, username, password_ref, startup/shutdown timeouts). Expose in `GET /config` and accept in `PATCH /config`. opencode.* changes are restart-required.
+2. Generate a 32-byte URL-safe password on `nina init` and store it at `$NINA_CONFIG_DIR/opencode_password` (mode 0600). `config.yaml` only stores the *filename* in `opencode.password_ref`; the secret never lands in YAML.
+3. Drop the Nina `Project` concept: hand-written migration in `db/init.py` removes the `projects` table and renames `tasks.project_id` to `tasks.opencode_project_id` (no FK, opaque to Nina). Delete the `Project` model, the `ProjectService` module, the Obsidian project-note helpers, the `/projects` REST routes, the `nina project` CLI, and the `projects_*` LLM tools. Remove the `Projects/` folder from `VAULT_FOLDERS`.
+4. Build `nina_core/opencode/{password,client,supervisor,models}.py`. The supervisor owns the `opencode serve` child: resolves the binary, spawns it with `OPENCODE_SERVER_PASSWORD`/`USERNAME` in env, polls `/global/health` until ready, writes `opencode.pid` + `opencode.json`, and SIGTERMs → SIGKILLs on stop. Never raises when the binary is missing — the daemon keeps serving and the TUI shows "not installed".
+5. Add `/opencode/{status,health,projects,projects/current}` to the FastAPI app. The supervisor is stashed on `app.state.opencode`; lifespan in `apps/server/nina_server/main.py` starts it after the scheduler and watcher, stops it in `finally`.
+6. Add `nina opencode status` and `nina opencode projects list|current` (sub-app alias `oc`). `nina status` gains a one-line `OpenCode: <state>` and a warning when the supervisor is `not_installed`/`failed`/`stopped`.
+7. TUI: add the **OpenCode** page between Integrations and Config. Read-only header card (state, binary, listen address, version, uptime, last_error) plus a "All projects" card with `id | worktree | vcs | created | updated`. Empty/error states copy from `nina opencode status`. Standard `Ctrl+R` refresh.
+8. Tests: unit tests for `password` (mode 0600, idempotency, force regen, traversal rejection), `client` (basic auth header, parsed payloads, 401/500 typed errors), `supervisor` (healthy → running; missing binary → not_installed; disabled → no spawn), schema tests for `tasks.opencode_project_id`. Integration test boots a tiny in-process HTTP server that mimics `/global/health` + `/project` and asserts the supervisor picks it up through the FastAPI routes.
+9. Docs: `04-database-schema.md` drops the `projects` table and documents `opencode_project_id`. `05-api-spec.md` replaces the `/projects` block with `/opencode/*`. `06-cli-spec.md` adds `nina opencode ...` and rewrites the task/project sections. `07-tui-spec.md` adds the OpenCode page.

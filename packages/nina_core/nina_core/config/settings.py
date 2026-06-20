@@ -56,6 +56,22 @@ class MeetingsConfig(BaseModel):
     noise_reduction: str = "off"
 
 
+class OpencodeConfig(BaseModel):
+    enabled: bool = True
+    # Empty string means "use shutil.which('opencode')". A user-set path
+    # overrides the search.
+    binary_path: str = ""
+    host: str = "127.0.0.1"
+    port: int = 5555
+    username: str = "nina"
+    # Filename (relative to $NINA_CONFIG_DIR) of the password file. The
+    # actual password is read from disk at boot so the secret never ends
+    # up in config.yaml.
+    password_ref: str = "opencode_password"
+    startup_timeout_seconds: float = 10.0
+    shutdown_timeout_seconds: float = 5.0
+
+
 class NinaConfig(BaseModel):
     profile: str = "default"
     vault_path: str = Field(default="")
@@ -68,6 +84,7 @@ class NinaConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
+    opencode: OpencodeConfig = Field(default_factory=OpencodeConfig)
     log_level: str = "INFO"
 
     @classmethod

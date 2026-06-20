@@ -47,3 +47,15 @@ def get_pid_path(config_dir: Path) -> Path:
 
 def get_recordings_path(config_dir: Path) -> Path:
     return config_dir / "recordings"
+
+
+def get_opencode_pid_path(config_dir: Path) -> Path:
+    return config_dir / "opencode.pid"
+
+
+def get_opencode_runtime_path(config_dir: Path) -> Path:
+    return config_dir / "opencode.json"
+
+
+def get_opencode_log_path(config_dir: Path) -> Path:
+    return config_dir / "logs" / "opencode.log"

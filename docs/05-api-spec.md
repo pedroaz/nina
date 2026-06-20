@@ -32,22 +32,8 @@ Response:
 
 ## Projects
 
-```http
-GET /projects
-POST /projects
-GET /projects/{project_id}
-PATCH /projects/{project_id}
-DELETE /projects/{project_id}
-```
-
-Create request:
-
-```json
-{
-  "name": "Supplier onboarding",
-  "description": "Initial project context"
-}
-```
+The Nina daemon no longer exposes a `/projects` resource. Project identity is
+owned by the supervised opencode server and surfaced through `/opencode/*`.
 
 ## Tasks
 
@@ -57,13 +43,18 @@ POST /tasks
 GET /tasks/{task_id}
 PATCH /tasks/{task_id}
 DELETE /tasks/{task_id}
+POST /tasks/{task_id}/classify
+POST /tasks/{task_id}/run
+POST /tasks/{task_id}/archive
+POST /tasks/{task_id}/unarchive
+GET /tasks/grouped-by-type
 ```
 
 Task list filters:
 
-- `project_id`
-- `status`
-- `kanban_column`
+- `task_type` — filter by one of the lifecycle values.
+- `status` — `idle` or `working`.
+- `include_archived` — boolean.
 
 Create request:
 
@@ -71,38 +62,107 @@ Create request:
 {
   "title": "Draft implementation plan",
   "description": "Create the first version of the plan.",
-  "project_id": "project_..."
+  "opencode_project_id": "abc123...",
+  "task_type": "coding",
+  "auto_classify": true
 }
 ```
+
+`opencode_project_id` is the server-assigned id from the supervised opencode
+server (`GET /opencode/projects`). Nina stores it as an opaque string and
+does not validate it. If `task_type` is omitted (or `unclassified`) and
+`auto_classify` is `true`, the daemon enqueues the `classify-task` workflow in
+a background thread and returns immediately. The TUI auto-refreshes the row
+when the workflow finishes.
 
 Patch request:
 
 ```json
 {
   "title": "Draft executable implementation plan",
-  "status": "doing",
-  "kanban_column": "Doing"
+  "task_type": "coding",
+  "status": "idle",
+  "opencode_project_id": "abc123..."
 }
 ```
 
-## Kanban
+Omit `opencode_project_id` to leave it unchanged. Pass an empty string to
+clear the link.
+
+`POST /tasks/{task_id}/classify` re-runs the LLM classifier on a task and
+patches the task_type, classified_at, classification_reason, and
+classification_model fields.
+
+`POST /tasks/{task_id}/run` runs the `run-task` workflow. For
+`human`/`reminder`/`blocked` tasks it returns `{status: "skipped"}`; for
+`done` it returns `{status: "noop"}`; for `coding`/`research` it flips the
+agent's `status` to `working` and back to `idle` while a routing decision is
+recorded (placeholder; the real handler lands in a follow-up slice).
+
+`GET /tasks/grouped-by-type` returns the type-grouped view used by the TUI's
+"All" tab. Shape: `{ "<task_type>": [task, ...], ... }`. The `unclassified`
+group is the TUI's Inbox.
+
+## Opencode Integration
+
+The Nina daemon supervises an `opencode serve` child process. TUI and CLI
+talk to opencode only through these endpoints (the bearer token still
+applies); direct HTTP to the opencode server is not supported from clients.
 
 ```http
-GET /kanban
-POST /kanban/move
+GET /opencode/status
+GET /opencode/health
+GET /opencode/projects
+GET /opencode/projects/current
 ```
 
-Move request:
+`GET /opencode/status` returns the supervisor's view of the opencode server:
 
 ```json
 {
-  "task_id": "task_...",
-  "to_column": "Doing",
-  "to_position": 2
+  "enabled": true,
+  "binary_installed": true,
+  "binary_path": "/home/u/.opencode/bin/opencode",
+  "state": "running",
+  "version": "1.17.8",
+  "host": "127.0.0.1",
+  "port": 5555,
+  "uptime_seconds": 482.7,
+  "pid": 4242,
+  "last_error": null
 }
 ```
 
-The move endpoint must update all affected task positions transactionally.
+`state` is one of `disabled`, `not_installed`, `starting`, `running`,
+`stopped`, `failed`. When `state != "running"`, `version`, `pid`, and
+`uptime_seconds` are `null`.
+
+`GET /opencode/health` proxies the opencode server's `/global/health` and
+returns `{"healthy": true, "version": "1.17.8", "status": {...}}`. Returns
+`502` if the supervisor cannot reach the server, `503` if the supervisor
+itself is not in `running` state.
+
+`GET /opencode/projects` returns the array of projects the opencode server
+knows about:
+
+```json
+[
+  {
+    "id": "58fb1ebb82bf46d13af8891d4eaffa544980706a",
+    "worktree": "/home/u/Desktop/dev/nina-app",
+    "vcs": "git",
+    "time": {
+      "created": 1781328510400,
+      "updated": 1781758376383
+    },
+    "sandboxes": []
+  }
+]
+```
+
+`GET /opencode/projects/current` returns the single project the opencode
+server considers "current" (the worktree the server was started in, if any).
+Shape: same as one element of `/opencode/projects`.
 
 ## Search
 

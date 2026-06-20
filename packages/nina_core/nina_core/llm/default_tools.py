@@ -9,7 +9,6 @@ from nina_core.llm.tools import ToolContext, ToolRegistry, ToolSpec, _string_sch
 from nina_core.models.models import (
     JobRun,
     LLMInteraction,
-    Project,
     ScheduledJob,
     Task,
 )
@@ -39,25 +38,15 @@ def _ticket_summary(task: Task) -> dict[str, Any]:
         "id": task.id,
         "title": task.title,
         "description": task.description,
+        "task_type": task.task_type,
         "status": task.status,
-        "kanban_column": task.kanban_column,
-        "kanban_position": task.kanban_position,
-        "project_id": task.project_id,
+        "opencode_project_id": task.opencode_project_id,
+        "classified_at": task.classified_at,
+        "classification_reason": task.classification_reason,
+        "classification_model": task.classification_model,
         "note_path": task.note_path,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
-    }
-
-
-def _project_summary(project: Project) -> dict[str, Any]:
-    return {
-        "id": project.id,
-        "name": project.name,
-        "description": project.description,
-        "status": project.status,
-        "note_path": project.note_path,
-        "created_at": project.created_at,
-        "updated_at": project.updated_at,
     }
 
 
@@ -221,34 +210,39 @@ def _obsidian_list_notes(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
 
 
 def _kanban_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.kanban import get_kanban_board
+    """Group active tickets by `task_type` and return them.
+
+    The name is preserved for backwards compatibility (it used to mean the
+    kanban board; now it returns the type-grouped view that replaced it).
+    """
+
+    from nina_core.tasks.service import TaskService
 
     db = ctx.db
-    try:
-        board = get_kanban_board(db)
-        out: dict[str, list[dict[str, Any]]] = {}
-        for column, tasks in board.items():
-            out[column] = [_ticket_summary(t) for t in tasks]
-        return {"columns": out}
-    finally:
-        pass
+    tasks = TaskService(db, ctx.obsidian).list()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for task in tasks:
+        grouped.setdefault(task.task_type, []).append(_ticket_summary(task))
+    return {"columns": grouped}
 
 
 def _tickets_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import TaskService
+    from nina_core.tasks.service import TaskService
 
     db = ctx.db
-    status = args.get("status")
-    project_id = args.get("project_id")
+    task_type = args.get("task_type") or args.get("status")
+    opencode_project_id = args.get("opencode_project_id")
     include_archived = bool(args.get("include_archived"))
     tasks = TaskService(db, ctx.obsidian).list(
-        project_id=project_id, status=status, include_archived=include_archived
+        opencode_project_id=opencode_project_id,
+        task_type=task_type,
+        include_archived=include_archived,
     )
     return {"tickets": [_ticket_summary(t) for t in tasks]}
 
 
 def _tickets_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import TaskService
+    from nina_core.tasks.service import TaskService
 
     needle = (args.get("id_or_title") or "").strip()
     if not needle:
@@ -266,33 +260,6 @@ def _tickets_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     if task is None:
         return {"error": f"Ticket not found: {needle}"}
     return {"ticket": _ticket_summary(task)}
-
-
-def _projects_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import ProjectService
-
-    db = ctx.db
-    return {"projects": [_project_summary(p) for p in ProjectService(db, ctx.obsidian).list()]}
-
-
-def _projects_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    from nina_core.projects.service import ProjectService
-
-    needle = (args.get("id_or_name") or "").strip()
-    if not needle:
-        return {"error": "id_or_name is required"}
-    db = ctx.db
-    service = ProjectService(db, ctx.obsidian)
-    project = service.get(needle) if needle else None
-    if project is None:
-        lowered = needle.lower()
-        for p in service.list():
-            if lowered in (p.name or "").lower():
-                project = p
-                break
-    if project is None:
-        return {"error": f"Project not found: {needle}"}
-    return {"project": _project_summary(project)}
 
 
 def _jobs_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -496,7 +463,7 @@ def register_default_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="kanban_get",
-            description="Return the current kanban board grouped by column.",
+            description="Return active tickets grouped by task_type.",
             parameters=_string_schema({}),
             handler=_kanban_get,
             read_only=True,
@@ -508,8 +475,14 @@ def register_default_tools(registry: ToolRegistry) -> None:
             description="List tickets (tasks) with optional filters.",
             parameters=_string_schema(
                 {
-                    "status": {"type": "string"},
-                    "project_id": {"type": "string"},
+                    "task_type": {
+                        "type": "string",
+                        "description": "Filter by task_type (e.g. unclassified, coding, research).",
+                    },
+                    "opencode_project_id": {
+                        "type": "string",
+                        "description": "Filter by the server-assigned opencode project id.",
+                    },
                     "include_archived": {"type": "boolean"},
                 },
             ),
@@ -525,24 +498,6 @@ def register_default_tools(registry: ToolRegistry) -> None:
                 {"id_or_title": {"type": "string"}}, required=["id_or_title"]
             ),
             handler=_tickets_get,
-            read_only=True,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="projects_list",
-            description="List all non-deleted projects.",
-            parameters=_string_schema({}),
-            handler=_projects_list,
-            read_only=True,
-        )
-    )
-    registry.register(
-        ToolSpec(
-            name="projects_get",
-            description="Fetch a single project by id or name substring.",
-            parameters=_string_schema({"id_or_name": {"type": "string"}}, required=["id_or_name"]),
-            handler=_projects_get,
             read_only=True,
         )
     )

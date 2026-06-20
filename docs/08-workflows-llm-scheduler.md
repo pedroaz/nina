@@ -91,6 +91,37 @@ created_at: 2026-06-14T07:00:00Z
 ...
 ```
 
+## Task Workflows
+
+### `classify-task`
+
+Calls the LLM with a small structured prompt and patches the task's
+`task_type`, `classified_at`, `classification_reason`, and
+`classification_model` fields. The classifier is best-effort: if the model
+returns a value not in the `task_type` enum (or returns prose that we can't
+parse), we fall back to `human` and record the raw output as the reason.
+
+Input:
+
+```json
+{ "task_id": "task_..." }
+```
+
+The classifier runs in a background thread when a task is created with
+`auto_classify: true` and `task_type: "unclassified"` (the default). The
+TUI's Tickets page polls the API so the row updates without a manual
+refresh.
+
+### `run-task`
+
+Routing stub for the "AI decides if it will work on it" flow. Input is
+`{ "task_id": "..." }`. The workflow refuses for `human`/`reminder`/`blocked`
+tasks and for `done` tasks. For `coding` it routes to the agent placeholder;
+for `research` it routes to the `research-topic` workflow placeholder. The
+real handlers land in a follow-up slice — for now the workflow flips the
+task's `status` to `working` and back to `idle` and records a routing
+decision in its `WorkflowRun.output`.
+
 ## LLM Provider Boundary
 
 Implement one provider first:
