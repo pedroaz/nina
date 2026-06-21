@@ -17,7 +17,6 @@ TASK_TYPES = (
     "reviewing",
     "blocked",
     "done",
-    "human",
 )
 TASK_AGENT_STATUSES = ("idle", "working", "error")
 

@@ -66,7 +66,7 @@ def _validate_status(value: str | None) -> str | None:
     return value
 
 
-NO_REPOSITORY_TASK_TYPES = {"unclassified", "reminder", "research", "blocked", "human", "done"}
+NO_REPOSITORY_TASK_TYPES = {"unclassified", "reminder", "research", "blocked", "done"}
 
 
 def _task_type_allows_missing_repository(task_type: str) -> bool:

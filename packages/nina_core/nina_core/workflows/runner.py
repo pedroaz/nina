@@ -59,16 +59,16 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     ),
     "classify-task": (
         "Reads a freshly-created task (title + description), calls the LLM "
-        "to pick one of `reminder | research | coding | reviewing | blocked | human | done`, "
+        "to pick one of `reminder | research | coding | reviewing | blocked | done`, "
         "and patches the task's `task_type`, `classified_at`, "
         "`classification_reason`, and `classification_model`. Repository-backed "
         "coding/reviewing tasks are left idle for explicit execution. Falls "
-        "back to `human` when the model output is unparseable."
+        "back to `reminder` when the model output is unparseable."
     ),
     "run-task": (
         "Routes a task to its handler. Unclassified tasks are classified first; "
-        "coding and reviewing tasks run one Codex session. Refuses `human`, "
-        "`reminder`, and `blocked`; research routing remains a placeholder."
+        "coding and reviewing tasks run one Codex session. Refuses `reminder` "
+        "and `blocked`; research routing remains a placeholder."
     ),
 }
 
@@ -646,7 +646,6 @@ class WorkflowRunner:
             "reminder",
             "research",
             "blocked",
-            "human",
             "done",
         } and not task.repository_id
         if repository_required:
@@ -753,7 +752,7 @@ class WorkflowRunner:
                 status=task_type,
             )
 
-        if task_type in {"human", "reminder", "blocked"}:
+        if task_type in {"reminder", "blocked"}:
             service.update(task_id, status="idle")
             _log_task_event(task_id=task_id, workflow_id=run.id, event="skipped", status=task_type)
             return {

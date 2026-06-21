@@ -25,9 +25,9 @@ def test_parse_handles_rambling_output() -> None:
     assert "deep dive" in result.reason
 
 
-def test_parse_falls_back_to_human_on_unknown_type() -> None:
+def test_parse_falls_back_to_reminder_on_unknown_type() -> None:
     result = parse_classify_response('{"task_type": "transmogrify"}')
-    assert result.task_type == "human"
+    assert result.task_type == "reminder"
 
 
 def test_parse_finds_token_when_no_json() -> None:
@@ -35,16 +35,21 @@ def test_parse_finds_token_when_no_json() -> None:
     assert result.task_type == "blocked"
 
 
-def test_parse_returns_human_on_garbage() -> None:
+def test_parse_returns_reminder_on_garbage() -> None:
     result = parse_classify_response("I have no idea what to do with this.")
-    assert result.task_type == "human"
+    assert result.task_type == "reminder"
 
 
 def test_parse_rejects_unclassified_as_answer() -> None:
     """`unclassified` is an inbox marker, not a valid classifier answer."""
 
     result = parse_classify_response('{"task_type": "unclassified"}')
-    assert result.task_type == "human"
+    assert result.task_type == "reminder"
+
+
+def test_parse_rejects_unclassified_token_when_no_json() -> None:
+    result = parse_classify_response("This probably stays unclassified.")
+    assert result.task_type == "reminder"
 
 
 def test_reason_is_trimmed() -> None:

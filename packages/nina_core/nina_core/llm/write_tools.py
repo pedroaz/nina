@@ -241,7 +241,7 @@ def register_write_tools(registry: ToolRegistry) -> None:
                         "type": "string",
                         "description": (
                             "One of unclassified/reminder/research/coding/reviewing/"
-                            "blocked/done/human. Defaults to unclassified."
+                            "blocked/done. Defaults to unclassified."
                         ),
                     },
                     "auto_classify": {
@@ -288,7 +288,7 @@ def register_write_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="tickets_run",
-            description="Route a task to its handler. Refuses for human/reminder/blocked; runs coding/reviewing through Codex; placeholder for research.",
+            description="Route a task to its handler. Refuses for reminder/blocked; runs coding/reviewing through Codex; placeholder for research.",
             parameters=_string_schema(
                 {"id": {"type": "string"}},
                 required=["id"],

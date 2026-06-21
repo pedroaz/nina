@@ -3,7 +3,7 @@
 The classifier calls the configured LLM with a small structured prompt and
 returns a `ClassifyResult` with the inferred type and a short rationale. We
 validate the model output against the `TASK_TYPES` enum and fall back to
-`"human"` (the safe default) when the LLM produces something we don't
+`"reminder"` (the safe no-agent default) when the LLM produces something we don't
 recognise. The classifier is intentionally decoupled from the workflow
 runner so it can be exercised directly in unit tests with a `FakeProvider`.
 """
@@ -24,12 +24,11 @@ CLASSIFY_PROMPT = (
     '{"task_type": "<type>", "reason": "<one short sentence>"}.\n\n'
     f"Allowed task_type values: {', '.join(t for t in TASK_TYPES if t != 'unclassified')}.\n\n"
     "Guidelines:\n"
-    "- reminder: a personal reminder the user needs to act on (e.g. message a colleague, buy milk).\n"
+    "- reminder: a personal reminder or user-only action (e.g. message a colleague, buy milk, make a phone call).\n"
     "- research: an open-ended investigation the AI can answer by reading/writing notes.\n"
     "- coding: a development task — building, fixing, refactoring code in this repo.\n"
     "- reviewing: a code review task — checking an implementation and deciding whether it is approved.\n"
     "- blocked: the task is currently waiting on someone or something else.\n"
-    "- human: requires the user to do something the AI cannot (a phone call, a meeting, an in-person errand).\n"
     "- done: the work is already complete.\n\n"
     "Return ONLY the JSON object, no prose, no markdown fence."
 )
@@ -46,7 +45,7 @@ def parse_classify_response(text: str) -> ClassifyResult:
     """Extract `{task_type, reason}` JSON from an LLM response.
 
     Tolerates a JSON object wrapped in a code fence and falls back to
-    substring extraction when the model rambles. The first valid
+    substring extraction when the model rambles. The first classifier-valid
     `task_type` from the `TASK_TYPES` enum wins.
     """
 
@@ -56,13 +55,13 @@ def parse_classify_response(text: str) -> ClassifyResult:
         parsed = _try_load_json(_extract_json_object(candidate))
     if parsed is None:
         # Last resort: scan for any of the allowed values.
-        for token in TASK_TYPES:
+        for token in (t for t in TASK_TYPES if t != "unclassified"):
             if token in candidate:
                 return ClassifyResult(task_type=token, reason="", raw=text)
-        return ClassifyResult(task_type="human", reason=_trim_reason(text), raw=text)
+        return ClassifyResult(task_type="reminder", reason=_trim_reason(text), raw=text)
 
     if not isinstance(parsed, dict):
-        return ClassifyResult(task_type="human", reason="", raw=text)
+        return ClassifyResult(task_type="reminder", reason="", raw=text)
 
     raw_type = cast(object, parsed.get("task_type"))
     reason = cast(object, parsed.get("reason"))
@@ -72,7 +71,7 @@ def parse_classify_response(text: str) -> ClassifyResult:
             reason=_trim_reason(reason) if isinstance(reason, str) else "",
             raw=text,
         )
-    return ClassifyResult(task_type="human", reason=_trim_reason(text), raw=text)
+    return ClassifyResult(task_type="reminder", reason=_trim_reason(text), raw=text)
 
 
 def _strip_code_fence(text: str) -> str:

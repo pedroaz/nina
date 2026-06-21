@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
 from nina_core.config import get_database_path, get_vault_path
@@ -14,15 +14,17 @@ from sqlalchemy.orm import sessionmaker
 
 def _init_git_repo(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", str(path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["git", "init", str(path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
     return path
 
 
 def _session(isolated_config: Path):
     db_path = str(get_database_path(isolated_config))
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
-    SessionLocal = sessionmaker(bind=engine)
-    return SessionLocal()
+    session_local = sessionmaker(bind=engine)
+    return session_local()
 
 
 def test_tasks_table_has_simplified_task_columns(isolated_config: Path) -> None:
@@ -75,9 +77,12 @@ def test_coding_and_reviewing_tasks_require_repository(isolated_config: Path) ->
             with pytest.raises(ValueError, match="requires a registered repository"):
                 service.create(f"{task_type} task", task_type=task_type)
 
-        for task_type in ("research", "reminder", "blocked", "human", "done"):
+        for task_type in ("research", "reminder", "blocked", "done"):
             task = service.create(f"{task_type} task", task_type=task_type)
             assert task.repository_id is None
+
+        with pytest.raises(ValueError, match="Invalid task_type 'human'"):
+            service.create("human task", task_type="human")
 
         task = service.create("x", task_type="research")
         with pytest.raises(ValueError, match="requires a registered repository"):

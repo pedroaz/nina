@@ -13,6 +13,7 @@ def create_database(db_path: str) -> None:
     _apply_lightweight_migrations(engine)
     _drop_legacy_kanban_columns(engine)
     _drop_legacy_task_columns(engine)
+    _migrate_removed_task_types(engine)
     SessionLocal: Any = sessionmaker(bind=engine)
     db = SessionLocal()
     seed_scheduled_jobs(db)
@@ -118,6 +119,20 @@ def _drop_legacy_task_columns(engine: Any) -> None:
                         conn.execute(text(f"ALTER TABLE tasks DROP COLUMN {column}"))
                     except Exception:  # noqa: BLE001
                         pass
+        conn.commit()
+
+
+def _migrate_removed_task_types(engine: Any) -> None:
+    """Rewrite task_type values that no longer exist."""
+
+    inspector = inspect(engine)
+    with engine.connect() as conn:
+        if inspector.has_table("tasks"):
+            existing = {c["name"] for c in inspector.get_columns("tasks")}
+            if "task_type" in existing:
+                conn.execute(
+                    text("UPDATE tasks SET task_type = 'reminder' WHERE task_type = 'human'")
+                )
         conn.commit()
 
 

@@ -62,12 +62,11 @@ const TASK_TYPE_ORDER = [
   "research",
   "reminder",
   "blocked",
-  "human",
   "done",
 ];
 
-const TASK_TYPE_HOTKEY_HELP = "Ctrl+1..8 types: 1=unclassified, 2=coding, 3=reviewing, 4=research, 5=reminder, 6=blocked, 7=human, 8=done";
-const TASK_TYPES_WITHOUT_REPOSITORY = new Set(["unclassified", "research", "reminder", "blocked", "human", "done"]);
+const TASK_TYPE_HOTKEY_HELP = "Ctrl+1..7 types: 1=unclassified, 2=coding, 3=reviewing, 4=research, 5=reminder, 6=blocked, 7=done";
+const TASK_TYPES_WITHOUT_REPOSITORY = new Set(["unclassified", "research", "reminder", "blocked", "done"]);
 
 type TaskDraft = {
   taskType: string;
@@ -441,8 +440,6 @@ function taskTypeAccent(type: string): string {
       return "#eab308";
     case "reminder":
       return "#f97316";
-    case "human":
-      return "#ef4444";
     case "blocked":
       return "#94a3b8";
     case "done":
@@ -2688,8 +2685,7 @@ ${repositoryWorktreeLines(repo)}`;
       renderPage("Tickets");
       return;
     }
-    if (selected.ticket.task_type === "human"
-        || selected.ticket.task_type === "reminder"
+    if (selected.ticket.task_type === "reminder"
         || selected.ticket.task_type === "blocked") {
       state.banner = {
         kind: "info",
