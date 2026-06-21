@@ -1,53 +1,51 @@
 # Nina CLI and API Reference
 
-## Local Addressing
-- `api_base()` should prefer `daemon.json` in the active config dir.
-- `daemon.json` stores the live daemon profile, config dir, host, and port.
-- Fall back to the resolved config file if runtime state is missing.
-- Final fallback is `http://127.0.0.1:8765`.
+## Key Files
 
-## Auth
-- Use the bearer token stored in the config directory.
-- Protected routes require `Authorization: Bearer <token>`.
+- `apps/cli/nina_cli/main.py`: top-level Typer app, aliases, status, install/uninstall, `ask`, `open`, and TUI launch.
+- `apps/cli/nina_cli/*_commands.py`: feature command groups.
+- `apps/cli/nina_cli/api.py`: daemon base URL resolution and request helpers.
+- `apps/server/nina_server/app.py`: FastAPI application factory.
+- `apps/server/nina_server/routers/`: API routers.
+- `apps/server/nina_server/schemas/`: request and response schemas.
+- `apps/server/nina_server/auth.py`: bearer-token middleware.
 
-## Core Commands
-- `nina init`
-- `nina daemon start`
-- `nina daemon stop`
-- `nina daemon status`
-- `nina status`
-- `nina tui`
+## CLI Contract
 
-## Config Commands
-- `nina config show`
-- `nina config vault <path>`
-- `nina config database <path>`
-- `nina config daemon-host <host>`
-- `nina config daemon-port <port>`
-- `nina config log-level <level>`
-- `nina config llm-provider <provider>`
-- `nina config llm-model <model>`
-- `nina config daily-summary-time <HH:MM>`
+- Keep command groups thin. Command code should validate CLI arguments, call daemon endpoints, and format output.
+- Do not import server router internals into CLI command logic.
+- Keep plain output readable and compact.
+- Keep `--json` output stable and script-friendly.
+- Hidden aliases are acceptable for speed, but the full command names should remain discoverable.
 
-## Config Update Contract
-- `GET /config` returns resolved config values.
-- `PATCH /config` persists config, updates live app state, and returns changed fields.
-- Changing vault or database path should ensure storage exists immediately.
-- Changing daemon host, daemon port, or log level requires a daemon restart to affect the listener.
-- The CLI should try to sync a live daemon, but disk state remains the source of truth for the next restart.
+## Daemon Addressing
+
+- Resolve the active profile and live daemon runtime state before falling back to saved config.
+- `config.yaml` is persisted next-start configuration.
+- Runtime daemon state points clients at the actual host and port while the daemon is running.
+- The default profile lives under `~/.nina/default` unless profile/config resolution says otherwise.
 
 ## API Surface
-- Health: `GET /health`
-- Projects: `GET/POST/PATCH/DELETE /projects`
-- Tasks: `GET/POST/PATCH/DELETE /tasks`
-- Kanban: `GET /kanban`, `POST /kanban/move`
-- Search: `POST /search`, `POST /search/reindex`, `POST /search/open`
-- LLM: `POST /llm/complete`, `GET /llm/interactions`, `GET /llm/interactions/{id}`
-- Workflows: `GET /workflows`, `POST /workflows/{workflow_name}/run`, `GET /workflow-runs`, `GET /workflow-runs/{id}`
-- Jobs: `GET /jobs`, `PATCH /jobs/{id}`, `POST /jobs/{id}/run`, `GET /job-runs`
-- Events: `GET /events`, `GET /events/stream`, `GET /workflow-runs/{run_id}/stream`
 
-## Output Rules
-- Mutating commands should print the changed entity ID.
-- Plain output should stay compact.
-- `--json` should return script-friendly JSON.
+- Health and config: `/health`, `/config`.
+- Tasks and board behavior: `/tasks`, task typing/classification/archive flows.
+- Notes, search, and ask: `/notes`, `/search`, `/ask`.
+- Sessions and LLM: `/sessions`, `/sessions/{id}/cancel`, `/llm`.
+- Workflows and jobs: `/workflows`, `/workflow-runs`, `/jobs`, `/job-runs`.
+- Meetings: `/meetings`.
+- Repositories: `/repositories`.
+- Integrations: `/integrations`.
+- Codex: `/codex/status`, `/codex/events`, and related router endpoints.
+
+## Config Rules
+
+- Use Pydantic defaults so old config files remain valid.
+- When adding settings, update config schemas, CLI config commands, daemon config behavior, status output where useful, and README/config docs.
+- Host, port, and some runtime settings may require daemon restart. Surface that clearly in CLI/TUI output.
+- Secrets should live in files or external credential stores, not in `config.yaml`.
+
+## Test Targets
+
+- CLI command behavior: `tests/unit/test_cli_commands.py` and command-specific unit tests.
+- API behavior: `tests/integration/test_daemon_api.py` and feature-specific integration tests.
+- Real CLI plus daemon smoke: `uv run pytest -m daemon_smoke tests/integration/test_cli_daemon_smoke.py`.

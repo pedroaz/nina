@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime
 from pathlib import Path
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from nina_core.config import get_config_dir
 from nina_core.pricing import PricingService
 from nina_core.pricing.providers import available_providers, normalize_provider_name
 
+from .output import console, print_json
 
-console = Console()
 providers_app = typer.Typer(help="Look up model pricing for supported LLM providers")
 
 
@@ -146,13 +144,7 @@ def providers_main(
         _print_empty_hint()
         return
     if json_output:
-        typer.echo(
-            json.dumps(
-                [p.model_dump() for p in providers],
-                indent=2,
-                ensure_ascii=False,
-            )
-        )
+        print_json([p.model_dump() for p in providers])
         return
     table = _build_table(providers, highlight_model=_resolve_configured_model())
     console.print(table)
@@ -172,7 +164,7 @@ def providers_list(
         _print_empty_hint()
         return
     if json_output:
-        typer.echo(json.dumps([p.model_dump() for p in providers], indent=2, ensure_ascii=False))
+        print_json([p.model_dump() for p in providers])
         return
     table = _build_table(providers, highlight_model=_resolve_configured_model())
     console.print(table)
@@ -190,7 +182,7 @@ def providers_show(
         console.print(f"No models match '{model}'.")
         raise typer.Exit(1)
     if json_output:
-        typer.echo(json.dumps([p.model_dump() for p in providers], indent=2, ensure_ascii=False))
+        print_json([p.model_dump() for p in providers])
         return
     table = _build_table(providers, highlight_model=_resolve_configured_model())
     console.print(table)

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Nina Core"
-  short_description: "Nina scope, architecture, and storage"
-  default_prompt: "Use $nina-core to reason about Nina's scope, architecture, storage, and data model."

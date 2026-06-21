@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"__NINA_CODEX_HOOK__\" started",
+            "timeout": 10,
+            "statusMessage": "Reporting Nina task start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"__NINA_CODEX_HOOK__\" done",
+            "timeout": 10,
+            "statusMessage": "Reporting Nina task completion"
+          }
+        ]
+      }
+    ]
+  }
+}

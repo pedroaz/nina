@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
-from rich.console import Console
 
 from .api import request
+from .output import console, print_json
 
-console = Console()
 llm_app = typer.Typer(help="LLM commands")
 
 
@@ -24,7 +22,7 @@ def llm_test(
     resp = request("POST", "/llm/complete", json=payload)
     data = resp.json()
     if json_output:
-        typer.echo(json.dumps(data, indent=2, sort_keys=False))
+        print_json(data)
         return
     console.print(f"Provider: {data['provider']}")
     console.print(f"Model: {data['model']}")

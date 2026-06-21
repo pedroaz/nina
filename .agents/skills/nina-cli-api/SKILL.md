@@ -1,19 +1,27 @@
 ---
 name: nina-cli-api
-description: Nina local API, CLI commands, config, daemon runtime state, and auth. Use when working on apps/cli, apps/server, /config, /health, request routing, or command behavior.
+description: Nina CLI commands, FastAPI daemon routers, schemas, auth, config, daemon runtime state, and local API contracts. Use when working in apps/cli, apps/server, command behavior, endpoint behavior, profile/config resolution, request output, or daemon lifecycle code.
 ---
 
-# Nina CLI and API
+# Nina CLI API
 
-Use this skill for Nina REST endpoints, Typer commands, daemon lifecycle, config updates, auth, and live runtime address resolution.
+Use this skill when a task touches Nina's command line, local daemon API, auth, config, status, or profile behavior.
 
 ## Rules
-- Route CLI command flow through the daemon API; do not import server internals into CLI command logic.
-- Resolve the live daemon address from `daemon.json` in the config dir before falling back to `config.yaml`.
-- Treat `config.yaml` as persisted next-start config and `daemon.json` as live runtime state.
-- Use `nina config` for editable settings: vault, database, daemon host/port, log level, LLM provider/model, daily summary time.
-- Sync config updates to the running daemon when possible and keep host/port/log level restart-required.
-- Keep human output compact and `--json` machine-friendly.
 
-## Read
-- `references/cli-api.md` for command maps, endpoint maps, and config/runtime behavior.
+- Route feature behavior through the daemon API.
+- Keep command groups thin and output-focused.
+- Keep server routers thin and delegate domain behavior to `nina_core` services.
+- Preserve bearer-token auth on protected routes.
+- Keep plain output concise and JSON output stable.
+
+## Process
+
+1. Read the relevant CLI command, API helper, router, schema, and core service.
+2. Identify the public command or endpoint contract before editing.
+3. Update matching CLI, router, schema, tests, and docs together when behavior changes.
+4. Use focused CLI or daemon integration tests for verification.
+
+## References
+
+- Read `references/cli-api.md` for key files, CLI contracts, daemon addressing, config rules, API map, and test targets.

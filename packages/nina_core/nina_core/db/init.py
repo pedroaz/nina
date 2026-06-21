@@ -12,7 +12,7 @@ def create_database(db_path: str) -> None:
     Base.metadata.create_all(engine)  # type: ignore[union-attr]
     _apply_lightweight_migrations(engine)
     _drop_legacy_kanban_columns(engine)
-    _drop_projects_rename_task_column(engine)
+    _drop_legacy_task_columns(engine)
     SessionLocal: Any = sessionmaker(bind=engine)
     db = SessionLocal()
     seed_scheduled_jobs(db)
@@ -80,49 +80,42 @@ def _drop_legacy_kanban_columns(engine: Any) -> None:
         conn.commit()
 
 
-def _drop_projects_rename_task_column(engine: Any) -> None:
-    """One-shot migration: drop the `projects` table and rename
-    `tasks.project_id` to `tasks.opencode_project_id`.
-
-    Safe to run on databases that never had `projects` (no-op) and on
-    databases that already migrated (no-op). All statements are best-effort
-    and ignore failures so a partial legacy database does not block init.
-    """
+def _drop_legacy_task_columns(engine: Any) -> None:
+    """Best-effort destructive cleanup for pre-task-type workflow schemas."""
 
     inspector = inspect(engine)
     with engine.connect() as conn:
-        # Drop the projects table if it exists. The Project model and
-        # ProjectService are gone; nothing else references it.
         if inspector.has_table("projects"):
             try:
                 conn.execute(text("DROP TABLE projects"))
             except Exception:  # noqa: BLE001
                 pass
 
-        # Rename tasks.project_id -> tasks.opencode_project_id if needed.
         if inspector.has_table("tasks"):
             existing = {c["name"] for c in inspector.get_columns("tasks")}
-            if "project_id" in existing and "opencode_project_id" not in existing:
+            if "status" in existing:
                 try:
                     conn.execute(
-                        text("ALTER TABLE tasks RENAME COLUMN project_id TO opencode_project_id")
+                        text(
+                            "UPDATE tasks SET status = 'idle' "
+                            "WHERE status NOT IN ('idle', 'working', 'error')"
+                        )
                     )
                 except Exception:  # noqa: BLE001
-                    # Older SQLite (pre-3.25) cannot RENAME COLUMN. Fall back
-                    # to the explicit 12-step procedure: create the new
-                    # column, copy, drop the old.
+                    pass
+            for column in (
+                "project_id",
+                "opencode_project_id",
+                "codex_project_id",
+                "codex_worktree",
+                "phase",
+                "phase_status",
+                "phase_note",
+                "note_path",
+            ):
+                if column in existing:
                     try:
-                        conn.execute(text("ALTER TABLE tasks ADD COLUMN opencode_project_id TEXT"))
-                        conn.execute(
-                            text(
-                                "UPDATE tasks SET opencode_project_id = project_id "
-                                "WHERE project_id IS NOT NULL"
-                            )
-                        )
-                        # SQLite 3.35.0+ supports DROP COLUMN; older builds
-                        # simply leave the orphan column behind. Nothing else
-                        # reads it.
-                        conn.execute(text("ALTER TABLE tasks DROP COLUMN project_id"))
+                        conn.execute(text(f"ALTER TABLE tasks DROP COLUMN {column}"))
                     except Exception:  # noqa: BLE001
                         pass
         conn.commit()

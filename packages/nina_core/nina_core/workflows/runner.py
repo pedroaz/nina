@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -12,9 +13,12 @@ from typing import Any
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from nina_core.config import NinaConfig, load_effective_config
+from nina_core.config import NinaConfig, get_codex_task_logs_dir, load_effective_config
 from nina_core.models.models import WorkflowRun, WorkflowStep
 from nina_core.research.service import ResearchService
+
+
+logger = logging.getLogger(__name__)
 
 
 WORKFLOW_DESCRIPTIONS: dict[str, str] = {
@@ -55,22 +59,54 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     ),
     "classify-task": (
         "Reads a freshly-created task (title + description), calls the LLM "
-        "to pick one of `reminder | research | coding | blocked | human | done`, "
+        "to pick one of `reminder | research | coding | reviewing | blocked | human | done`, "
         "and patches the task's `task_type`, `classified_at`, "
-        "`classification_reason`, and `classification_model`. Falls back to "
-        "`human` when the model output is unparseable."
+        "`classification_reason`, and `classification_model`. Repository-backed "
+        "coding/reviewing tasks are left idle for explicit execution. Falls "
+        "back to `human` when the model output is unparseable."
     ),
     "run-task": (
-        "Routing stub for the 'AI decides if it will work on it' flow. Refuses "
-        "to do anything for `human`/`reminder`/`blocked` tasks. For "
-        "`coding` and `research` tasks it flips the task's `status` to "
-        "`working`, records a routing decision, and flips it back to `idle`."
+        "Routes a task to its handler. Unclassified tasks are classified first; "
+        "coding and reviewing tasks run one Codex session. Refuses `human`, "
+        "`reminder`, and `blocked`; research routing remains a placeholder."
     ),
 }
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_log_value(value: Any, limit: int = 500) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    return text[:limit]
+
+
+def _log_task_event(
+    *,
+    task_id: str,
+    workflow_id: str,
+    event: str,
+    codex_run_id: str | None = None,
+    status: str | None = None,
+    worktree: str | None = None,
+    message: str | None = None,
+) -> None:
+    parts = [
+        "nina.task",
+        f"task={_safe_log_value(task_id)}",
+        f"workflow={_safe_log_value(workflow_id)}",
+        f"event={_safe_log_value(event)}",
+    ]
+    if codex_run_id:
+        parts.append(f"run={_safe_log_value(codex_run_id)}")
+    if status:
+        parts.append(f"status={_safe_log_value(status)}")
+    if worktree:
+        parts.append(f"worktree={_safe_log_value(worktree)}")
+    if message:
+        parts.append(f"message={_safe_log_value(message)}")
+    logger.info(" ".join(parts))
 
 
 def _resolve_config_dir() -> Path:
@@ -212,6 +248,7 @@ class WorkflowRunner:
             self.db_path,
             str(self.vault_path),
             config=self.config.research,
+            codex_binary_path=self.config.codex.binary_path,
         )
         report = service.run(topic, workflow_run_id=run.id, created_at=run.created_at)
         self._complete_step(db, research_step, report)
@@ -411,7 +448,7 @@ class WorkflowRunner:
             "Be concise. Use the transcript verbatim where useful.\n\n"
             f"Meeting context:\n{context}"
         )
-        llm = LLMService(self.db_path, config=self.config.llm)
+        llm = LLMService(self.db_path, config=self.config.llm, codex_binary_path=self.config.codex.binary_path)
         request = LLMRequest(
             purpose="meeting_summary",
             prompt=prompt,
@@ -555,13 +592,7 @@ class WorkflowRunner:
     def _run_classify_task(
         self, db: Session, run: WorkflowRun, input_data: dict[str, Any]
     ) -> dict[str, Any]:
-        """Run the LLM classifier on a single task and patch the row.
-
-        Inputs: `{"task_id": "<id>"}`. The task must already exist. On
-        success the task's `task_type`, `classified_at`, `classification_reason`,
-        and `classification_model` fields are written and the Obsidian note
-        frontmatter is updated.
-        """
+        """Run the LLM classifier on a single task and patch the row."""
 
         from nina_core.llm.provider import LLMRequest, LLMService
         from nina_core.obsidian.service import ObsidianService
@@ -575,6 +606,7 @@ class WorkflowRunner:
         task = service.get(task_id)
         if task is None:
             raise RuntimeError(f"Task not found: {task_id}")
+        _log_task_event(task_id=task_id, workflow_id=run.id, event="classify_started")
 
         step = self._create_step(db, run, "load_task")
         title = task.title or ""
@@ -586,11 +618,11 @@ class WorkflowRunner:
         )
 
         step = self._create_step(db, run, "classify")
-        prompt = (
-            CLASSIFY_PROMPT
-            + f"\n\nTask title: {title}\nTask description: {description or '(none)'}"
+        prompt_description = description or "(none)"
+        prompt = CLASSIFY_PROMPT + (
+            f"\n\nTask title: {title}\nTask description: {prompt_description}"
         )
-        llm = LLMService(self.db_path, config=self.config.llm)
+        llm = LLMService(self.db_path, config=self.config.llm, codex_binary_path=self.config.codex.binary_path)
         request = LLMRequest(
             purpose="task_classification",
             prompt=prompt,
@@ -609,7 +641,18 @@ class WorkflowRunner:
         )
 
         step = self._create_step(db, run, "patch_task")
-        service.update(task_id, task_type=result.task_type)
+        repository_required = result.task_type not in {
+            "unclassified",
+            "reminder",
+            "research",
+            "blocked",
+            "human",
+            "done",
+        } and not task.repository_id
+        if repository_required:
+            service.update(task_id, status="error")
+        else:
+            service.update(task_id, task_type=result.task_type, status="idle")
         now = _now()
         task = service.get(task_id)
         if task is not None:
@@ -619,16 +662,40 @@ class WorkflowRunner:
             )
             task.classification_model = response.model
             db.commit()
-            ObsidianService(vault_path).update_task_note(task)
+            obsidian = ObsidianService(vault_path)
+            obsidian.update_task_note(task)
+            if repository_required:
+                service.add_activity(
+                    task_id,
+                    f"Classifier selected {result.task_type}, but no repository is attached. "
+                    "Attach a repository or change the task type.",
+                )
+            else:
+                service.add_activity(task_id, f"Classifier set task_type={result.task_type}.")
+        refreshed = service.get(task_id)
         self._complete_step(
             db,
             step,
-            {"task_id": task_id, "task_type": result.task_type},
+            {
+                "task_id": task_id,
+                "task_type": result.task_type,
+                "applied_task_type": getattr(refreshed, "task_type", None),
+                "requires_repository": repository_required,
+            },
+        )
+        _log_task_event(
+            task_id=task_id,
+            workflow_id=run.id,
+            event="classify_done",
+            status=result.task_type,
+            message=result.reason,
         )
 
         return {
             "task_id": task_id,
             "task_type": result.task_type,
+            "applied_task_type": getattr(refreshed, "task_type", None),
+            "requires_repository": repository_required,
             "reason": result.reason,
             "model": response.model,
         }
@@ -636,14 +703,7 @@ class WorkflowRunner:
     def _run_run_task(
         self, db: Session, run: WorkflowRun, input_data: dict[str, Any]
     ) -> dict[str, Any]:
-        """Routing stub: decide which workflow should handle this task and
-        flip the agent status accordingly. No real agent work happens here.
-
-        Inputs: `{"task_id": "<id>"}`. Refuses for `human`, `reminder`, and
-        `blocked` tasks. For `coding` and `research` it briefly flips the
-        task's `status` to `working` and back to `idle`. For `done` it's a
-        no-op success.
-        """
+        """Route and run a task through its task-type handler."""
 
         from nina_core.obsidian.service import ObsidianService
         from nina_core.tasks.service import TaskService
@@ -657,8 +717,45 @@ class WorkflowRunner:
             raise RuntimeError(f"Task not found: {task_id}")
 
         task_type = task.task_type
+        if task_type == "unclassified":
+            _log_task_event(task_id=task_id, workflow_id=run.id, event="classify_before_run")
+            classification = self._run_classify_task(db, run, {"task_id": task_id})
+            if classification.get("requires_repository"):
+                selected_type = str(classification.get("task_type") or "coding")
+                reason = (
+                    f"Classifier selected {selected_type}, but no repository is attached. "
+                    "Attach a repository or change the task type."
+                )
+                _log_task_event(
+                    task_id=task_id,
+                    workflow_id=run.id,
+                    event="repository_required",
+                    status="error",
+                    message=reason,
+                )
+                return {
+                    "task_id": task_id,
+                    "task_type": selected_type,
+                    "applied_task_type": classification.get("applied_task_type"),
+                    "status": "error",
+                    "reason": reason,
+                    "requires_repository": True,
+                    "would_route_to": None,
+                }
+            task = service.get(task_id)
+            if task is None:
+                raise RuntimeError(f"Task not found: {task_id}")
+            task_type = task.task_type
+            _log_task_event(
+                task_id=task_id,
+                workflow_id=run.id,
+                event="classified_for_run",
+                status=task_type,
+            )
 
-        if task_type in ("human", "reminder", "blocked"):
+        if task_type in {"human", "reminder", "blocked"}:
+            service.update(task_id, status="idle")
+            _log_task_event(task_id=task_id, workflow_id=run.id, event="skipped", status=task_type)
             return {
                 "task_id": task_id,
                 "task_type": task_type,
@@ -668,6 +765,8 @@ class WorkflowRunner:
             }
 
         if task_type == "done":
+            service.update(task_id, status="idle")
+            _log_task_event(task_id=task_id, workflow_id=run.id, event="noop", status="done")
             return {
                 "task_id": task_id,
                 "task_type": task_type,
@@ -676,27 +775,226 @@ class WorkflowRunner:
                 "would_route_to": None,
             }
 
-        would_route_to = "agent" if task_type == "coding" else "research-topic"
+        if task_type not in {"coding", "reviewing"}:
+            service.update(task_id, status="idle")
+            _log_task_event(task_id=task_id, workflow_id=run.id, event="routed", status=task_type)
+            step = self._create_step(db, run, "route_task")
+            self._complete_step(
+                db,
+                step,
+                {"would_route_to": task_type, "status": "idle"},
+            )
+            return {
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": "completed",
+                "reason": f"{task_type} routing placeholder",
+                "would_route_to": task_type,
+            }
 
-        step = self._create_step(db, run, "flip_to_working")
-        service.set_agent_status(task_id, "working")
-        self._complete_step(db, step, {"status": "working"})
+        return self._run_codex_task(db, run, service, task, input_data)
 
-        step = self._create_step(db, run, "flip_to_idle")
-        service.set_agent_status(task_id, "idle")
+    def _run_codex_task(
+        self,
+        db: Session,
+        run: WorkflowRun,
+        service: Any,
+        task: Any,
+        input_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        from nina_core.codex import CodexClient, CodexError
+
+        try:
+            worktree = self._resolve_task_worktree(db, task)
+        except ValueError as exc:
+            message = str(exc)
+            service.update(task.id, status="error")
+            service.add_activity(task.id, message)
+            _log_task_event(
+                task_id=task.id,
+                workflow_id=run.id,
+                event="repository_required",
+                status="error",
+                message=message,
+            )
+            return {
+                "task_id": task.id,
+                "task_type": task.task_type,
+                "status": "error",
+                "reason": message,
+                "would_route_to": None,
+            }
+
+        client = CodexClient(
+            host=self.config.codex.host,
+            port=self.config.codex.port,
+            username=self.config.codex.username,
+            password="",
+            timeout=5.0,
+            binary_path=self.config.codex.binary_path,
+        )
+        _log_task_event(
+            task_id=task.id,
+            workflow_id=run.id,
+            event="codex_ready",
+            status=client.binary_path or "missing",
+            worktree=worktree,
+        )
+
+        run_id = f"{task.id}-{task.task_type}-{uuid.uuid4().hex[:8]}"
+        log_path = self._codex_task_log_path(task.id, run_id)
+        prompt = self._build_codex_task_prompt(task, run_id, worktree)
+        env = self._build_codex_task_env(input_data, task.id, run_id, task.task_type)
+
+        step = self._create_step(db, run, f"codex_{task.task_type}")
+        _log_task_event(
+            task_id=task.id,
+            workflow_id=run.id,
+            event="task_started",
+            codex_run_id=run_id,
+            status=task.task_type,
+            worktree=worktree,
+        )
+        service.update(task.id, status="working")
+        service.add_activity(task.id, f"Codex {task.task_type} started (run {run_id}). Log: {log_path}")
+        try:
+            result = self._run_async(
+                client.exec_task(
+                    prompt,
+                    cwd=worktree,
+                    env=env,
+                    timeout=float(input_data.get("codex_timeout_seconds") or 1800.0),
+                    log_path=log_path,
+                )
+            )
+        except CodexError as exc:
+            message = str(exc)
+            _log_task_event(
+                task_id=task.id,
+                workflow_id=run.id,
+                event="error",
+                codex_run_id=run_id,
+                status="codex_error",
+                worktree=worktree,
+                message=message,
+            )
+            service.update(task.id, status="error")
+            service.add_activity(task.id, f"Codex {task.task_type} failed (run {run_id}): {message}. Log: {log_path}")
+            self._fail_step(db, step, message)
+            raise
+
+        _log_task_event(
+            task_id=task.id,
+            workflow_id=run.id,
+            event="codex_exit",
+            codex_run_id=run_id,
+            status=str(result.exit_code),
+            worktree=worktree,
+            message=f"stdout_chars={len(result.stdout)} stderr_chars={len(result.stderr)}",
+        )
         self._complete_step(
             db,
             step,
-            {"would_route_to": would_route_to, "status": "idle"},
+            {
+                "task_type": task.task_type,
+                "run_id": run_id,
+                "exit_code": result.exit_code,
+                "worktree": worktree,
+                "log_path": str(log_path),
+            },
         )
-
+        current = service.get(task.id)
         return {
-            "task_id": task_id,
-            "task_type": task_type,
+            "task_id": task.id,
+            "task_type": getattr(current, "task_type", task.task_type),
             "status": "completed",
-            "reason": "routing stub; no real agent action",
-            "would_route_to": would_route_to,
+            "task_status": getattr(current, "status", None),
+            "reason": "Codex run finished; task state is managed by hooks.",
+            "would_route_to": f"codex:{task.task_type}",
+            "run_id": run_id,
+            "log_path": str(log_path),
         }
+
+    def _resolve_task_worktree(self, db: Session, task: Any) -> str:
+        from nina_core.repositories.service import RepositoryService
+
+        if not task.repository_id:
+            raise ValueError(
+                f"Repository required: {task.task_type} tasks must be attached to a registered repository."
+            )
+        repository = RepositoryService(db).get(task.repository_id)
+        if repository is None:
+            raise ValueError(f"Repository not found for task: {task.repository_id}")
+        path = Path(str(repository.path)).expanduser().resolve()
+        if not path.is_dir():
+            raise ValueError(f"Repository path does not exist: {path}")
+        return str(path)
+
+    def _codex_task_log_path(self, task_id: str, run_id: str) -> Path:
+        def safe(value: str) -> str:
+            return value.replace(os.sep, "_").replace("/", "_").replace(chr(92), "_")
+
+        return get_codex_task_logs_dir(self.config_dir) / safe(task_id) / f"{safe(run_id)}.log"
+
+    def _build_codex_task_env(
+        self,
+        input_data: dict[str, Any],
+        task_id: str,
+        run_id: str,
+        task_type: str,
+    ) -> dict[str, str]:
+        token = str(input_data.get("nina_token") or os.environ.get("NINA_TOKEN") or "")
+        base_url = str(input_data.get("nina_base_url") or os.environ.get("NINA_BASE_URL") or self._default_nina_base_url())
+        return {
+            "NINA_TASK_ID": task_id,
+            "NINA_RUN_ID": run_id,
+            "NINA_TASK_TYPE": task_type,
+            "NINA_BASE_URL": base_url,
+            "NINA_TOKEN": token,
+            "NINA_HOOK_TIMEOUT_MS": str(input_data.get("nina_hook_timeout_ms") or "5000"),
+        }
+
+    def _default_nina_base_url(self) -> str:
+        host = str(self.config.daemon_host or "127.0.0.1")
+        if host in {"0.0.0.0", "::"}:
+            host = "127.0.0.1"
+        return f"http://{host}:{int(self.config.daemon_port)}"
+
+    def _build_codex_task_prompt(self, task: Any, run_id: str, worktree: str) -> str:
+        instructions = {
+            "coding": "Implement the requested coding work in the worktree. Make the smallest coherent code changes needed.",
+            "reviewing": "Review the implementation as an independent reviewer. Do not make broad unrelated edits. Use Decision: approved only if it is ready.",
+        }.get(task.task_type, "Work this task and report the result clearly.")
+        description = task.description or "(none)"
+        final_report_lines = [
+            "- Outcome: completed, partially completed, or blocked",
+            "- Summary: concise result",
+            "- Files: key files touched or inspected",
+            "- Checks: commands run, or state not run",
+            "- Blockers: any blocker, or none",
+        ]
+        if task.task_type == "reviewing":
+            final_report_lines.insert(1, "- Decision: approved, rejected, or blocked")
+        return "\n".join(
+            [
+                "Use @nina-task.",
+                "",
+                f"Nina task id: {task.id}",
+                f"Nina run id: {run_id}",
+                f"Nina task type: {task.task_type}",
+                f"Worktree: {worktree}",
+                "",
+                "Task:",
+                f"Title: {task.title}",
+                f"Description: {description}",
+                "",
+                "Instructions:",
+                instructions,
+                "",
+                "Final report format:",
+                *final_report_lines,
+            ]
+        ).strip()
 
     def _extract_task_id(self, input_data: dict[str, Any]) -> str:
         task_id = input_data.get("task_id") if isinstance(input_data, dict) else None

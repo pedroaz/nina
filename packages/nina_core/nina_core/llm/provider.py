@@ -1,36 +1,32 @@
 from __future__ import annotations
 
-import base64
+import asyncio
 import json
 import os
+import re
+import shutil
+import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from openai import OpenAI
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from nina_core.codex.client import CodexClient
 from nina_core.config.settings import LLMConfig
 from nina_core.models.models import LLMInteraction
 
-CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-CODEX_ISSUER = "https://auth.openai.com"
-CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
-CODEX_AUTH_FILE_DEFAULT = "~/.codex/auth.json"
-CODEX_REFRESH_LEEWAY_MS = 5 * 60 * 1000
+
+CODEX_DEFAULT_MODEL = "codex-cli"
+CODEX_DEFAULT_TIMEOUT_SECONDS = 180.0
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _now_millis() -> int:
-    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 class ToolDefinition(BaseModel):
@@ -71,21 +67,6 @@ class LLMProvider:
 
 
 @dataclass
-class CodexAuth:
-    path: Path
-    raw: dict[str, Any]
-    access_token: str
-    refresh_token: str | None
-    expires_at: int | None
-    account_id: str | None
-
-    def is_expired(self) -> bool:
-        if self.expires_at is None:
-            return False
-        return self.expires_at <= _now_millis() + CODEX_REFRESH_LEEWAY_MS
-
-
-@dataclass
 class CodexAuthStatus:
     connected: bool
     account_id: str | None
@@ -93,338 +74,154 @@ class CodexAuthStatus:
     detail: str | None = None
 
 
+def _codex_binary() -> str:
+    configured = os.environ.get("NINA_CODEX_BINARY", "").strip()
+    return configured or (shutil.which("codex") or "")
+
+
 def codex_auth_status() -> CodexAuthStatus:
-    try:
-        auth = _load_codex_auth()
-    except Exception as exc:
-        return CodexAuthStatus(connected=False, account_id=None, expires_at=None, detail=str(exc))
-    return CodexAuthStatus(connected=True, account_id=auth.account_id, expires_at=auth.expires_at)
+    """Compatibility status object for callers that used to check Codex OAuth directly.
 
+    Nina no longer reads Codex auth tokens or calls ChatGPT/OpenAI endpoints itself.
+    Authentication is owned by the local Codex CLI process.
+    """
 
-def _load_codex_auth() -> CodexAuth:
-    path = Path(os.path.expanduser(os.environ.get("CODEX_AUTH_FILE", CODEX_AUTH_FILE_DEFAULT)))
-    if not path.exists():
-        raise RuntimeError(f"Codex auth file not found: {path}")
-    try:
-        raw = json.loads(path.read_text())
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Failed to read Codex auth file: {path}") from exc
-    if not isinstance(raw, dict):
-        raise RuntimeError(f"Invalid Codex auth file: {path}")
-
-    auth = _parse_codex_auth(path, raw)
-    if auth.access_token and auth.refresh_token and auth.is_expired():
-        refreshed = _refresh_codex_auth(auth.refresh_token)
-        auth = _store_codex_auth(auth, refreshed)
-    return auth
-
-
-def _parse_codex_auth(path: Path, raw: dict[str, Any]) -> CodexAuth:
-    has_tokens = isinstance(raw.get("tokens"), dict)
-    tokens = raw.get("tokens") if has_tokens else {}
-    if raw.get("auth_mode") in {"chatgpt", "chatgptAuthTokens"} or has_tokens:
-        access_token = _string_or_none(tokens.get("access_token"))
-        refresh_token = _string_or_none(tokens.get("refresh_token"))
-        expires_at = _int_or_none(tokens.get("expires_at") or tokens.get("expires"))
-        account_id = _string_or_none(tokens.get("account_id") or tokens.get("accountId"))
-    elif raw.get("type") == "oauth":
-        access_token = _string_or_none(raw.get("access") or raw.get("access_token"))
-        refresh_token = _string_or_none(raw.get("refresh") or raw.get("refresh_token"))
-        expires_at = _int_or_none(raw.get("expires") or raw.get("expires_at"))
-        account_id = _string_or_none(raw.get("account_id") or raw.get("accountId"))
-    else:
-        raise RuntimeError(f"Unsupported Codex auth file format: {path}")
-
-    if not access_token:
-        raise RuntimeError(f"Codex auth file does not contain an access token: {path}")
-    if account_id is None:
-        account_id = _extract_account_id(access_token)
-    return CodexAuth(
-        path=path,
-        raw=raw,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_at=expires_at,
-        account_id=account_id,
+    binary = _codex_binary()
+    if not binary:
+        return CodexAuthStatus(
+            connected=False,
+            account_id=None,
+            expires_at=None,
+            detail="codex binary not found on PATH",
+        )
+    return CodexAuthStatus(
+        connected=True,
+        account_id=None,
+        expires_at=None,
+        detail=f"Codex CLI: {binary}",
     )
 
 
-def _store_codex_auth(auth: CodexAuth, tokens: dict[str, Any]) -> CodexAuth:
-    raw = dict(auth.raw)
-    if raw.get("auth_mode") in {"chatgpt", "chatgptAuthTokens"} or isinstance(
-        raw.get("tokens"), dict
-    ):
-        current = dict(raw.get("tokens") or {})
-        current["access_token"] = tokens["access_token"]
-        current["refresh_token"] = tokens["refresh_token"]
-        current["expires_at"] = tokens["expires_at"]
-        if tokens.get("account_id") is not None:
-            current["account_id"] = tokens["account_id"]
-        raw["tokens"] = current
-    else:
-        raw["type"] = "oauth"
-        raw["access"] = tokens["access_token"]
-        raw["refresh"] = tokens["refresh_token"]
-        raw["expires"] = tokens["expires_at"]
-        if tokens.get("account_id") is not None:
-            raw["accountId"] = tokens["account_id"]
-    auth.path.write_text(json.dumps(raw, indent=2, sort_keys=False))
-    return CodexAuth(
-        path=auth.path,
-        raw=raw,
-        access_token=tokens["access_token"],
-        refresh_token=tokens["refresh_token"],
-        expires_at=tokens["expires_at"],
-        account_id=tokens.get("account_id") or auth.account_id,
-    )
+class CodexCliProvider(LLMProvider):
+    """LLM provider backed only by `codex exec`.
 
+    The Codex CLI is the sole AI boundary. Tool calls are requested via a small
+    JSON envelope so the existing Nina chat/agent tool loop can stay provider
+    independent.
+    """
 
-def _refresh_codex_auth(refresh_token: str) -> dict[str, Any]:
-    response = httpx.post(
-        f"{CODEX_ISSUER}/oauth/token",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": CODEX_CLIENT_ID,
-        },
-        timeout=30,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"Codex token refresh failed: {response.status_code}")
-    payload = response.json()
-    access_token = _string_or_none(payload.get("access_token"))
-    refresh_token = _string_or_none(payload.get("refresh_token")) or refresh_token
-    expires_in = _int_or_none(payload.get("expires_in")) or 3600
-    if not access_token:
-        raise RuntimeError("Codex token refresh response did not include an access token")
-    account_id = _extract_account_id(access_token)
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "expires_at": _now_millis() + (expires_in * 1000),
-        "account_id": account_id,
-    }
-
-
-def _string_or_none(value: Any) -> str | None:
-    return value if isinstance(value, str) and value else None
-
-
-def _int_or_none(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return None
-
-
-def _extract_account_id(token: str) -> str | None:
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    try:
-        payload = json.loads(_base64url_decode(parts[1]))
-    except (ValueError, TypeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    account_id = payload.get("chatgpt_account_id")
-    if isinstance(account_id, str) and account_id:
-        return account_id
-    api_auth = payload.get("https://api.openai.com/auth")
-    if isinstance(api_auth, dict):
-        account_id = api_auth.get("chatgpt_account_id")
-        if isinstance(account_id, str) and account_id:
-            return account_id
-    organizations = payload.get("organizations")
-    if isinstance(organizations, list) and organizations:
-        first = organizations[0]
-        if isinstance(first, dict):
-            account_id = first.get("id")
-            if isinstance(account_id, str) and account_id:
-                return account_id
-    return None
-
-
-def _base64url_decode(value: str) -> str:
-    remainder = len(value) % 4
-    if remainder:
-        value += "=" * (4 - remainder)
-    return base64.urlsafe_b64decode(value.encode()).decode()
-
-
-class CodexAuthProvider(LLMProvider):
-    def __init__(self, model: str | None = None) -> None:
-        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-4-mini")
-        self.auth = _load_codex_auth()
-        self.client = OpenAI(
-            api_key=self.auth.access_token,
-            base_url=CODEX_BASE_URL,
-            default_headers=self._default_headers(),
+    def __init__(
+        self,
+        model: str | None = None,
+        *,
+        timeout: float = CODEX_DEFAULT_TIMEOUT_SECONDS,
+        binary_path: str | None = None,
+    ) -> None:
+        self.model = model or os.environ.get("NINA_LLM_MODEL", CODEX_DEFAULT_MODEL)
+        self.timeout = timeout
+        self.client = CodexClient(
+            "127.0.0.1",
+            0,
+            "",
+            "",
+            timeout=timeout,
+            binary_path=binary_path or os.environ.get("NINA_CODEX_BINARY"),
         )
 
-    def _default_headers(self, session_id: str | None = None) -> dict[str, str]:
-        headers = {"originator": "nina"}
-        if self.auth.account_id:
-            headers["ChatGPT-Account-Id"] = self.auth.account_id
-        if session_id:
-            headers["session-id"] = session_id
-        return headers
-
-    def _build_input(self, request: LLMRequest) -> Any:
-        if request.messages:
-            return _messages_to_responses_input(request.messages, request.prompt)
-        return [
-            {
-                "type": "message",
-                "role": "user",
-                "content": [{"type": "input_text", "text": request.prompt or ""}],
-            }
-        ]
-
-    def _build_tools(self, request: LLMRequest) -> list[dict[str, Any]] | None:
-        if not request.tools:
-            return None
-        return [
-            {
-                "type": "function",
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters or {"type": "object", "properties": {}},
-            }
-            for tool in request.tools
-        ]
-
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        model = request.model or self.model
-        parts: list[str] = []
-        tool_calls: dict[str, dict[str, Any]] = {}
-        finish_reason: str | None = None
-        stream_kwargs: dict[str, Any] = {
-            "model": model,
-            "store": False,
-            "extra_headers": self._default_headers(request.session_id),
-            "instructions": (
-                "You are Nina, a local-first assistant for notes, tasks, and workflows. "
-                "Answer clearly and concisely."
-            ),
-            "input": self._build_input(request),
-        }
-        tools = self._build_tools(request)
-        if tools:
-            stream_kwargs["tools"] = tools
-            stream_kwargs["tool_choice"] = request.tool_choice or "auto"
-        with self.client.responses.stream(**stream_kwargs) as stream:
-            for event in stream:
-                event_type = getattr(event, "type", None)
-                if event_type == "response.output_text.delta":
-                    delta = getattr(event, "delta", None)
-                    if isinstance(delta, str) and delta:
-                        parts.append(delta)
-                elif event_type == "response.output_item.added":
-                    item = getattr(event, "item", None)
-                    if item is not None and getattr(item, "type", None) == "function_call":
-                        call_id = getattr(item, "call_id", None) or getattr(item, "id", None) or ""
-                        tool_calls[call_id] = {
-                            "id": call_id,
-                            "name": getattr(item, "name", "") or "",
-                            "arguments": "",
-                        }
-                elif event_type == "response.function_call_arguments.delta":
-                    call_id = (
-                        getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
-                    )
-                    delta = getattr(event, "delta", None)
-                    if call_id in tool_calls and isinstance(delta, str):
-                        tool_calls[call_id]["arguments"] = (
-                            tool_calls[call_id].get("arguments", "") + delta
-                        )
-                elif event_type == "response.function_call_arguments.done":
-                    call_id = (
-                        getattr(event, "call_id", None) or getattr(event, "item_id", None) or ""
-                    )
-                    final_args = getattr(event, "arguments", None)
-                    if call_id in tool_calls and isinstance(final_args, str):
-                        tool_calls[call_id]["arguments"] = final_args
-                elif event_type == "response.completed":
-                    response = getattr(event, "response", None)
-                    if response is not None:
-                        finish_reason = getattr(response, "status", None) or getattr(
-                            response, "finish_reason", None
-                        )
-                        if not parts and response is not None:
-                            fallback = getattr(response, "output_text", "") or ""
-                            if fallback:
-                                parts.append(fallback)
-                            else:
-                                extracted = _extract_response_text(response)
-                                if extracted:
-                                    parts.append(extracted)
-                        for item in getattr(response, "output", []) or []:
-                            if getattr(item, "type", None) != "function_call":
-                                continue
-                            call_id = (
-                                getattr(item, "call_id", None) or getattr(item, "id", None) or ""
-                            )
-                            arguments = getattr(item, "arguments", "")
-                            if call_id in tool_calls:
-                                if isinstance(arguments, str):
-                                    tool_calls[call_id]["arguments"] = arguments
-                                tool_calls[call_id]["name"] = (
-                                    getattr(item, "name", "") or tool_calls[call_id]["name"]
-                                )
-        content = "".join(parts)
-        parsed_calls: list[ToolCall] = []
-        for raw in tool_calls.values():
-            args = raw.get("arguments") or ""
-            try:
-                parsed = json.loads(args) if isinstance(args, str) and args else {}
-            except json.JSONDecodeError:
-                parsed = {"_raw": args}
-            parsed_calls.append(
-                ToolCall(
-                    id=str(raw.get("id") or ""), name=str(raw.get("name") or ""), arguments=parsed
-                )
+        prompt = self._build_prompt(request)
+        result = await self.client.exec(
+            prompt,
+            json_mode=False,
+            timeout=self.timeout,
+            output_last_message=True,
+        )
+        text = (result.last_message or result.stdout or "").strip()
+        return self._parse_result(text, request)
+
+    def _build_prompt(self, request: LLMRequest) -> str:
+        messages = request.messages or [{"role": "user", "content": request.prompt or ""}]
+        tools = [tool.model_dump() for tool in request.tools or []]
+        return "\n".join(
+            [
+                "You are Nina, a local-first assistant for notes, tasks, and workflows.",
+                "You are running through the local Codex CLI. Do not assume direct API access.",
+                "Return exactly one JSON object and no markdown fences.",
+                "Schema:",
+                '{"response":"text for the user","tool_calls":[{"id":"call_1","name":"tool_name","arguments":{}}],"finish_reason":"stop|tool_calls"}',
+                "Use tool_calls only when a listed tool is needed. If calling tools, keep response empty or brief.",
+                "If no tool is needed, return an empty tool_calls list and finish_reason stop.",
+                f"Purpose: {request.purpose}",
+                f"Preferred model label for logging only: {request.model or self.model}",
+                f"Tool choice: {request.tool_choice or 'auto'}",
+                "Messages JSON:",
+                json.dumps(messages, ensure_ascii=False, default=str),
+                "Tools JSON:",
+                json.dumps(tools, ensure_ascii=False, default=str),
+            ]
+        )
+
+    def _parse_result(self, text: str, request: LLMRequest) -> LLMResponse:
+        payload = _extract_json_object(text)
+        if payload is None:
+            return LLMResponse(
+                response=text,
+                model=request.model or self.model,
+                provider="codex",
+                tool_calls=[],
+                finish_reason="stop",
             )
+
+        raw_calls = payload.get("tool_calls") or []
+        parsed_calls: list[ToolCall] = []
+        if isinstance(raw_calls, list):
+            for index, raw in enumerate(raw_calls, start=1):
+                if not isinstance(raw, dict):
+                    continue
+                name = raw.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                arguments = raw.get("arguments") or {}
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments) if arguments else {}
+                    except json.JSONDecodeError:
+                        arguments = {"_raw": arguments}
+                if not isinstance(arguments, dict):
+                    arguments = {"value": arguments}
+                call_id = raw.get("id")
+                parsed_calls.append(
+                    ToolCall(
+                        id=str(call_id or f"call_{index}"),
+                        name=name,
+                        arguments=arguments,
+                    )
+                )
+        response_text = payload.get("response")
+        if not isinstance(response_text, str):
+            response_text = ""
+        finish_reason = payload.get("finish_reason")
+        if not isinstance(finish_reason, str) or not finish_reason:
+            finish_reason = "tool_calls" if parsed_calls else "stop"
         return LLMResponse(
-            response=content,
-            model=model,
+            response=response_text,
+            model=request.model or self.model,
             provider="codex",
             tool_calls=parsed_calls,
             finish_reason=finish_reason,
         )
 
 
-CodexCliProvider = CodexAuthProvider
-
-
-class OpenAIProvider(LLMProvider):
-    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not self.api_key:
-            raise RuntimeError("OPENAI_API_KEY is required for the OpenAI provider")
-        self.client = OpenAI(api_key=self.api_key)
-        self.model = model or os.environ.get("NINA_LLM_MODEL", "gpt-4-mini")
-
-    async def complete(self, request: LLMRequest) -> LLMResponse:
-        return _chat_completions_complete(self.client, self.model, request, provider_name="openai")
-
-
 class OpenAICompatibleProvider(LLMProvider):
-    """Talks to any OpenAI-compatible HTTP server.
+    """Talk to a local OpenAI-compatible HTTP server without API keys.
 
-    Used for llama.cpp (`llama-server`), vLLM, LM Studio, and any other runtime
-    that exposes the `/v1/chat/completions` shape. Auth is optional: Ollama and
-    llama.cpp both ignore the bearer token, but passing one is harmless.
+    This is kept only for local runtimes such as llama.cpp/vLLM/LM Studio. Nina's
+    default and cloud-backed path is Codex CLI.
     """
 
     def __init__(
         self,
         base_url: str | None = None,
-        api_key: str | None = None,
         model: str | None = None,
     ) -> None:
         if not base_url:
@@ -433,91 +230,69 @@ class OpenAICompatibleProvider(LLMProvider):
                 "Set llm.base_url in config (e.g. http://localhost:11434/v1)."
             )
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key or "not-needed"
         self.model = model or "local-model"
-        self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        return _chat_completions_complete(
-            self.client, self.model, request, provider_name="openai_compatible"
+        model = request.model or self.model
+        messages = request.messages or [{"role": "user", "content": request.prompt or ""}]
+        payload: dict[str, Any] = {"model": model, "messages": messages}
+        if request.tools:
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters or {"type": "object", "properties": {}},
+                    },
+                }
+                for tool in request.tools
+            ]
+            payload["tool_choice"] = request.tool_choice or "auto"
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.post(f"{self.base_url}/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        content = message.get("content") or ""
+        tool_calls: list[ToolCall] = []
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") or {}
+            raw_args = function.get("arguments") or "{}"
+            try:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            except json.JSONDecodeError:
+                args = {"_raw": raw_args}
+            if not isinstance(args, dict):
+                args = {"value": args}
+            tool_calls.append(
+                ToolCall(
+                    id=str(call.get("id") or ""),
+                    name=str(function.get("name") or ""),
+                    arguments=args,
+                )
+            )
+        return LLMResponse(
+            response=str(content),
+            model=model,
+            provider="openai_compatible",
+            tool_calls=tool_calls,
+            finish_reason=choice.get("finish_reason"),
         )
 
 
 class OllamaProvider(OpenAICompatibleProvider):
-    """Convenience subclass for local Ollama. Default base_url is
-    `http://localhost:11434/v1` and default model is `gemma3:4b`. Run
-    `ollama serve` and `ollama pull gemma3:4b` once on this machine.
-    """
-
     DEFAULT_BASE_URL = "http://localhost:11434/v1"
     DEFAULT_MODEL = "gemma3:4b"
 
-    def __init__(
-        self,
-        base_url: str | None = None,
-        model: str | None = None,
-        api_key: str | None = None,
-    ) -> None:
-        super().__init__(
-            base_url=base_url or self.DEFAULT_BASE_URL,
-            api_key=api_key or "ollama",
-            model=model or self.DEFAULT_MODEL,
-        )
-        self.provider_label = "ollama"
+    def __init__(self, base_url: str | None = None, model: str | None = None) -> None:
+        super().__init__(base_url=base_url or self.DEFAULT_BASE_URL, model=model or self.DEFAULT_MODEL)
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        return _chat_completions_complete(self.client, self.model, request, provider_name="ollama")
-
-
-def _chat_completions_complete(
-    client: OpenAI,
-    default_model: str,
-    request: LLMRequest,
-    *,
-    provider_name: str,
-) -> LLMResponse:
-    model = request.model or default_model
-    messages = request.messages or [{"role": "user", "content": request.prompt or ""}]
-    kwargs: dict[str, Any] = {"model": model, "messages": messages}
-    if request.tools:
-        kwargs["tools"] = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters or {"type": "object", "properties": {}},
-                },
-            }
-            for tool in request.tools
-        ]
-        kwargs["tool_choice"] = request.tool_choice or "auto"
-    response = client.chat.completions.create(**kwargs)
-    choice = response.choices[0]
-    content = choice.message.content or ""
-    tool_calls: list[ToolCall] = []
-    for call in getattr(choice.message, "tool_calls", None) or []:
-        arguments: Any = {}
-        raw = getattr(call.function, "arguments", "") or ""
-        try:
-            arguments = json.loads(raw) if raw else {}
-        except json.JSONDecodeError:
-            arguments = {"_raw": raw}
-        tool_calls.append(
-            ToolCall(
-                id=str(getattr(call, "id", "") or ""),
-                name=str(call.function.name or ""),
-                arguments=arguments,
-            )
-        )
-    finish_reason = getattr(choice, "finish_reason", None)
-    return LLMResponse(
-        response=content,
-        model=model,
-        provider=provider_name,
-        tool_calls=tool_calls,
-        finish_reason=finish_reason,
-    )
+        response = await super().complete(request)
+        response.provider = "ollama"
+        return response
 
 
 class FakeProvider(LLMProvider):
@@ -562,33 +337,25 @@ class LLMService:
         db_path: str,
         provider: LLMProvider | None = None,
         config: LLMConfig | None = None,
+        codex_binary_path: str | None = None,
     ) -> None:
         self.db_path = db_path
         self.config = config or LLMConfig()
+        self.codex_binary_path = codex_binary_path
         self.provider: LLMProvider = provider or self._build_provider()
 
     def _build_provider(self) -> LLMProvider:
-        provider = self.config.provider.lower()
+        provider = (self.config.provider or "codex").lower()
         if provider == "fake":
             return FakeProvider()
-        if provider == "openai":
-            return OpenAIProvider(model=self.config.model, api_key=self.config.api_key)
-        if provider == "codex":
-            return CodexAuthProvider(model=self.config.model)
+        if provider in {"codex", "openai", "openai_web", "web"}:
+            return CodexCliProvider(model=self.config.model, binary_path=self.codex_binary_path)
         if provider == "ollama":
-            return OllamaProvider(
-                base_url=self.config.base_url,
-                model=self.config.model,
-            )
+            return OllamaProvider(base_url=self.config.base_url, model=self.config.model)
         if provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"}:
-            return OpenAICompatibleProvider(
-                base_url=self.config.base_url,
-                api_key=self.config.api_key,
-                model=self.config.model,
-            )
+            return OpenAICompatibleProvider(base_url=self.config.base_url, model=self.config.model)
         raise RuntimeError(
-            f"Unsupported LLM provider: {provider}. "
-            f"Expected one of: codex, openai, ollama, openai_compatible, fake."
+            f"Unsupported LLM provider: {provider}. Expected one of: codex, ollama, openai_compatible, fake."
         )
 
     def _session(self) -> Session:
@@ -632,114 +399,30 @@ class LLMService:
         return response
 
 
-def _extract_response_text(response: Any) -> str:
-    parts: list[str] = []
-    for item in getattr(response, "output", []) or []:
-        if getattr(item, "type", None) != "message":
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    candidates = [stripped]
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, flags=re.DOTALL)
+    if fence:
+        candidates.append(fence.group(1))
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(stripped[start : end + 1])
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
             continue
-        for content in getattr(item, "content", []) or []:
-            if getattr(content, "type", None) != "output_text":
-                continue
-            text = getattr(content, "text", None)
-            if isinstance(text, str) and text:
-                parts.append(text)
-    return "".join(parts)
-
-
-def _messages_to_responses_input(
-    messages: list[dict[str, Any]], fallback_prompt: str
-) -> list[dict[str, Any]]:
-    """Translate OpenAI chat-style messages into the Responses API input shape.
-
-    System messages are dropped (Responses uses the `instructions` argument).
-    Assistant tool_calls are converted into the Responses function_call items
-    with the matching call_id, and role=tool messages are converted into
-    function_call_output items referencing the call_id.
-    """
-
-    converted: list[dict[str, Any]] = []
-    for message in messages:
-        role = message.get("role")
-        if role == "system":
-            continue
-        if role == "user":
-            content = message.get("content", "")
-            if isinstance(content, list):
-                converted.append({"type": "message", "role": "user", "content": content})
-            else:
-                converted.append(
-                    {
-                        "type": "message",
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": str(content)}],
-                    }
-                )
-        elif role == "assistant":
-            tool_calls = message.get("tool_calls") or []
-            if tool_calls:
-                for call in tool_calls:
-                    function = call.get("function", {}) if isinstance(call, dict) else {}
-                    call_id = call.get("id") or call.get("call_id") or ""
-                    name = function.get("name", "") if isinstance(function, dict) else ""
-                    arguments = function.get("arguments", "") if isinstance(function, dict) else ""
-                    if isinstance(arguments, dict):
-                        arguments = json.dumps(arguments)
-                    converted.append(
-                        {
-                            "type": "function_call",
-                            "name": name,
-                            "arguments": arguments or "",
-                            "call_id": call_id,
-                        }
-                    )
-            content = message.get("content", "")
-            if content:
-                if isinstance(content, list):
-                    converted.append({"type": "message", "role": "assistant", "content": content})
-                else:
-                    converted.append(
-                        {
-                            "type": "message",
-                            "role": "assistant",
-                            "content": [{"type": "output_text", "text": str(content)}],
-                        }
-                    )
-        elif role == "tool":
-            call_id = (
-                message.get("tool_call_id") or message.get("call_id") or message.get("id") or ""
-            )
-            output = message.get("content", "")
-            if not isinstance(output, str):
-                output = json.dumps(output)
-            converted.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": output,
-                }
-            )
-    if not converted and fallback_prompt:
-        converted.append(
-            {
-                "type": "message",
-                "role": "user",
-                "content": [{"type": "input_text", "text": str(fallback_prompt)}],
-            }
-        )
-    return converted
+        if isinstance(payload, dict):
+            return payload
+    return None
 
 
 @dataclass
 class LLMProviderStatus:
-    """Snapshot of a configured LLM provider's health, used by `nina status`.
-
-    `reachable` is True when the provider's HTTP endpoint (or local file in the
-    case of codex/openai with no network call) responded within the timeout.
-    `model_present` is True when the configured model appears in the list of
-    available models. For providers that don't expose a model list (codex,
-    openai), `model_present` reflects whether a `model` is configured.
-    """
-
     provider: str
     model: str
     base_url: str | None
@@ -749,20 +432,8 @@ class LLMProviderStatus:
     available_models: list[str] | None = None
 
 
-def check_provider_status(
-    config: LLMConfig,
-    *,
-    timeout: float = 3.0,
-) -> LLMProviderStatus:
-    """Probe the configured LLM provider.
-
-    Tries to be cheap and offline-friendly: it never raises. For local servers
-    it pings `/v1/models` (Ollama) or `/models` (llama.cpp) so we can show
-    whether the model the user asked for is actually pulled. For cloud
-    providers it reports `reachable=True` when credentials are configured
-    (we don't burn a request just for a status check).
-    """
-    provider = (config.provider or "").lower()
+def check_provider_status(config: LLMConfig, *, timeout: float = 3.0) -> LLMProviderStatus:
+    provider = (config.provider or "codex").lower()
     base_url = config.base_url
     model = config.model
     try:
@@ -770,25 +441,33 @@ def check_provider_status(
             return _check_ollama(base_url, model, timeout=timeout)
         if provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"}:
             return _check_openai_compatible(base_url, model, timeout=timeout)
-        if provider == "openai":
-            has_key = bool(config.api_key or os.environ.get("OPENAI_API_KEY"))
-            return LLMProviderStatus(
-                provider=provider,
-                model=model,
-                base_url=None,
-                reachable=has_key,
-                model_present=bool(model),
-                detail=(None if has_key else "OPENAI_API_KEY is not set in the environment"),
+        if provider in {"codex", "openai", "openai_web", "web"}:
+            binary = _codex_binary()
+            if not binary:
+                return LLMProviderStatus(
+                    provider="codex",
+                    model=model,
+                    base_url=None,
+                    reachable=False,
+                    model_present=False,
+                    detail="codex binary not found on PATH",
+                )
+            result = subprocess.run(
+                [binary, "--version"],
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
             )
-        if provider == "codex":
-            auth = codex_auth_status()
+            version = (result.stdout or result.stderr or "").strip().splitlines()
+            detail = version[0] if version else None
             return LLMProviderStatus(
-                provider=provider,
+                provider="codex",
                 model=model,
                 base_url=None,
-                reachable=auth.connected,
-                model_present=bool(model),
-                detail=None if auth.connected else (auth.detail or "Codex auth disconnected"),
+                reachable=result.returncode == 0,
+                model_present=True,
+                detail=detail if result.returncode == 0 else (detail or "codex --version failed"),
             )
         if provider == "fake":
             return LLMProviderStatus(
@@ -820,42 +499,28 @@ def check_provider_status(
 
 def _check_ollama(base_url: str | None, model: str | None, *, timeout: float) -> LLMProviderStatus:
     url = (base_url or OllamaProvider.DEFAULT_BASE_URL).rstrip("/")
-    # Strip the trailing /v1 because Ollama's native API lives at the root.
     ollama_root = url[:-3] if url.endswith("/v1") else url
     tags_url = f"{ollama_root}/api/tags"
-    try:
-        resp = httpx.get(tags_url, timeout=timeout)
-        resp.raise_for_status()
-        payload = resp.json()
-    except Exception as exc:  # noqa: BLE001
-        return LLMProviderStatus(
-            provider="ollama",
-            model=model or "",
-            base_url=base_url,
-            reachable=False,
-            model_present=False,
-            detail=f"Ollama not reachable at {tags_url}: {exc}",
-        )
-    models_raw = payload.get("models") or []
-    names = [m.get("name", "") for m in models_raw if m.get("name")]
-    present = bool(model) and any(model == name or name.startswith(f"{model}:") for name in names)
+    response = httpx.get(tags_url, timeout=timeout)
+    response.raise_for_status()
+    models = [item.get("name", "") for item in response.json().get("models", [])]
+    present = bool(model and model in models)
     return LLMProviderStatus(
         provider="ollama",
         model=model or "",
-        base_url=base_url,
+        base_url=url,
         reachable=True,
         model_present=present,
-        detail=(
-            None
-            if present or not model
-            else f"Model {model!r} not pulled. Run: ollama pull {model}"
-        ),
-        available_models=names,
+        available_models=models,
+        detail=None if present else f"Model not found. Run: ollama pull {model}" if model else None,
     )
 
 
 def _check_openai_compatible(
-    base_url: str | None, model: str | None, *, timeout: float
+    base_url: str | None,
+    model: str | None,
+    *,
+    timeout: float,
 ) -> LLMProviderStatus:
     if not base_url:
         return LLMProviderStatus(
@@ -867,29 +532,18 @@ def _check_openai_compatible(
             detail="llm.base_url is not set",
         )
     url = base_url.rstrip("/")
-    models_url = f"{url}/models" if not url.endswith("/v1") else f"{url}/models"
-    try:
-        resp = httpx.get(models_url, timeout=timeout)
-        resp.raise_for_status()
-        payload = resp.json()
-    except Exception as exc:  # noqa: BLE001
-        return LLMProviderStatus(
-            provider="openai_compatible",
-            model=model or "",
-            base_url=base_url,
-            reachable=False,
-            model_present=False,
-            detail=f"Server not reachable at {models_url}: {exc}",
-        )
-    models_raw = payload.get("data") or []
-    names = [m.get("id", "") for m in models_raw if m.get("id")]
-    present = bool(model) and model in names
+    response = httpx.get(f"{url}/models", timeout=timeout)
+    response.raise_for_status()
+    payload = response.json()
+    raw_models = payload.get("data") or payload.get("models") or []
+    models = [str(item.get("id") or item.get("name") or item) for item in raw_models]
+    present = bool(model and (not models or model in models))
     return LLMProviderStatus(
         provider="openai_compatible",
         model=model or "",
-        base_url=base_url,
+        base_url=url,
         reachable=True,
         model_present=present,
-        detail=None if present or not model else f"Model {model!r} not served by this server",
-        available_models=names,
+        available_models=models,
+        detail=None if present else f"Model {model!r} was not reported by {url}",
     )

@@ -23,9 +23,6 @@ def isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     initialize(config_dir=config_dir, force=True)
     monkeypatch.setenv("NINA_CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("NINA_TOKEN", read_token(get_token_path(config_dir)))
-    # Disable background classification threads; tests use synchronous
-    # classification so the daemon-driven flow is deterministic.
-    monkeypatch.setenv("NINA_BACKGROUND_CLASSIFY", "0")
     return config_dir
 
 
@@ -57,15 +54,18 @@ def api_client(
     fake_llm: FakeProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[TestClient]:
-    from nina_server.app import app, apply_runtime_config
+    from nina_server import apply_runtime_config, create_app
 
     # Apply the active config so endpoints read vault/db paths from
     # `NinaConfig` instead of hidden env vars. The CLI's `nina config` PATCH
     # endpoint also writes through this path.
+    app = create_app()
     apply_runtime_config(app, isolated_config, load_effective_config(isolated_config))
 
     scheduler = SchedulerService(str(get_database_path(isolated_config)))
     app.state.scheduler = scheduler
+    if hasattr(app.state, "runtime"):
+        app.state.runtime.scheduler = scheduler
     with TestClient(app) as client:
         yield client
     # Drain any classification threads spawned by the test before tearing
@@ -76,7 +76,16 @@ def api_client(
     scheduler.shutdown()
     if hasattr(app.state, "scheduler"):
         del app.state.scheduler
+    if hasattr(app.state, "runtime"):
+        app.state.runtime.scheduler = None
     if hasattr(app.state, "meeting_recorder"):
         del app.state.meeting_recorder
     if hasattr(app.state, "config"):
         del app.state.config
+    if hasattr(app.state, "runtime"):
+        del app.state.runtime
+    if hasattr(app.state, "token"):
+        del app.state.token
+    from nina_server.runtime import set_active_app
+
+    set_active_app(None)

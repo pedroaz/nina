@@ -14,6 +14,10 @@ def _slugify(value: str) -> str:
     return slug or "note"
 
 
+TASK_NOTES_HEADING = "## Notes"
+TASK_ACTIVITY_HEADING = "## Nina Activity"
+
+
 class ObsidianService:
     def __init__(self, vault_path: Path | str) -> None:
         self.vault_path = Path(vault_path)
@@ -25,51 +29,79 @@ class ObsidianService:
         path.write_text(frontmatter.dumps(post))
         return path
 
+    def _default_task_path(self, task: Task) -> Path:
+        return self.vault_path / "Tasks" / f"{task.id}.md"
+
     def _task_path(self, task: Task) -> Path:
-        return self.vault_path / "Tasks" / f"{task.title.replace(' ', '-').lower()}.md"
+        return self._default_task_path(task)
+
+    def _task_metadata(self, task: Task) -> dict[str, Any]:
+        return {
+            "nina_type": "task",
+            "nina_id": task.id,
+            "task_type": task.task_type,
+            "status": task.status,
+            "repository_id": task.repository_id,
+            "classified_at": task.classified_at,
+            "classification_reason": task.classification_reason,
+            "classification_model": task.classification_model,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+        }
+
+    def _task_body(self, task: Task, existing_content: str | None = None) -> str:
+        preserved = self._preserved_task_sections(existing_content or "")
+        body = "\n".join(
+            [
+                f"# {task.title}",
+                "",
+                "## Description",
+                "",
+                task.description or "",
+                "",
+            ]
+        )
+        if preserved:
+            return body + preserved.rstrip() + "\n"
+        return body + f"{TASK_NOTES_HEADING}\n\n{TASK_ACTIVITY_HEADING}\n"
+
+    def _preserved_task_sections(self, content: str) -> str:
+        starts = [
+            idx
+            for idx in (content.find(TASK_NOTES_HEADING), content.find(TASK_ACTIVITY_HEADING))
+            if idx >= 0
+        ]
+        if not starts:
+            return ""
+        return content[min(starts):].strip() + "\n"
 
     def create_task_note(self, task: Task) -> None:
         path = self._task_path(task)
-        post = frontmatter.Post(
-            f"""# {task.title}
-
-## Description
-
-{task.description}
-""",
-            nina_type="task",
-            nina_id=task.id,
-            task_type=task.task_type,
-            status=task.status,
-            opencode_project_id=task.opencode_project_id,
-            classified_at=task.classified_at,
-            classification_reason=task.classification_reason,
-            classification_model=task.classification_model,
-            created_at=task.created_at,
-            updated_at=task.updated_at,
-        )
+        post = frontmatter.Post(self._task_body(task), **self._task_metadata(task))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(frontmatter.dumps(post))
-        task.note_path = str(path.relative_to(self.vault_path))
 
     def update_task_note(self, task: Task) -> None:
         path = self._task_path(task)
         if path.exists():
             post = frontmatter.loads(path.read_text())
-            post.content = f"""# {task.title}
-
-## Description
-
-{task.description}
-"""
-            post.metadata["task_type"] = task.task_type
-            post.metadata["status"] = task.status
-            post.metadata["opencode_project_id"] = task.opencode_project_id
-            post.metadata["classified_at"] = task.classified_at
-            post.metadata["classification_reason"] = task.classification_reason
-            post.metadata["classification_model"] = task.classification_model
-            post.metadata["updated_at"] = task.updated_at
+            post.content = self._task_body(task, post.content)
+            post.metadata.update(self._task_metadata(task))
             path.write_text(frontmatter.dumps(post))
+
+    def append_task_activity(self, task: Task, message: str) -> None:
+        path = self._task_path(task)
+        if not path.exists():
+            self.create_task_note(task)
+        post = frontmatter.loads(path.read_text())
+        post.metadata.update(self._task_metadata(task))
+        content = self._task_body(task, post.content).rstrip()
+        if TASK_ACTIVITY_HEADING not in content:
+            content += f"\n\n{TASK_ACTIVITY_HEADING}"
+        timestamp = datetime.now(timezone.utc).isoformat()
+        content = content.rstrip() + f"\n- {timestamp}: {message.strip()}\n"
+        post.content = content
+        path.write_text(frontmatter.dumps(post))
 
     def delete_task_note(self, task: Task) -> None:
         path = self._task_path(task)
@@ -84,17 +116,13 @@ class ObsidianService:
             archived_dir = self.vault_path / "System" / "Archived"
             archived_dir.mkdir(parents=True, exist_ok=True)
             os.rename(path, archived_dir / path.name)
-            task.note_path = str((archived_dir / path.name).relative_to(self.vault_path))
 
     def unarchive_task_note(self, task: Task) -> None:
-        archived_path = (
-            self.vault_path / "System" / "Archived" / f"{task.title.replace(' ', '-').lower()}.md"
-        )
+        archived_path = self.vault_path / "System" / "Archived" / f"{task.id}.md"
         if archived_path.exists():
-            task_path = self._task_path(task)
+            task_path = self._default_task_path(task)
             task_path.parent.mkdir(parents=True, exist_ok=True)
             os.rename(archived_path, task_path)
-            task.note_path = str(task_path.relative_to(self.vault_path))
 
     def create_research_note(
         self,

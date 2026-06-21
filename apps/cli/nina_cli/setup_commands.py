@@ -114,13 +114,14 @@ def _install_system_packages() -> None:
     raise SetupError(f"Automatic system package installation is not supported on {system}.")
 
 
-def setup_runtime(python: str | None = None) -> None:
+def setup_runtime(python: str | None = None, *, install_system: bool = True) -> None:
     python = python or _nina_python()
     failures: list[str] = []
-    try:
-        _install_system_packages()
-    except SetupError as exc:
-        failures.append(str(exc))
+    if install_system:
+        try:
+            _install_system_packages()
+        except SetupError as exc:
+            failures.append(str(exc))
     try:
         _install_python_packages(python, PYTHON_PACKAGES)
         if sys.platform == "darwin":
@@ -136,11 +137,18 @@ def setup_runtime(python: str | None = None) -> None:
 
 
 @setup_app.callback(invoke_without_command=True)
-def setup_default(ctx: typer.Context) -> None:
+def setup_default(
+    ctx: typer.Context,
+    system: bool = typer.Option(
+        True,
+        "--system/--no-system",
+        help="Install OS packages such as ffmpeg.",
+    ),
+) -> None:
     if ctx.invoked_subcommand is not None:
         return
     try:
-        setup_runtime()
+        setup_runtime(install_system=system)
     except SetupError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc

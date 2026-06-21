@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nina Workflows and LLM"
+  short_description: "Nina LLM tools, workflows, and jobs"
+  default_prompt: "Use $nina-workflows-llm to work on Nina workflows, LLM providers, tool calls, jobs, search, and meeting pipelines."

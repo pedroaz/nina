@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nina Architecture"
+  short_description: "Nina scope, state, and storage rules"
+  default_prompt: "Use $nina-architecture to reason about Nina's product scope, daemon boundary, storage, and docs."

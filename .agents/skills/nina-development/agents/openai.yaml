@@ -1,4 +1,4 @@
 interface:
   display_name: "Nina Development"
-  short_description: "Nina validation, backlog, and dev ops"
-  default_prompt: "Use $nina-development to work on Nina validation, smoke tests, backlog sequencing, and developer tooling."
+  short_description: "Nina validation, tests, and dev workflow"
+  default_prompt: "Use $nina-development to work on Nina validation, tests, build tooling, and developer workflow."

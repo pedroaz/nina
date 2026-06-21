@@ -27,6 +27,7 @@ CLASSIFY_PROMPT = (
     "- reminder: a personal reminder the user needs to act on (e.g. message a colleague, buy milk).\n"
     "- research: an open-ended investigation the AI can answer by reading/writing notes.\n"
     "- coding: a development task — building, fixing, refactoring code in this repo.\n"
+    "- reviewing: a code review task — checking an implementation and deciding whether it is approved.\n"
     "- blocked: the task is currently waiting on someone or something else.\n"
     "- human: requires the user to do something the AI cannot (a phone call, a meeting, an in-person errand).\n"
     "- done: the work is already complete.\n\n"

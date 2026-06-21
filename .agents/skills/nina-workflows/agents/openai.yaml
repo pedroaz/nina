@@ -1,4 +1,0 @@
-interface:
-  display_name: "Nina Workflows"
-  short_description: "Nina workflows, LLM, jobs, and scheduler"
-  default_prompt: "Use $nina-workflows to work on Nina workflows, LLM providers, job scheduling, and daily summaries."

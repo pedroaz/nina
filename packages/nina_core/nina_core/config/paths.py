@@ -49,13 +49,17 @@ def get_recordings_path(config_dir: Path) -> Path:
     return config_dir / "recordings"
 
 
-def get_opencode_pid_path(config_dir: Path) -> Path:
-    return config_dir / "opencode.pid"
+def get_codex_pid_path(config_dir: Path) -> Path:
+    return config_dir / "codex.pid"
 
 
-def get_opencode_runtime_path(config_dir: Path) -> Path:
-    return config_dir / "opencode.json"
+def get_codex_runtime_path(config_dir: Path) -> Path:
+    return config_dir / "codex.json"
 
 
-def get_opencode_log_path(config_dir: Path) -> Path:
-    return config_dir / "logs" / "opencode.log"
+def get_codex_log_path(config_dir: Path) -> Path:
+    return config_dir / "logs" / "codex.log"
+
+
+def get_codex_task_logs_dir(config_dir: Path) -> Path:
+    return config_dir / "logs" / "codex" / "tasks"

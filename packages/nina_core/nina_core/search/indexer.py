@@ -1,5 +1,4 @@
 import hashlib
-import os
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from nina_core.models.models import Note
+from nina_core.obsidian.policy import is_indexable_note_path, iter_indexable_note_files
 
 
 def _hash_file(path: Path) -> str:
@@ -17,37 +17,32 @@ def _hash_file(path: Path) -> str:
 def scan_vault(db: Session, vault_path: str) -> list[Note]:
     vault = Path(vault_path)
     notes: list[Note] = []
-    for root, _dirs, files in os.walk(vault):
-        for filename in files:
-            if not filename.endswith(".md"):
-                continue
-            path = Path(root) / filename
-            rel_path = str(path.relative_to(vault))
-            content = path.read_text()
-            post = frontmatter.loads(content)
-            title = post.metadata.get("title", path.stem)
-            content_hash = _hash_file(path)
-            note = db.query(Note).filter(Note.path == rel_path).first()
-            now = _now()
-            if not note:
-                note = Note(
-                    id=_hash_path(rel_path),
-                    nina_type=post.metadata.get("nina_type", "note"),
-                    entity_id=post.metadata.get("nina_id"),
-                    path=rel_path,
-                    title=title,
-                    content_hash=content_hash,
-                    last_indexed_at=now,
-                    created_at=now,
-                    updated_at=now,
-                )
-                db.add(note)
-            elif note.content_hash != content_hash:
-                note.title = title
-                note.content_hash = content_hash
-                note.last_indexed_at = now
-                note.updated_at = now
-            notes.append(note)
+    for rel_path, path in iter_indexable_note_files(vault):
+        content = path.read_text()
+        post = frontmatter.loads(content)
+        title = post.metadata.get("title", path.stem)
+        content_hash = _hash_file(path)
+        note = db.query(Note).filter(Note.path == rel_path).first()
+        now = _now()
+        if not note:
+            note = Note(
+                id=_hash_path(rel_path),
+                nina_type=post.metadata.get("nina_type", "note"),
+                entity_id=post.metadata.get("nina_id"),
+                path=rel_path,
+                title=title,
+                content_hash=content_hash,
+                last_indexed_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(note)
+        elif note.content_hash != content_hash:
+            note.title = title
+            note.content_hash = content_hash
+            note.last_indexed_at = now
+            note.updated_at = now
+        notes.append(note)
     db.commit()
     return notes
 
@@ -80,13 +75,8 @@ def index_notes(db_path: str, vault_path: str) -> None:
         conn.execute(text("DELETE FROM note_search"))
         conn.commit()
     vault = Path(vault_path)
-    for root, _dirs, files in os.walk(vault):
-        for filename in files:
-            if not filename.endswith(".md"):
-                continue
-            path = Path(root) / filename
-            rel_path = str(path.relative_to(vault))
-            _index_single_note(db_path, vault, rel_path, path)
+    for rel_path, path in iter_indexable_note_files(vault):
+        _index_single_note(db_path, vault, rel_path, path)
 
 
 def _index_single_note(db_path: str, vault: Path, rel_path: str, path: Path) -> None:
@@ -131,7 +121,7 @@ def index_note(
     create_fts_table(db_path)
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
     full_path = vault / rel_path
-    if not full_path.is_file():
+    if not full_path.is_file() or not is_indexable_note_path(rel_path):
         with engine.connect() as conn:
             conn.execute(text("DELETE FROM note_search WHERE path = :path"), {"path": rel_path})
             conn.commit()

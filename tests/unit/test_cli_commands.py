@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 import yaml
 from nina_cli import config_commands as config_module
+from nina_cli import daemon_commands as daemon_module
 from nina_cli import main as main_module
 from nina_cli.api import api_base
 from nina_cli.main import app
@@ -125,6 +126,51 @@ def test_job_create_and_run_call_expected_endpoints(monkeypatch) -> None:  # typ
     assert "Ran job daily -> completed (run-1)" in run.stdout
 
 
+def test_workflow_list_and_run_call_expected_endpoints(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
+        calls.append((method, path, kwargs))
+        if path == "/workflows":
+            return FakeResponse([{"name": "research-topic", "description": "Research a topic"}])
+        return FakeResponse(
+            {
+                "id": "run-1",
+                "workflow_name": "research-topic",
+                "status": "completed",
+                "output": {"note_path": "Research/topic.md"},
+            }
+        )
+
+    monkeypatch.setattr("nina_cli.workflow_commands.request", fake_request)
+
+    listed = runner.invoke(app, ["workflow", "list"])
+    run = runner.invoke(
+        app,
+        ["workflow", "run", "research-topic", "--input-json", '{"topic":"Nina"}'],
+    )
+
+    assert listed.exit_code == 0
+    assert run.exit_code == 0
+    assert calls == [
+        ("GET", "/workflows", {}),
+        (
+            "POST",
+            "/workflows/research-topic/run",
+            {"json": {"input": {"topic": "Nina"}}},
+        ),
+    ]
+    assert "research-topic" in listed.stdout
+    assert "Ran workflow research-topic -> completed (run-1)" in run.stdout
+
+
+def test_workflow_run_rejects_non_object_input() -> None:
+    result = runner.invoke(app, ["workflow", "run", "research-topic", "--input-json", "[]"])
+
+    assert result.exit_code == 2
+    assert "Workflow input must be a JSON object" in result.stdout
+
+
 def test_ask_calls_ask_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, str, dict[str, Any]]] = []
 
@@ -188,9 +234,9 @@ def test_chat_test_uses_session_create_and_message_flow(monkeypatch) -> None:  #
 
     def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
         calls.append((method, path, kwargs))
-        if path == "/sessions?mode=chat":
+        if method == "GET" and path == "/sessions":
             return FakeResponse([])
-        if path == "/sessions":
+        if method == "POST" and path == "/sessions":
             return FakeResponse(
                 {"id": "session-1", "mode": "chat", "title": "Chat", "messages": []}
             )
@@ -210,7 +256,7 @@ def test_chat_test_uses_session_create_and_message_flow(monkeypatch) -> None:  #
 
     assert result.exit_code == 0
     assert calls == [
-        ("GET", "/sessions?mode=chat", {}),
+        ("GET", "/sessions", {"params": {"mode": "chat"}}),
         ("POST", "/sessions", {"json": {"mode": "chat", "title": "Chat"}}),
         ("POST", "/sessions/session-1/messages", {"json": {"content": "Reply with chat ok"}}),
     ]
@@ -224,12 +270,13 @@ def test_status_reports_running_daemon_and_configuration_paths(
     monkeypatch, isolated_config
 ) -> None:  # type: ignore[no-untyped-def]
     (isolated_config / "daemon.pid").write_text("4321")
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-api-key")
-    monkeypatch.setattr(main_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(daemon_module, "_process_exists", lambda pid: True)
     monkeypatch.setattr(
-        main_module.httpx,
-        "get",
-        lambda *args, **kwargs: FakeHealthResponse({"status": "ok"}),
+        main_module,
+        "try_request_json",
+        lambda method, path, **kwargs: (
+            {"status": "ok"} if path == "/health" else {"state": "unknown"}
+        ),
     )
     monkeypatch.setattr(
         main_module,
@@ -239,9 +286,9 @@ def test_status_reports_running_daemon_and_configuration_paths(
             (),
             {
                 "connected": True,
-                "account_id": "acc-123",
-                "expires_at": 1893456000000,
-                "detail": None,
+                "account_id": None,
+                "expires_at": None,
+                "detail": "Codex CLI: /usr/bin/codex",
             },
         )(),
     )
@@ -252,8 +299,8 @@ def test_status_reports_running_daemon_and_configuration_paths(
     assert result.exit_code == 0
     assert "Daemon running (pid 4321)" in result.stdout
     assert "Health: ok" in result.stdout
-    assert "LLM auth: OpenAI API key configured" in result.stdout
-    assert "LLM provider: openai" in result.stdout
+    assert "LLM auth: handled by Codex CLI" in result.stdout
+    assert "LLM provider: codex" in result.stdout
     assert "Transcription:" in result.stdout
     assert "Meeting pipeline:" in result.stdout
     assert "Configuration paths:" in result.stdout
@@ -265,6 +312,24 @@ def test_status_reports_running_daemon_and_configuration_paths(
     assert "Log:" in result.stdout
     assert "PID:" in result.stdout
     assert "LLM base URL:" in result.stdout
+
+
+def test_doctor_treats_ok_daemon_health_as_ok(monkeypatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
+    (isolated_config / "daemon.pid").write_text("4321")
+    monkeypatch.setattr(daemon_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(main_module, "_daemon_status", lambda profile: ("Daemon running (pid 4321)", True))
+    monkeypatch.setattr(
+        main_module,
+        "try_request_json",
+        lambda method, path, **kwargs: {"status": "ok"} if path == "/health" else {},
+    )
+    monkeypatch.setattr(config_module, "_sync_daemon", lambda *args, **kwargs: False)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "OK   daemon_health: ok" in result.stdout
+    assert "WARN daemon_health: ok" not in result.stdout
 
 
 def test_logs_reads_daemon_log_file(isolated_config) -> None:  # type: ignore[no-untyped-def]
@@ -342,14 +407,31 @@ def test_setup_default_runs_unified_installer(monkeypatch: pytest.MonkeyPatch) -
 
     called: dict[str, object] = {}
 
-    monkeypatch.setattr(
-        setup_module, "setup_runtime", lambda python=None: called.setdefault("ok", True)
-    )
+    def fake_setup_runtime(python=None, *, install_system=True):  # type: ignore[no-untyped-def]
+        called["python"] = python
+        called["install_system"] = install_system
 
+    monkeypatch.setattr(setup_module, "setup_runtime", fake_setup_runtime)
     result = runner.invoke(app, ["setup"])
 
     assert result.exit_code == 0, result.stdout
-    assert called == {"ok": True}
+    assert called == {"python": None, "install_system": True}
+
+
+def test_setup_default_can_skip_system_packages(monkeypatch: pytest.MonkeyPatch) -> None:
+    from nina_cli import setup_commands as setup_module
+
+    called: dict[str, object] = {}
+
+    def fake_setup_runtime(python=None, *, install_system=True):  # type: ignore[no-untyped-def]
+        called["python"] = python
+        called["install_system"] = install_system
+
+    monkeypatch.setattr(setup_module, "setup_runtime", fake_setup_runtime)
+    result = runner.invoke(app, ["setup", "--no-system"])
+
+    assert result.exit_code == 0, result.stdout
+    assert called == {"python": None, "install_system": False}
 
 
 def test_status_reports_offline_daemon_and_configuration_paths(
@@ -357,8 +439,8 @@ def test_status_reports_offline_daemon_and_configuration_paths(
 ) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(config_module, "_sync_daemon", lambda *args, **kwargs: False)
     monkeypatch.setattr(
-        main_module.httpx,
-        "get",
+        main_module,
+        "try_request_json",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("health should not be called")
         ),
@@ -373,7 +455,7 @@ def test_status_reports_offline_daemon_and_configuration_paths(
                 "connected": False,
                 "account_id": None,
                 "expires_at": None,
-                "detail": "Codex auth file not found",
+                "detail": "codex binary not found on PATH",
             },
         )(),
     )
@@ -383,8 +465,8 @@ def test_status_reports_offline_daemon_and_configuration_paths(
     assert result.exit_code == 0
     assert "Daemon not running" in result.stdout
     assert "Health: offline" in result.stdout
-    assert "LLM auth: disconnected (OPENAI_API_KEY is not set in the environment)" in result.stdout
-    assert "LLM provider: openai" in result.stdout
+    assert "LLM auth: Codex CLI unavailable (codex binary not found on PATH)" in result.stdout
+    assert "LLM provider: codex" in result.stdout
     assert "Warnings:" in result.stdout
     assert "Configuration paths:" in result.stdout
     assert "Config dir:" in result.stdout
@@ -412,7 +494,7 @@ def test_uninstall_removes_install_root_and_config(
     vault_dir = config_dir / "vault"
     (config_dir / "logs").mkdir(parents=True, exist_ok=True)
     vault_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "config.yaml").write_text("llm:\n  provider: openai\n")
+    (config_dir / "config.yaml").write_text("llm:\n  provider: codex\n")
     (config_dir / "token").write_text("token")
     (config_dir / "nina.db").write_text("db")
     (config_dir / "daemon.pid").write_text("4321")
@@ -453,7 +535,7 @@ def test_config_vault_command_updates_config_and_vault_structure(
     monkeypatch, isolated_config
 ) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(
-        config_module.httpx, "patch", lambda *args, **kwargs: FakeHealthResponse({})
+        config_module, "try_request", lambda *args, **kwargs: FakeHealthResponse({})
     )
     custom_vault = isolated_config.parent / "custom-vault"
 
@@ -464,6 +546,7 @@ def test_config_vault_command_updates_config_and_vault_structure(
     assert config.vault_path == str(custom_vault)
     assert (custom_vault / "Tasks").exists()
     assert (custom_vault / "System" / "Deleted").exists()
+    assert (custom_vault / "System" / "Archived").exists()
     assert "Vault path:" in result.stdout
 
 
@@ -471,7 +554,7 @@ def test_config_database_command_updates_config_and_creates_storage(
     monkeypatch, isolated_config
 ) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(
-        config_module.httpx, "patch", lambda *args, **kwargs: FakeHealthResponse({})
+        config_module, "try_request", lambda *args, **kwargs: FakeHealthResponse({})
     )
     custom_db = isolated_config.parent / "custom-nina.db"
 
@@ -635,13 +718,13 @@ def test_tui_alias_invokes_the_tui_command(monkeypatch, tmp_path) -> None:  # ty
 
 def test_daemon_restart_alias_invokes_restart_command(monkeypatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
     (isolated_config / "daemon.pid").write_text("1234")
-    monkeypatch.setattr(main_module, "_process_exists", lambda pid: pid == 1234)
-    monkeypatch.setattr(main_module, "_terminate_process", lambda pid: None)
+    monkeypatch.setattr(daemon_module, "_process_exists", lambda pid: pid == 1234)
+    monkeypatch.setattr(daemon_module, "_terminate_process", lambda pid: None)
 
     class FakeProcess:
         pid = 5678
 
-    monkeypatch.setattr(main_module.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+    monkeypatch.setattr(daemon_module.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
 
     result = runner.invoke(app, ["d", "r"])
 
@@ -651,9 +734,9 @@ def test_daemon_restart_alias_invokes_restart_command(monkeypatch, isolated_conf
 
 
 def test_server_command_prefers_installed_entrypoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(main_module.shutil, "which", lambda name: "/opt/nina/nina-server")
+    monkeypatch.setattr(daemon_module.shutil, "which", lambda name: "/opt/nina/nina-server")
 
-    assert main_module._server_command() == ["/opt/nina/nina-server"]
+    assert daemon_module._server_command() == ["/opt/nina/nina-server"]
 
 
 def test_ticket_create_calls_ticket_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -776,7 +859,13 @@ def test_note_list_supports_filters(monkeypatch) -> None:  # type: ignore[no-unt
         ["note", "list", "--folder", "Research", "--type", "note", "--limit", "5", "--json"],
     )
     assert result.exit_code == 0, result.output
-    assert calls == [("GET", "/notes?limit=5&folder=Research&nina_type=note", {})]
+    assert calls == [
+        (
+            "GET",
+            "/notes",
+            {"params": [("limit", "5"), ("folder", "Research"), ("nina_type", "note")]},
+        )
+    ]
     assert "Research/a.md" in result.stdout
 
 

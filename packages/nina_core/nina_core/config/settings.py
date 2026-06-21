@@ -2,21 +2,32 @@ from pathlib import Path
 from typing import Any, Mapping, Self, cast
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LLMConfig(BaseModel):
-    provider: str = "openai"
-    model: str = "gpt-4-mini"
-    api_key: str | None = None
-    # Used by ollama and openai_compatible (llama.cpp, vLLM, LM Studio).
-    # Ignored by codex and openai.
+    provider: str = "codex"
+    model: str = "codex-cli"
+    # Used only by local OpenAI-compatible runtimes such as Ollama, llama.cpp,
+    # vLLM, or LM Studio. Codex CLI is the default AI integration.
     base_url: str | None = None
+
+    @field_validator("provider")
+    @classmethod
+    def normalize_provider(cls, value: str) -> str:
+        provider = (value or "codex").lower()
+        return "codex" if provider in {"openai", "openai_web", "web"} else provider
 
 
 class ResearchConfig(BaseModel):
-    provider: str = "openai_web"
-    model: str = "gpt-4-mini"
+    provider: str = "codex"
+    model: str = "codex-cli"
+
+    @field_validator("provider")
+    @classmethod
+    def normalize_provider(cls, value: str) -> str:
+        provider = (value or "codex").lower()
+        return "codex" if provider in {"openai", "openai_web", "web"} else provider
 
 
 class SchedulerConfig(BaseModel):
@@ -56,9 +67,9 @@ class MeetingsConfig(BaseModel):
     noise_reduction: str = "off"
 
 
-class OpencodeConfig(BaseModel):
+class CodexConfig(BaseModel):
     enabled: bool = True
-    # Empty string means "use shutil.which('opencode')". A user-set path
+    # Empty string means "use shutil.which('codex')". A user-set path
     # overrides the search.
     binary_path: str = ""
     host: str = "127.0.0.1"
@@ -67,7 +78,7 @@ class OpencodeConfig(BaseModel):
     # Filename (relative to $NINA_CONFIG_DIR) of the password file. The
     # actual password is read from disk at boot so the secret never ends
     # up in config.yaml.
-    password_ref: str = "opencode_password"
+    password_ref: str = "codex_password"
     startup_timeout_seconds: float = 10.0
     shutdown_timeout_seconds: float = 5.0
 
@@ -84,7 +95,7 @@ class NinaConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
-    opencode: OpencodeConfig = Field(default_factory=OpencodeConfig)
+    codex: CodexConfig = Field(default_factory=CodexConfig)
     log_level: str = "INFO"
 
     @classmethod

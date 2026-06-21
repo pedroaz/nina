@@ -105,3 +105,29 @@ def test_embedding_store_delete(isolated_config: Path) -> None:
     store.delete("a")
     rows = store.list_rows()
     assert rows == []
+
+
+def test_reindex_embeddings_skips_and_prunes_protected_paths(isolated_config: Path) -> None:
+    from nina_core.config.settings import SearchConfig
+
+    cfg = SearchConfig(embedding_provider="fake")
+    vault = get_vault_path(isolated_config)
+    db_path = str(get_database_path(isolated_config))
+    note_path = vault / "Research" / "a.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text("---\ntitle: A\nnina_type: note\n---\n\nhello")
+    deleted_path = vault / "System" / "Deleted" / "deleted.md"
+    deleted_path.parent.mkdir(parents=True, exist_ok=True)
+    deleted_path.write_text("---\ntitle: Deleted\nnina_type: note\n---\n\nsecret")
+    archived_path = vault / "System" / "Archived" / "archived.md"
+    archived_path.parent.mkdir(parents=True, exist_ok=True)
+    archived_path.write_text("---\ntitle: Archived\nnina_type: note\n---\n\nsecret")
+
+    store = EmbeddingStore(db_path, service=FakeEmbeddingService())
+    assert reindex_embeddings(db_path, str(vault), config=cfg) == 1
+    assert {row.path for row in store.list_rows()} == {"Research/a.md"}
+
+    moved_path = vault / "System" / "Deleted" / "a.md"
+    note_path.rename(moved_path)
+    assert reindex_embeddings(db_path, str(vault), config=cfg) == 0
+    assert store.list_rows() == []

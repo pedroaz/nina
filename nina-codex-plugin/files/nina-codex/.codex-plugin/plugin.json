@@ -1,0 +1,30 @@
+{
+  "name": "nina-codex",
+  "version": "0.1.1",
+  "description": "Nina task lifecycle reporting integration for Codex.",
+  "author": {
+    "name": "Nina"
+  },
+  "license": "MIT",
+  "keywords": [
+    "nina",
+    "codex",
+    "task-lifecycle"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Nina Codex",
+    "shortDescription": "Report Codex task lifecycle events to Nina",
+    "longDescription": "Adds the @nina-task skill and lifecycle hooks for Nina-managed Codex task runs.",
+    "developerName": "Nina",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use @nina-task for this Nina task run."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

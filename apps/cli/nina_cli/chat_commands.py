@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
-from rich.console import Console
 
 from .api import request
+from .output import console, print_json
 
-console = Console()
 chat_app = typer.Typer(help="Chat commands")
 
 
 def _load_or_create_chat_session(title: str = "Chat") -> dict[str, Any]:
-    sessions = request("GET", "/sessions?mode=chat").json()
+    sessions = request("GET", "/sessions", params={"mode": "chat"}).json()
     if sessions:
         return request("GET", f"/sessions/{sessions[0]['id']}").json()
     return request("POST", "/sessions", json={"mode": "chat", "title": title}).json()
@@ -37,7 +35,7 @@ def chat_test(
     )
     data = resp.json()
     if json_output:
-        typer.echo(json.dumps(data, indent=2, sort_keys=False))
+        print_json(data)
         return
 
     console.print(f"Session: {data['session']['id']}")

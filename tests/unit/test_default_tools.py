@@ -86,9 +86,7 @@ def test_obsidian_list_notes(tool_context: ToolContext) -> None:
     (note_dir / "a.md").write_text("---\ntitle: A\nnina_type: note\n---\n\na body\n")
     meetings_dir = tool_context.vault_path / "Meetings"
     meetings_dir.mkdir(parents=True, exist_ok=True)
-    (meetings_dir / "p.md").write_text(
-        "---\ntitle: P\nnina_type: project\n---\n\np body\n"
-    )
+    (meetings_dir / "p.md").write_text("---\ntitle: P\nnina_type: project\n---\n\np body\n")
     # Bump last_indexed_at by upserting through NoteService
     from nina_core.notes.service import NoteService
 

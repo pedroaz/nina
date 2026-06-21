@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import os
 import subprocess
@@ -9,9 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-import httpx
 import typer
-from rich.console import Console
 
 from nina_core.config import get_config_dir, load_effective_config
 from nina_core.meetings.recorder import (
@@ -22,9 +19,8 @@ from nina_core.meetings.recorder import (
 )
 from nina_core.meetings.backends import list_loopback_devices
 
-from .api import api_base, headers, request
-
-console = Console()
+from .api import request
+from .output import console, print_json
 
 meeting_app = typer.Typer(
     help=(
@@ -41,7 +37,7 @@ def _resolve_config_dir() -> Path:
 
 
 def _print_json(data: Any) -> None:
-    typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
+    print_json(data)
 
 
 def _print_meeting(meeting: dict[str, Any]) -> None:
@@ -69,8 +65,7 @@ def meeting_list(
     params: list[tuple[str, str]] = [("limit", str(limit))]
     if status:
         params.append(("status", status))
-    query = "&".join(f"{k}={v}" for k, v in params)
-    response = request("GET", f"/meetings?{query}")
+    response = request("GET", "/meetings", params=params)
     data = response.json()
     if json_output:
         _print_json(data)
@@ -128,7 +123,7 @@ def meeting_stop(
     ),
 ) -> None:
     if meeting_id is None:
-        listed = request("GET", "/meetings?status=recording&limit=1").json()
+        listed = request("GET", "/meetings", params={"status": "recording", "limit": 1}).json()
         meetings = listed.get("meetings", [])
         if not meetings:
             console.print("No active recording found.")
@@ -493,15 +488,7 @@ def meeting_record(
 
 
 def httpx_post(path: str, **kwargs: Any) -> dict[str, Any]:
-    response = httpx.post(f"{api_base()}{path}", headers=headers(), timeout=20, **kwargs)
-    if response.status_code >= 400:
-        detail = None
-        try:
-            detail = response.json().get("detail")
-        except Exception:
-            detail = response.text
-        raise RuntimeError(f"{response.status_code} {detail}")
-    return response.json()
+    return request("POST", path, timeout=20, **kwargs).json()
 
 
 # Register a handful of compact aliases for the most common meeting subcommands.

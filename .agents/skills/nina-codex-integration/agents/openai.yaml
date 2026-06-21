@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nina Codex Integration"
+  short_description: "Nina Codex runner, hooks, and plugin flow"
+  default_prompt: "Use $nina-codex-integration to work on Nina's Codex runner, hook callbacks, plugin bundle, and task lifecycle."

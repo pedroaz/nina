@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
-from rich.console import Console
 
 from .api import request
+from .output import console, print_json
 
-console = Console()
 search_app = typer.Typer(help="Search commands")
 
 
 def _print_json(data: Any) -> None:
-    typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
+    print_json(data)
 
 
 @search_app.command("run")

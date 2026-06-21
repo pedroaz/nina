@@ -7,6 +7,11 @@ from pathlib import Path
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from nina_core.obsidian.policy import (
+    INDEX_EXCLUDED_PREFIXES,
+    TEMP_NOTE_SUFFIXES,
+    is_indexable_note_path,
+)
 from nina_core.search.embeddings import EmbeddingStore
 from nina_core.search.indexer import index_note
 
@@ -14,25 +19,17 @@ from nina_core.search.indexer import index_note
 LOGGER = logging.getLogger(__name__)
 
 
-REFUSED_SUFFIXES = (".tmp", ".swp", ".part", ".crdownload")
-REFUSED_PATHS = (
-    "System/Indexes/",
-    "System/Logs/",
-    "System/Deleted/",
-    ".obsidian/",
-)
+REFUSED_SUFFIXES = TEMP_NOTE_SUFFIXES
+REFUSED_PATHS = INDEX_EXCLUDED_PREFIXES
 
 
 def _should_skip(path: Path, vault: Path) -> bool:
-    rel = str(path.relative_to(vault)) if path.is_absolute() else str(path)
-    rel = rel.replace("\\", "/")
-    if any(rel.startswith(p) for p in REFUSED_PATHS):
-        return True
-    if path.suffix.lower() in REFUSED_SUFFIXES:
-        return True
-    if not path.suffix.lower() == ".md":
-        return True
-    return False
+    if path.is_absolute():
+        try:
+            path.relative_to(vault)
+        except ValueError:
+            return True
+    return not is_indexable_note_path(path, vault)
 
 
 class _VaultEventHandler(FileSystemEventHandler):
@@ -60,8 +57,7 @@ class _VaultEventHandler(FileSystemEventHandler):
         full_path = self.vault / rel_path
         try:
             if not full_path.exists() or not full_path.is_file():
-                self._delete_embeddings(rel_path)
-                index_note(self.db_path, self.vault, rel_path)
+                self._remove_from_indexes(rel_path)
                 return
             index_note(self.db_path, self.vault, rel_path)
             self._embed(rel_path, full_path)
@@ -84,14 +80,15 @@ class _VaultEventHandler(FileSystemEventHandler):
         except Exception as exc:  # pragma: no cover
             LOGGER.debug("Embedding update skipped for %s: %s", rel_path, exc)
 
-    def _delete_embeddings(self, rel_path: str) -> None:
+    def _remove_from_indexes(self, rel_path: str) -> None:
         try:
-            from nina_core.search.embeddings import hash_text
-
-            note_id = hash_text(rel_path)
-            EmbeddingStore(self.db_path).delete(note_id)
+            EmbeddingStore(self.db_path).delete_path(rel_path)
         except Exception as exc:  # pragma: no cover
             LOGGER.debug("Embedding delete skipped for %s: %s", rel_path, exc)
+        try:
+            index_note(self.db_path, self.vault, rel_path)
+        except Exception as exc:  # pragma: no cover
+            LOGGER.debug("Index delete skipped for %s: %s", rel_path, exc)
 
     def on_modified(self, event: FileSystemEvent) -> None:  # type: ignore[override]
         self._handle(event)
@@ -100,7 +97,9 @@ class _VaultEventHandler(FileSystemEventHandler):
         self._handle(event)
 
     def on_moved(self, event: FileSystemEvent) -> None:  # type: ignore[override]
-        # Treat the destination as a fresh path; indexer will remove the old.
+        src = getattr(event, "src_path", None)
+        if src:
+            self._handle_removed_path(Path(src))
         dest = getattr(event, "dest_path", None)
         if dest:
             self._handle_path(Path(dest))
@@ -109,18 +108,16 @@ class _VaultEventHandler(FileSystemEventHandler):
         path = getattr(event, "src_path", None)
         if not path:
             return
-        target = Path(path)
+        self._handle_removed_path(Path(path))
+
+    def _handle_removed_path(self, target: Path) -> None:
         if _should_skip(target, self.vault):
             return
         try:
             rel = str(target.relative_to(self.vault))
         except ValueError:
             return
-        self._delete_embeddings(rel)
-        try:
-            index_note(self.db_path, self.vault, rel)
-        except Exception as exc:  # pragma: no cover
-            LOGGER.debug("Index delete skipped for %s: %s", rel, exc)
+        self._remove_from_indexes(rel)
 
     def _handle(self, event: FileSystemEvent) -> None:
         if getattr(event, "is_directory", False):

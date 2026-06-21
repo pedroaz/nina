@@ -15,7 +15,9 @@ def _load_nina_build():
     return module
 
 
-def test_main_invokes_setup_after_install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_main_invokes_userland_setup_after_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls: list[list[str]] = []
     nina_build = _load_nina_build()
     app_dir = tmp_path / "app"
@@ -40,7 +42,7 @@ def test_main_invokes_setup_after_install(monkeypatch: pytest.MonkeyPatch, tmp_p
     )
 
     assert nina_build.main() == 0
-    assert calls[-1][-2:] == ["nina_cli.main", "setup"]
+    assert calls[-1][-3:] == ["nina_cli.main", "setup", "--no-system"]
 
 
 def test_makefile_uninstall_targets_nina_uninstall() -> None:

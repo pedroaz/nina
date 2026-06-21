@@ -15,6 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from nina_core.models.models import NoteEmbedding
+from nina_core.obsidian.policy import iter_indexable_note_files
 
 
 @contextmanager
@@ -173,31 +174,15 @@ class FastembedEmbeddingService(EmbeddingService):
 
 
 class OpenAIEmbeddingService(EmbeddingService):
-    model_name = "text-embedding-3-small"
-    dim = 1536
+    model_name = "disabled"
+    dim = 0
 
-    def __init__(
-        self, model_name: str = "text-embedding-3-small", api_key: str | None = None
-    ) -> None:
-        from openai import OpenAI
-
-        self.model_name = model_name
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not self.api_key:
-            raise RuntimeError("OPENAI_API_KEY is required for the OpenAI embedding provider")
-        self._client = OpenAI(api_key=self.api_key)
-        # Probe the model to learn its dimension
-        try:
-            probe = self._client.embeddings.create(model=model_name, input="probe")
-            self.dim = len(probe.data[0].embedding)
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError(f"Failed to initialize OpenAI embedding model: {exc}")
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("Remote OpenAI embeddings are disabled; use search.embedding_provider=fastembed.")
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
-        response = self._client.embeddings.create(model=self.model_name, input=texts)
-        return [list(map(float, item.embedding)) for item in response.data]
+        del texts
+        raise RuntimeError("Remote OpenAI embeddings are disabled; use search.embedding_provider=fastembed.")
 
 
 def build_embedding_service(
@@ -211,7 +196,7 @@ def build_embedding_service(
     if provider == "fake":
         return FakeEmbeddingService()
     if provider == "openai":
-        return OpenAIEmbeddingService(model_name=cfg.embedding_model)
+        raise RuntimeError("Remote OpenAI embeddings are disabled; use search.embedding_provider=fastembed.")
     if provider == "fastembed":
         return FastembedEmbeddingService(model_name=cfg.embedding_model)
     raise RuntimeError(f"Unsupported embedding provider: {provider}")
@@ -310,6 +295,30 @@ class EmbeddingStore:
         finally:
             db.close()
 
+    def delete_path(self, path: str) -> None:
+        db = self._session()
+        try:
+            db.query(NoteEmbedding).filter(
+                NoteEmbedding.path == path,
+                NoteEmbedding.model == self.service.model_name,
+            ).delete()
+            db.commit()
+        finally:
+            db.close()
+
+    def prune_to_paths(self, paths: set[str]) -> None:
+        db = self._session()
+        try:
+            rows = (
+                db.query(NoteEmbedding).filter(NoteEmbedding.model == self.service.model_name).all()
+            )
+            for row in rows:
+                if row.path not in paths:
+                    db.delete(row)
+            db.commit()
+        finally:
+            db.close()
+
     def search(self, query: str, limit: int = 5) -> list[ScoredRow]:
         if not query:
             return []
@@ -372,21 +381,19 @@ def reindex_embeddings(
     store = EmbeddingStore(db_path, config=config)
     vault = Path(vault_path)
     count = 0
-    for root, _dirs, files in os.walk(vault):
-        for filename in files:
-            if not filename.endswith(".md"):
-                continue
-            path = Path(root) / filename
-            rel_path = str(path.relative_to(vault))
-            content = path.read_text()
-            post = frontmatter.loads(content)
-            note_id = post.metadata.get("nina_id") or hash_text(rel_path)
-            title = post.metadata.get("title", path.stem)
-            nina_type = post.metadata.get("nina_type", "note")
-            if store.upsert(note_id, rel_path, title, nina_type, post.content):
-                count += 1
-            # Use index_note (idempotent DELETE+INSERT) instead of _index_single_note
-            index_note(db_path, vault, rel_path)
+    seen_paths: set[str] = set()
+    for rel_path, path in iter_indexable_note_files(vault):
+        seen_paths.add(rel_path)
+        content = path.read_text()
+        post = frontmatter.loads(content)
+        note_id = post.metadata.get("nina_id") or hash_text(rel_path)
+        title = post.metadata.get("title", path.stem)
+        nina_type = post.metadata.get("nina_type", "note")
+        if store.upsert(note_id, rel_path, title, nina_type, post.content):
+            count += 1
+        # Use index_note (idempotent DELETE+INSERT) instead of _index_single_note
+        index_note(db_path, vault, rel_path)
+    store.prune_to_paths(seen_paths)
     return count
 
 

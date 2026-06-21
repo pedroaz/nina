@@ -22,7 +22,7 @@ from collections.abc import Iterator
 from queue import Empty, Queue
 
 import numpy as np
-import soxr
+import soxr  # pyright: ignore[reportMissingTypeStubs]
 
 from ._protocols import AudioSource, RecorderError
 

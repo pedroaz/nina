@@ -40,11 +40,10 @@ def _ticket_summary(task: Task) -> dict[str, Any]:
         "description": task.description,
         "task_type": task.task_type,
         "status": task.status,
-        "opencode_project_id": task.opencode_project_id,
+        "repository_id": task.repository_id,
         "classified_at": task.classified_at,
         "classification_reason": task.classification_reason,
         "classification_model": task.classification_model,
-        "note_path": task.note_path,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -230,12 +229,14 @@ def _tickets_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     from nina_core.tasks.service import TaskService
 
     db = ctx.db
-    task_type = args.get("task_type") or args.get("status")
-    opencode_project_id = args.get("opencode_project_id")
+    task_type = args.get("task_type")
+    status = args.get("status")
+    repository_id = args.get("repository_id")
     include_archived = bool(args.get("include_archived"))
     tasks = TaskService(db, ctx.obsidian).list(
-        opencode_project_id=opencode_project_id,
+        repository_id=repository_id,
         task_type=task_type,
+        status=status,
         include_archived=include_archived,
     )
     return {"tickets": [_ticket_summary(t) for t in tasks]}
@@ -477,11 +478,15 @@ def register_default_tools(registry: ToolRegistry) -> None:
                 {
                     "task_type": {
                         "type": "string",
-                        "description": "Filter by task_type (e.g. unclassified, coding, research).",
+                        "description": "Filter by task_type (e.g. unclassified, coding, reviewing, research).",
                     },
-                    "opencode_project_id": {
+                    "status": {
                         "type": "string",
-                        "description": "Filter by the server-assigned opencode project id.",
+                        "description": "Filter by agent status (idle, working, error).",
+                    },
+                    "repository_id": {
+                        "type": "string",
+                        "description": "Filter by registered Nina repository id.",
                     },
                     "include_archived": {"type": "boolean"},
                 },

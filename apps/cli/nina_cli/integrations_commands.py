@@ -19,21 +19,23 @@ from nina_core.integrations import (
 )
 
 from .api import request
+from .output import print_json
 
 
 console = Console()
 integrations_app = typer.Typer(help="External integrations (Confluence, Jira, Slack, Teams)")
 
 
-def _request_json(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def _request_json(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
     if payload is None:
-        response = request(method, path)
+        response = request(method, path, **kwargs)
     else:
-        response = request(method, path, json=payload)
-    if payload is None:
-        response = request(method, path)
-    else:
-        response = request(method, path, json=payload)
+        response = request(method, path, json=payload, **kwargs)
     if not response.content:
         return {}
     try:
@@ -68,7 +70,7 @@ def integrations_main(
     data = _request_json("GET", "/integrations")
     items = data.get("integrations", [])
     if json_output:
-        console.print(json.dumps(items, indent=2, ensure_ascii=False))
+        print_json(items)
         return
     if not items:
         console.print("No integrations registered.")
@@ -120,7 +122,7 @@ def integrations_status(
         console.print(f"Unknown integration: {name}")
         raise typer.Exit(1)
     if json_output:
-        console.print(json.dumps(data, indent=2, ensure_ascii=False))
+        print_json(data)
         return
     last = data.get("last_test") or {}
     identity = last.get("identity") or {}
@@ -188,7 +190,7 @@ def integrations_test(
             data = _request_json("POST", f"/integrations/{target}/test")
         results.append({"name": target, "result": data})
     if json_output:
-        console.print(json.dumps(results, indent=2, ensure_ascii=False))
+        print_json(results)
         return
     table = Table("Name", "Status", "Latency", "Identity", "Error", title="Test results")
     for entry in results:
@@ -216,10 +218,12 @@ def integrations_history(
     if name not in INTEGRATION_NAMES():
         console.print(f"Unknown integration: {name}")
         raise typer.Exit(1)
-    data = _request_json("GET", f"/integrations/{name}/tests?limit={limit}")
+    data = _request_json(
+        "GET", f"/integrations/{name}/tests", payload=None, params={"limit": limit}
+    )
     rows = data.get("tests", [])
     if json_output:
-        console.print(json.dumps(rows, indent=2, ensure_ascii=False))
+        print_json(rows)
         return
     if not rows:
         console.print("No test history yet.")

@@ -5,6 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .api import request
+from .repo_commands import resolve_repository_id
 
 console = Console()
 
@@ -15,7 +16,7 @@ task_app = typer.Typer(help="Task commands")
 @task_app.command("list")
 def task_list(
     task_type: str | None = typer.Option(None, "--type", help="Filter by task_type"),
-    status: str | None = typer.Option(None, help="Filter by agent status (idle/working)"),
+    status: str | None = typer.Option(None, help="Filter by agent status (idle/working/error)"),
     include_archived: bool = typer.Option(False, "--all", help="Include archived tasks"),
 ) -> None:
     params: dict[str, Any] = {}
@@ -24,19 +25,17 @@ def task_list(
     if status:
         params["status"] = status
     if include_archived:
-        params["include_archived"] = "true"
-    qs = "&".join(f"{k}={v}" for k, v in params.items())
-    path = "/tasks" + (f"?{qs}" if qs else "")
-    resp = request("GET", path)
+        params["include_archived"] = True
+    resp = request("GET", "/tasks", params=params)
     tasks = resp.json()
-    table = Table("ID", "Title", "Type", "Status", "opencode_project_id")
+    table = Table("ID", "Title", "Type", "Agent", "Repository")
     for t in tasks:
         table.add_row(
             t["id"],
             t["title"],
             t["task_type"],
             t["status"],
-            t.get("opencode_project_id") or "",
+            t.get("repository_name") or t.get("repository_path") or "",
         )
     console.print(table)
 
@@ -45,8 +44,8 @@ def task_list(
 def task_create(
     title: str,
     description: str = typer.Option("", help="Description"),
-    opencode_project_id: str = typer.Option(
-        None, "--opencode-project-id", help="Server-assigned opencode project id"
+    repository: str = typer.Option(
+        None, "--repo", help="Repository id, name, or path for coding/reviewing tasks"
     ),
     task_type: str = typer.Option(
         None,
@@ -56,14 +55,20 @@ def task_create(
     no_classify: bool = typer.Option(
         False, "--no-classify", help="Skip the background AI classifier"
     ),
+    auto_run: bool = typer.Option(
+        False, "--auto-run", help="After creation, classify if needed and run the task"
+    ),
 ) -> None:
     data: dict[str, Any] = {"title": title, "description": description}
-    if opencode_project_id:
-        data["opencode_project_id"] = opencode_project_id
+    repository_id = resolve_repository_id(repository)
+    if repository_id:
+        data["repository_id"] = repository_id
     if task_type:
         data["task_type"] = task_type
     if no_classify:
         data["auto_classify"] = False
+    if auto_run:
+        data["auto_run"] = True
     resp = request("POST", "/tasks", json=data)
     t = resp.json()
     console.print(f"Created task {t['id']} (type={t['task_type']})")
@@ -77,14 +82,15 @@ def task_show(task_id: str) -> None:
     console.print(f"Title: {t['title']}")
     console.print(f"Type: {t['task_type']}")
     console.print(f"Status: {t['status']}")
-    if t.get("opencode_project_id"):
-        console.print(f"opencode_project_id: {t['opencode_project_id']}")
+    if t.get("repository_id"):
+        console.print(f"Repository: {t.get('repository_name') or t['repository_id']}")
+        if t.get("repository_path"):
+            console.print(f"Repository path: {t['repository_path']}")
     console.print(f"Classified at: {t['classified_at'] or '(not yet)'}")
     if t["classification_reason"]:
         console.print(f"Reason: {t['classification_reason']}")
     if t["classification_model"]:
         console.print(f"Model: {t['classification_model']}")
-    console.print(f"Note: {t['note_path']}")
 
 
 @task_app.command("delete")
@@ -128,8 +134,10 @@ def task_run(task_id: str) -> None:
         raise typer.Exit(1)
     output = payload.get("output", {})
     would = output.get("would_route_to")
-    if would:
-        console.print(f"Task {task_id} routed to {would} (placeholder).")
+    if output.get("status") == "completed" and output.get("task_type") == "done":
+        console.print(f"Task {task_id} completed.")
+    elif would:
+        console.print(f"Task {task_id} running {would}.")
     else:
         console.print(f"Task {task_id} skipped: {output.get('reason', 'no route')}")
 

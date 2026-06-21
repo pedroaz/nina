@@ -1,7 +1,0 @@
-interface:
-  display_name: "Tool Log"
-  short_description: "Reuse known-good repo tools"
-  default_prompt: "Use $tool-log to consult the repo known-good commands before trying new shell tools, and record any newly successful tools."
-
-policy:
-  allow_implicit_invocation: true

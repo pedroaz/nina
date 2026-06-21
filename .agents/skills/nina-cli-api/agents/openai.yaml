@@ -1,4 +1,4 @@
 interface:
   display_name: "Nina CLI and API"
   short_description: "Nina CLI, API, config, and daemon state"
-  default_prompt: "Use $nina-cli-api to work on Nina CLI commands, local API routes, config updates, and runtime daemon state."
+  default_prompt: "Use $nina-cli-api to work on Nina CLI commands, local API routes, config updates, and daemon state."

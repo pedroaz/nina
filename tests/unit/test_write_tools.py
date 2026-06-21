@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 from nina_core.config import get_database_path, get_vault_path
@@ -8,6 +9,7 @@ from nina_core.llm.default_tools import register_default_tools
 from nina_core.llm.tools import ToolContext, ToolRegistry
 from nina_core.llm.write_tools import register_write_tools
 from nina_core.obsidian.service import ObsidianService
+from nina_core.repositories.service import RepositoryService
 
 
 @pytest.fixture
@@ -44,6 +46,10 @@ def test_tickets_create(tool_context: ToolContext) -> None:
 
 
 def test_tickets_update_changes_task_type(tool_context: ToolContext) -> None:
+    repo_path = tool_context.vault_path.parent / "agent-repo"
+    repo_path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", str(repo_path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    repository_id = RepositoryService(tool_context.db).create(repo_path).id
     registry = ToolRegistry()
     register_default_tools(registry)
     register_write_tools(registry)
@@ -54,7 +60,9 @@ def test_tickets_update_changes_task_type(tool_context: ToolContext) -> None:
     )
     ticket_id = result["ticket"]["id"]
     updated = registry.execute(
-        "tickets_update", {"id": ticket_id, "task_type": "coding"}, tool_context
+        "tickets_update",
+        {"id": ticket_id, "task_type": "coding", "repository_id": repository_id},
+        tool_context,
     )
     assert updated["ticket"]["task_type"] == "coding"
 

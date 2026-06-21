@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.daemon_smoke]
 
 
 def run_cli(repo_root: Path, config_dir: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -50,10 +50,6 @@ def wait_for_daemon(repo_root: Path, config_dir: Path) -> None:
     raise AssertionError(f"daemon did not become healthy; log:\n{log}")
 
 
-@pytest.mark.skipif(
-    os.environ.get("NINA_RUN_DAEMON_TESTS") != "1",
-    reason="set NINA_RUN_DAEMON_TESTS=1 to run the real CLI+daemon smoke test",
-)
 def test_real_cli_daemon_task_and_job_flow(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     config_dir = tmp_path / "nina-cli-daemon"
@@ -72,11 +68,10 @@ def test_real_cli_daemon_task_and_job_flow(tmp_path: Path) -> None:
         assert match, created.stdout
         task_id = match.group(1)
 
-        moved = run_cli(repo_root, config_dir, ["task", "move", task_id, "--column", "Doing"])
-        assert moved.returncode == 0, moved.stderr
+        typed = run_cli(repo_root, config_dir, ["task", "type", task_id, "coding"])
+        assert typed.returncode == 0, typed.stderr
         shown = run_cli(repo_root, config_dir, ["task", "show", task_id])
-        assert "Status: doing" in shown.stdout
-        assert "Column: Doing" in shown.stdout
+        assert "Type: coding" in shown.stdout
 
         job = run_cli(
             repo_root,

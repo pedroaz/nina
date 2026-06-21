@@ -9,15 +9,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from nina_core.models.models import Note
+from nina_core.obsidian.policy import PROTECTED_NOTE_PREFIXES, is_protected_note_path
 from nina_core.obsidian.service import ObsidianService
 
 
-REFUSED_PREFIXES = (
-    "System/Indexes/",
-    "System/Logs/",
-    "System/Deleted/",
-    "Templates/",
-)
+REFUSED_PREFIXES = PROTECTED_NOTE_PREFIXES
 
 
 class NotePathError(ValueError):
@@ -44,7 +40,7 @@ def safe_resolve_path(vault_path: Path, requested: str) -> Path:
     """Resolve a vault-relative path to an absolute path safely.
 
     - Rejects absolute paths, `..` traversal, and empty paths.
-    - Rejects paths under refused prefixes (System indexes/logs/deleted, Templates).
+    - Rejects Nina-owned protected paths (deleted/archived notes).
     - Returns the absolute path; the file may or may not exist.
     """
 
@@ -56,10 +52,8 @@ def safe_resolve_path(vault_path: Path, requested: str) -> Path:
     parts = [p for p in normalized.split("/") if p not in ("", ".")]
     if any(p == ".." for p in parts):
         raise NotePathError("Path traversal is not allowed")
-    if normalized.startswith(REFUSED_PREFIXES):
-        raise NotePathError(
-            f"Writes and reads under {normalized.split('/', 2)[0]}/{normalized.split('/', 2)[1] if '/' in normalized else ''} are not allowed"
-        )
+    if is_protected_note_path(normalized):
+        raise NotePathError(f"Path is protected: {normalized}")
     resolved = (vault_path / normalized).resolve()
     try:
         resolved.relative_to(vault_path.resolve())
@@ -93,6 +87,8 @@ class NoteService:
             rows = query.order_by(Note.updated_at.desc()).limit(max(1, limit)).all()
             out: list[dict[str, Any]] = []
             for note in rows:
+                if is_protected_note_path(note.path):
+                    continue
                 if (
                     folder
                     and not note.path.startswith(folder.rstrip("/") + "/")
@@ -106,6 +102,7 @@ class NoteService:
 
     def get_note(self, path: str) -> dict[str, Any] | None:
         normalized = path.lstrip("/")
+        safe_resolve_path(self.vault_path, normalized)
         db = self._session()
         try:
             note = db.query(Note).filter(Note.path == normalized).first()

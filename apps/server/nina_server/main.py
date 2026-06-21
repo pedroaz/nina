@@ -1,43 +1,20 @@
-import json
+import logging
 import os
 import signal
 import sys
-from pathlib import Path
 
 import uvicorn
 from nina_core.config import (
-    ensure_vault_structure,
     get_config_dir,
     get_config_path,
-    get_opencode_log_path,
-    get_runtime_path,
     get_token_path,
     load_effective_config,
     read_token,
 )
-from nina_core.db import create_database
-from nina_core.opencode import OpencodeSupervisor
-from nina_core.scheduler.service import SchedulerService
-from nina_core.search.indexer import create_fts_table
-from nina_core.search.watcher import make_watcher_if_enabled
 
-from .app import app, apply_runtime_config
-
-
-def _write_runtime_state(config_dir: Path, config) -> None:
-    runtime_path = get_runtime_path(config_dir)
-    runtime_path.parent.mkdir(parents=True, exist_ok=True)
-    runtime_path.write_text(
-        json.dumps(
-            {
-                "profile": config.profile,
-                "config_dir": str(config_dir),
-                "daemon_host": config.daemon_host,
-                "daemon_port": config.daemon_port,
-            },
-            indent=2,
-        )
-    )
+from .app import create_app
+from .logging_config import configure_logging, resolve_log_level
+from .runtime import DaemonRuntime, apply_runtime_config
 
 
 def main() -> None:
@@ -51,39 +28,18 @@ def main() -> None:
 
     os.environ["NINA_TOKEN"] = read_token(token_path)
     config = load_effective_config(config_dir)
-    apply_runtime_config(app, config_dir, config)
-    _write_runtime_state(config_dir, config)
-    ensure_vault_structure(Path(config.vault_path))
-    create_database(config.database_path)
-    create_fts_table(config.database_path)
-
-    scheduler = SchedulerService(config.database_path)
-    app.state.scheduler = scheduler
-    scheduler.start()
-    watcher = None
-    watcher = make_watcher_if_enabled(
-        config.database_path,
-        config.vault_path,
-        enabled=config.search.live_indexing,
-    )
-    if watcher is not None:
-        watcher.start()
-
-    opencode = OpencodeSupervisor(
-        config_dir, config, get_opencode_log_path(config_dir)
-    )
-    opencode.start()
-    app.state.opencode = opencode
+    log_config = configure_logging(config.log_level)
+    logging.getLogger(__name__).info("nina.daemon event=starting profile=%s", profile)
+    application = create_app()
+    apply_runtime_config(application, config_dir, config)
+    runtime = application.state.runtime
+    if not isinstance(runtime, DaemonRuntime):
+        raise RuntimeError("daemon runtime was not initialized")
+    runtime.write_runtime_state()
+    runtime.start_services()
 
     def _shutdown(*_args: object) -> None:
-        # uvicorn traps SIGTERM/SIGINT itself, but the lifespan's `finally`
-        # block doesn't always run when the signal arrives mid-request.
-        # Run the opencode cleanup first so the child is never orphaned
-        # by a CLI-driven `nina daemon stop`.
-        try:
-            opencode.stop()
-        except Exception:  # noqa: BLE001
-            pass
+        runtime.shutdown_services()
 
     if os.name != "nt":
         signal.signal(signal.SIGTERM, _shutdown)
@@ -91,19 +47,14 @@ def main() -> None:
 
     try:
         uvicorn.run(
-            app,
+            application,
             host=config.daemon_host,
             port=config.daemon_port,
-            log_level=config.log_level.lower(),
+            log_config=log_config,
+            log_level=resolve_log_level(config.log_level),
         )
     finally:
-        try:
-            opencode.stop()
-        except Exception:  # noqa: BLE001
-            pass
-        scheduler.shutdown()
-        if watcher is not None:
-            watcher.stop()
+        runtime.shutdown_services()
 
 
 if __name__ == "__main__":

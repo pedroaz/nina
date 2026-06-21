@@ -6,7 +6,7 @@ from typing import Any, Callable
 import httpx
 
 
-_USER_AGENT = "nina/0.1 (+https://github.com/anomalyco/opencode)"
+_USER_AGENT = "nina/0.1 (+https://github.com/anomalyco/codex)"
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
 

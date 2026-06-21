@@ -28,17 +28,23 @@ def test_safe_resolve_rejects_traversal(tmp_path: Path) -> None:
         safe_resolve_path(vault, "../escape.md")
 
 
-def test_safe_resolve_rejects_refused_prefixes(tmp_path: Path) -> None:
+def test_safe_resolve_rejects_protected_prefixes(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    for path in ["System/Deleted/note.md", "System/Archived/note.md"]:
+        with pytest.raises(NotePathError):
+            safe_resolve_path(vault, path)
+
+
+def test_safe_resolve_allows_former_placeholder_folders(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     for path in [
         "System/Indexes/idx.md",
         "System/Logs/log.md",
-        "System/Deleted/note.md",
         "Templates/template.md",
     ]:
-        with pytest.raises(NotePathError):
-            safe_resolve_path(vault, path)
+        assert safe_resolve_path(vault, path) == (vault / path).resolve()
 
 
 def test_create_and_get_note(isolated_config: Path) -> None:
@@ -65,7 +71,7 @@ def test_create_note_rejects_unsafe_path(isolated_config: Path) -> None:
     with pytest.raises(NotePathError):
         service.create_note("../escape.md", "x", nina_type="note")
     with pytest.raises(NotePathError):
-        service.create_note("System/Indexes/x.md", "x", nina_type="note")
+        service.create_note("System/Deleted/x.md", "x", nina_type="note")
 
 
 def test_append_note(isolated_config: Path) -> None:

@@ -14,20 +14,27 @@ TASK_TYPES = (
     "reminder",
     "research",
     "coding",
+    "reviewing",
     "blocked",
     "done",
     "human",
 )
-TASK_AGENT_STATUSES = ("idle", "working")
+TASK_AGENT_STATUSES = ("idle", "working", "error")
+
+
+class Repository(Base):
+    __tablename__ = "repositories"
+    id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    path = Column(Text, nullable=False, unique=True)
+    created_at = Column(Text, nullable=False, default=now_utc)
+    updated_at = Column(Text, nullable=False, default=now_utc)
 
 
 class Task(Base):
     __tablename__ = "tasks"
     id = Column(Text, primary_key=True)
-    # Server-assigned opencode project id (no FK — opaque to Nina).
-    # Tasks whose work lives in an opencode-managed folder set this to the
-    # id returned by `GET /project`. Nullable: a task can be unlinked.
-    opencode_project_id = Column(Text)
+    repository_id = Column(Text, ForeignKey("repositories.id"))
     title = Column(Text, nullable=False)
     description = Column(Text, nullable=False, default="")
     task_type = Column(Text, nullable=False, default="unclassified")
@@ -35,7 +42,6 @@ class Task(Base):
     classified_at = Column(Text)
     classification_reason = Column(Text)
     classification_model = Column(Text)
-    note_path = Column(Text)
     created_at = Column(Text, nullable=False, default=now_utc)
     updated_at = Column(Text, nullable=False, default=now_utc)
 

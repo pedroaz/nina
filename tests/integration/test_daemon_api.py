@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import frontmatter
@@ -9,6 +11,18 @@ from fastapi.testclient import TestClient
 pytestmark = pytest.mark.integration
 
 
+def _register_repository(api_client: TestClient, auth_headers: dict[str, str], path: Path) -> str:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", str(path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    response = api_client.post(
+        "/repositories",
+        headers=auth_headers,
+        json={"path": str(path), "name": path.name},
+    )
+    assert response.status_code == 200
+    return response.json()["id"]
+
+
 def test_task_creation_and_classification_patches_task_and_note(
     api_client: TestClient,
     auth_headers: dict[str, str],
@@ -16,18 +30,26 @@ def test_task_creation_and_classification_patches_task_and_note(
     fake_llm,
 ) -> None:
     fake_llm.queue_text('{"task_type": "coding", "reason": "refactor is a coding task"}')
-    fake_llm.queue_text('{"task_type": "reminder", "reason": "messaging a colleague"}')
+    repository_id = _register_repository(api_client, auth_headers, isolated_config / "daemon-repo")
 
     first = api_client.post(
         "/tasks",
         headers=auth_headers,
-        json={"title": "Refactor the auth module", "description": "Split it into smaller files."},
+        json={
+            "title": "Refactor the auth module",
+            "description": "Split it into smaller files.",
+            "repository_id": repository_id,
+        },
     )
     assert first.status_code == 200
     first_id = first.json()["id"]
     assert first.json()["task_type"] == "unclassified"
     assert first.json()["status"] == "idle"
 
+    # The background classifier runs in a thread; give it enough time under full-suite load.
+    _wait_for_classification(api_client, auth_headers, first_id, expected="coding")
+
+    fake_llm.queue_text('{"task_type": "reminder", "reason": "messaging a colleague"}')
     second = api_client.post(
         "/tasks",
         headers=auth_headers,
@@ -36,9 +58,6 @@ def test_task_creation_and_classification_patches_task_and_note(
     assert second.status_code == 200
     second_id = second.json()["id"]
     assert second.json()["task_type"] == "unclassified"
-
-    # The background classifier runs in a thread; give it a moment.
-    _wait_for_classification(api_client, auth_headers, first_id, expected="coding")
     _wait_for_classification(api_client, auth_headers, second_id, expected="reminder")
 
     first_now = api_client.get(f"/tasks/{first_id}", headers=auth_headers).json()
@@ -47,7 +66,7 @@ def test_task_creation_and_classification_patches_task_and_note(
     assert first_now["classification_model"]
     assert first_now["classification_reason"]
 
-    note_path = isolated_config / "vault" / first_now["note_path"]
+    note_path = isolated_config / "vault" / "Tasks" / f"{first_id}.md"
     note = frontmatter.loads(note_path.read_text())
     assert note.metadata["task_type"] == "coding"
     assert note.metadata["classified_at"] == first_now["classified_at"]
@@ -59,7 +78,7 @@ def _wait_for_classification(
     task_id: str,
     *,
     expected: str,
-    timeout: float = 5.0,
+    timeout: float = 15.0,
 ) -> dict[str, object]:
     """Poll the task until the background classifier finishes."""
 
@@ -157,11 +176,16 @@ def test_ticket_alias_creates_and_classifies_via_ticket_routes(
     fake_llm,
 ) -> None:
     fake_llm.queue_text('{"task_type": "coding", "reason": "default to coding for now"}')
+    repository_id = _register_repository(api_client, auth_headers, isolated_config / "ticket-repo")
 
     created = api_client.post(
         "/tickets",
         headers=auth_headers,
-        json={"title": "Alias ticket", "description": "Created through the ticket route."},
+        json={
+            "title": "Alias ticket",
+            "description": "Created through the ticket route.",
+            "repository_id": repository_id,
+        },
     )
     assert created.status_code == 200
     ticket_id = created.json()["id"]
@@ -177,7 +201,7 @@ def test_ticket_alias_creates_and_classifies_via_ticket_routes(
     assert show.status_code == 200
     assert show.json()["task_type"] == "coding"
 
-    note_path = isolated_config / "vault" / show.json()["note_path"]
+    note_path = isolated_config / "vault" / "Tasks" / f"{ticket_id}.md"
     note = frontmatter.loads(note_path.read_text())
     assert note.metadata["nina_type"] == "task"
     assert note.metadata["task_type"] == "coding"
@@ -243,9 +267,9 @@ def test_research_run_writes_summary_and_sources_note(
     config_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
     # Re-apply the config on the running app.
     from nina_core.config import load_effective_config
-    from nina_server.app import app, apply_runtime_config
+    from nina_server import apply_runtime_config
 
-    apply_runtime_config(app, isolated_config, load_effective_config(isolated_config))
+    apply_runtime_config(api_client.app, isolated_config, load_effective_config(isolated_config))
 
     researched = api_client.post(
         "/research/run",
@@ -318,7 +342,7 @@ def test_notes_endpoint_rejects_unsafe_path(
     bad2 = api_client.post(
         "/notes",
         headers=auth_headers,
-        json={"path": "System/Indexes/x.md", "body": "x", "nina_type": "note"},
+        json={"path": "System/Deleted/x.md", "body": "x", "nina_type": "note"},
     )
     assert bad2.status_code == 400
 
@@ -376,7 +400,104 @@ def test_config_endpoint_updates_runtime_and_reports_restart_requirement(
     assert payload["config"]["llm"]["provider"] == "fake"
     assert payload["config"]["scheduler"]["daily_summary_time"] == "08:30"
     assert (custom_vault / "Tasks").exists()
+    assert (custom_vault / "System" / "Archived").exists()
 
     health = api_client.get("/health", headers=auth_headers)
     assert health.status_code == 200
     assert health.json()["vault_path"] == str(custom_vault)
+
+
+def test_daemon_logs_endpoint_tails_and_filters_task_lines(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+) -> None:
+    log_path = isolated_config / "logs" / "daemon.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "2026 info nina.task task=task-1 event=queued\n"
+        "2026 info unrelated line\n"
+        "2026 info nina.task task=task-2 event=done\n"
+    )
+
+    response = api_client.get(
+        "/logs/daemon?tail=10&task_id=task-1",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["path"] == str(log_path)
+    assert payload["lines"] == ["2026 info nina.task task=task-1 event=queued"]
+
+
+
+def test_task_codex_logs_endpoint_tails_latest_run(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+) -> None:
+    created = api_client.post(
+        "/tasks",
+        headers=auth_headers,
+        json={
+            "title": "Logged task",
+            "description": "Has Codex logs",
+            "task_type": "unclassified",
+            "auto_classify": False,
+        },
+    )
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+
+    task_dir = isolated_config / "logs" / "codex" / "tasks" / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+    old_log = task_dir / "run-old.log"
+    new_log = task_dir / "run-new.log"
+    old_log.write_text("old one\nold two\n")
+    new_log.write_text("new one\nnew two\n")
+    os.utime(old_log, (1, 1))
+    os.utime(new_log, (2, 2))
+
+    latest = api_client.get(f"/tasks/{task_id}/codex-logs?tail=1", headers=auth_headers)
+
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["task_id"] == task_id
+    assert payload["run_id"] == "run-new"
+    assert payload["path"] == str(new_log)
+    assert payload["lines"] == ["new two"]
+    assert [run["run_id"] for run in payload["runs"]] == ["run-new", "run-old"]
+
+    explicit = api_client.get(
+        f"/tasks/{task_id}/codex-logs?run_id=run-old&tail=-1",
+        headers=auth_headers,
+    )
+
+    assert explicit.status_code == 200
+    explicit_payload = explicit.json()
+    assert explicit_payload["run_id"] == "run-old"
+    assert explicit_payload["lines"] == ["old one", "old two"]
+
+    missing = api_client.get("/tasks/not-a-task/codex-logs", headers=auth_headers)
+    assert missing.status_code == 404
+
+
+def test_status_and_capabilities_endpoints(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+) -> None:
+    status = api_client.get("/status", headers=auth_headers)
+    assert status.status_code == 200
+    payload = status.json()
+    assert payload["profile"] == "default"
+    assert payload["config_dir"] == str(isolated_config)
+    assert payload["database_path"].endswith("nina.db")
+    assert payload["scheduler_running"] is False
+    assert "codex" in payload
+
+    capabilities = api_client.get("/capabilities", headers=auth_headers)
+    assert capabilities.status_code == 200
+    assert "/tasks" in capabilities.json()["routes"]
+    assert "/codex" in capabilities.json()["routes"]

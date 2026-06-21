@@ -22,14 +22,14 @@ def _tickets_create(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
 
     title = _require(args.get("title"), "title")
     description = args.get("description") or ""
-    opencode_project_id = args.get("opencode_project_id")
+    repository_id = args.get("repository_id")
     task_type = args.get("task_type")
     auto_classify = bool(args.get("auto_classify", True))
     service = TaskService(ctx.db, ctx.obsidian)
     task = service.create(
         title,
         description,
-        opencode_project_id,
+        repository_id=repository_id,
         task_type=task_type or "unclassified",
         auto_classify=auto_classify,
     )
@@ -48,8 +48,8 @@ def _tickets_update(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             description=args.get("description"),
             task_type=args.get("task_type"),
             status=args.get("status"),
-            opencode_project_id=(
-                args.get("opencode_project_id") if "opencode_project_id" in args else None
+            repository_id=(
+                (args.get("repository_id") or "") if "repository_id" in args else None
             ),
         )
     except ValueError as exc:
@@ -209,11 +209,10 @@ def _ticket_summary(task: Any) -> dict[str, Any]:
         "description": task.description,
         "task_type": task.task_type,
         "status": task.status,
-        "opencode_project_id": task.opencode_project_id,
+        "repository_id": task.repository_id,
         "classified_at": task.classified_at,
         "classification_reason": task.classification_reason,
         "classification_model": task.classification_model,
-        "note_path": task.note_path,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -234,17 +233,14 @@ def register_write_tools(registry: ToolRegistry) -> None:
                 {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
-                    "opencode_project_id": {
+                    "repository_id": {
                         "type": "string",
-                        "description": (
-                            "Server-assigned opencode project id (opaque). "
-                            "Optional; leave unset to create an unlinked task."
-                        ),
+                        "description": "Registered Nina repository id. Required for coding and reviewing tasks.",
                     },
                     "task_type": {
                         "type": "string",
                         "description": (
-                            "One of unclassified/reminder/research/coding/"
+                            "One of unclassified/reminder/research/coding/reviewing/"
                             "blocked/done/human. Defaults to unclassified."
                         ),
                     },
@@ -269,7 +265,7 @@ def register_write_tools(registry: ToolRegistry) -> None:
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "task_type": {"type": "string"},
-                    "status": {"type": "string", "description": "idle or working"},
+                    "status": {"type": "string", "description": "idle, working, or error"},
                 },
                 required=["id"],
             ),
@@ -292,7 +288,7 @@ def register_write_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="tickets_run",
-            description="Route a task to its handler. Refuses for human/reminder/blocked; placeholder for coding/research.",
+            description="Route a task to its handler. Refuses for human/reminder/blocked; runs coding/reviewing through Codex; placeholder for research.",
             parameters=_string_schema(
                 {"id": {"type": "string"}},
                 required=["id"],
@@ -304,7 +300,7 @@ def register_write_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="tickets_delete",
-            description="Soft-delete a ticket (moves the note to System/Deleted).",
+            description="Soft-delete a ticket.",
             parameters=_string_schema({"id": {"type": "string"}}, required=["id"]),
             handler=_tickets_delete,
             read_only=False,

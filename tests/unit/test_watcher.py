@@ -9,12 +9,19 @@ from nina_core.search.watcher import (
 )
 
 
-def test_should_skip_refused_prefix(tmp_path: Path) -> None:
+def test_should_skip_protected_prefix(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
-    assert _should_skip(vault / "System/Indexes/x.md", vault)
-    assert _should_skip(vault / "System/Logs/x.md", vault)
+    assert _should_skip(vault / "System/Deleted/x.md", vault)
+    assert _should_skip(vault / "System/Archived/x.md", vault)
     assert _should_skip(vault / ".obsidian/x.md", vault)
+
+
+def test_should_not_skip_former_placeholder_folders(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    assert not _should_skip(vault / "System/Indexes/x.md", vault)
+    assert not _should_skip(vault / "System/Logs/x.md", vault)
 
 
 def test_should_skip_refused_suffix(tmp_path: Path) -> None:
@@ -37,5 +44,6 @@ def test_should_not_skip_normal_md(tmp_path: Path) -> None:
 
 
 def test_constants_exist() -> None:
-    assert "System/Indexes/" in REFUSED_PATHS
+    assert "System/Deleted/" in REFUSED_PATHS
+    assert "System/Archived/" in REFUSED_PATHS
     assert ".tmp" in REFUSED_SUFFIXES

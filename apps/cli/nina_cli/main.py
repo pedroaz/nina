@@ -1,51 +1,55 @@
-import json
 import os
 import shutil
-import signal
-import subprocess
 import sys
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import httpx
 import typer
-from rich.console import Console
 
 from nina_core.config import (
     NinaConfig,
     get_config_dir,
     get_config_path,
+    get_database_path,
     get_log_path,
     get_pid_path,
-    get_runtime_path,
     get_token_path,
     get_vault_path,
     initialize,
     load_effective_config,
-    read_token,
 )
 from nina_core.llm.provider import check_provider_status, codex_auth_status
 from nina_core.llm.transcription import check_transcription_status
 
-from .api import api_base, headers, request
+from .api import api_base, request, try_request_json
 from .chat_commands import chat_app
 from .config_commands import config_app
+from .daemon_commands import (
+    _daemon_status,
+    _process_exists,
+    _read_pid,
+    _terminate_process,
+    daemon_app,
+    daemon_restart,
+)
 from .integrations_commands import integrations_app
 from .job_commands import job_app
 from .setup_commands import setup_app
 from .llm_commands import llm_app
 from .meeting_commands import meeting_app, record_meeting
 from .notes_commands import note_app
-from .opencode_commands import opencode_app
+from .codex_commands import codex_app
+from .output import console, print_json
 from .providers_commands import providers_app
+from .repo_commands import repo_app
 from .research_commands import research_app
 from .search_commands import search_app
 from .task_commands import task_app
 from .ticket_commands import ticket_app
-
-console = Console()
+from .workflow_commands import workflow_app
 
 
 def _print_short_help() -> None:
@@ -67,11 +71,11 @@ def _print_short_help() -> None:
         "[bold]Compact aliases[/bold]\n"
         "  r = meeting record       mt = meeting sub-app   h = compact help\n"
         "  help = compact help (alias for `h`)\n"
-        "  t = tui                  d = daemon              -h = --help\n"
-        "  n = note                 p = project             tk = ticket\n"
+        "  t = tui                  d = daemon              --h = -h = --help\n"
+        "  o = open                 n = note                tk = ticket\n"
         "  j = job                  c = config\n"
         "  rch = research           s = search              ll = llm\n"
-        "  int = integrations\n"
+        "  int = integrations       wf = workflow\n"
         "\n"
         "[bold]Meeting subcommands[/bold] (via `nina mt ...`):\n"
         "  ls = list    e = pipeline (transcribe + summarize)    s = stop\n"
@@ -82,6 +86,10 @@ def _print_short_help() -> None:
         "  classify <id>   run <id>       archive       unarchive     delete\n"
         "  board                                          (type-grouped view)\n"
         "\n"
+        "[bold]New quality helpers[/bold]\n"
+        "  nina doctor         check local health and configuration\n"
+        "  nina recent [--json] quick activity summary across tasks, tickets, notes, and jobs\n"
+        "\n"
         "[bold]Run[/bold] [cyan]nina <command> --help[/cyan] [bold]for options.[/bold]"
     )
 
@@ -90,6 +98,7 @@ app = typer.Typer(
     help="Nina CLI - local-first personal operations platform. Try `nina r` to record a meeting.",
     no_args_is_help=False,
     add_completion=False,
+    context_settings={"help_option_names": ["--h", "-h", "--help"]},
 )
 
 
@@ -139,16 +148,15 @@ def _config_root_for_uninstall(config_dir: Path) -> Path:
     return config_dir
 
 
-daemon_app = typer.Typer(help="Daemon commands")
 app.add_typer(daemon_app, name="daemon")
 _add_alias(app, daemon_app, "d")
+app.command("restart", hidden=True, help="Restart the local Nina daemon.")(daemon_restart)
 app.add_typer(chat_app, name="chat")
 app.add_typer(config_app, name="config")
 _add_alias(app, config_app, "c")
 app.add_typer(note_app, name="note")
 _add_alias(app, note_app, "n")
-app.add_typer(opencode_app, name="opencode")
-_add_alias(app, opencode_app, "oc")
+app.add_typer(codex_app, name="codex")
 app.add_typer(providers_app, name="providers")
 app.add_typer(task_app, name="task")
 app.add_typer(ticket_app, name="ticket")
@@ -159,6 +167,7 @@ app.add_typer(llm_app, name="llm")
 _add_alias(app, llm_app, "ll")
 app.add_typer(meeting_app, name="meeting")
 _add_alias(app, meeting_app, "mt")
+app.add_typer(repo_app, name="repo")
 app.add_typer(research_app, name="research")
 _add_alias(app, research_app, "rch")
 app.add_typer(search_app, name="search")
@@ -166,6 +175,8 @@ _add_alias(app, search_app, "s")
 app.add_typer(setup_app, name="setup")
 app.add_typer(integrations_app, name="integrations")
 _add_alias(app, integrations_app, "int")
+app.add_typer(workflow_app, name="workflow")
+_add_alias(app, workflow_app, "wf")
 
 
 def _resolve_tui_binary() -> Path | None:
@@ -217,100 +228,9 @@ def uninstall() -> None:
     console.print("Removed Nina launcher, install root, and config data.")
 
 
-def _server_command() -> list[str]:
-    server = shutil.which("nina-server")
-    if server:
-        return [server]
-    return [sys.executable, "-m", "nina_server.main"]
-
-
-def _daemon_popen_kwargs() -> dict[str, Any]:
-    if os.name == "nt":
-        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
-    return {"start_new_session": True}
-
-
-def _process_exists(pid: int) -> bool:
-    if os.name == "nt":
-        result = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return str(pid) in result.stdout and "No tasks" not in result.stdout
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-
-
-def _terminate_process(pid: int) -> None:
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"],
-            capture_output=True,
-            check=False,
-        )
-        return
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        if not _process_exists(pid):
-            return
-        time.sleep(0.2)
-    if _process_exists(pid):
-        os.kill(pid, signal.SIGKILL)
-
-
-def _read_pid(pid_path: Path) -> int | None:
-    try:
-        pid = int(pid_path.read_text().strip())
-    except (OSError, ValueError):
-        return None
-    return pid if pid > 0 else None
-
-
-def _daemon_status(profile: str) -> tuple[str, bool]:
-    pid_path = _resolve_pid_path(profile)
-    if not pid_path.exists():
-        return "Daemon not running", False
-    pid = _read_pid(pid_path)
-    if pid is None:
-        pid_path.unlink(missing_ok=True)
-        return "Daemon not running (stale pid)", False
-    if _process_exists(pid):
-        return f"Daemon running (pid {pid})", True
-    pid_path.unlink(missing_ok=True)
-    return "Daemon not running (stale pid)", False
-
-
-def _write_runtime_state(config_dir: Path, config: NinaConfig) -> None:
-    runtime_path = get_runtime_path(config_dir)
-    runtime_path.parent.mkdir(parents=True, exist_ok=True)
-    runtime_path.write_text(
-        json.dumps(
-            {
-                "profile": config.profile,
-                "config_dir": str(config_dir),
-                "daemon_host": config.daemon_host,
-                "daemon_port": config.daemon_port,
-            },
-            indent=2,
-        )
-    )
-
-
 def _daemon_health() -> str:
-    try:
-        resp = httpx.get(f"{api_base()}/health", timeout=2)
-        resp.raise_for_status()
-        data = resp.json()
-    except (httpx.HTTPError, ValueError, TypeError):
+    data = try_request_json("GET", "/health", timeout=2)
+    if not isinstance(data, dict):
         return "offline"
     status = data.get("status", "unknown")
     return str(status) if status is not None else "unknown"
@@ -339,28 +259,18 @@ def _configuration_entries(config_dir: Path, config: NinaConfig) -> list[tuple[s
 def _format_codex_auth_status() -> str:
     status = codex_auth_status()
     if status.connected:
-        parts = ["Codex OAuth connected"]
-        if status.account_id:
-            parts.append(f"account {status.account_id}")
-        if status.expires_at:
-            expires = datetime.fromtimestamp(status.expires_at / 1000, tz=timezone.utc).astimezone()
-            parts.append(f"expires {expires.isoformat(timespec='seconds')}")
-        return "LLM auth: " + ", ".join(parts)
+        detail = f" ({status.detail})" if status.detail else ""
+        return f"LLM auth: handled by Codex CLI{detail}"
     detail = status.detail or "unknown error"
-    return f"LLM auth: disconnected ({detail})"
+    return f"LLM auth: Codex CLI unavailable ({detail})"
 
 
 def _format_provider_auth_status(config: NinaConfig) -> str:
     provider = (config.llm.provider or "").lower()
-    if provider == "openai":
-        has_key = bool(config.llm.api_key or os.environ.get("OPENAI_API_KEY"))
-        if has_key:
-            return "LLM auth: OpenAI API key configured"
-        return "LLM auth: disconnected (OPENAI_API_KEY is not set in the environment)"
-    if provider == "codex":
+    if provider in {"codex", "openai", "openai_web", "web"}:
         return _format_codex_auth_status()
     if provider in {"ollama", "openai_compatible", "llamacpp", "vllm", "lmstudio"}:
-        return f"LLM auth: not required for {provider}"
+        return f"LLM auth: not required for local provider {provider}"
     return f"LLM auth: provider {provider or 'unknown'}"
 
 
@@ -368,8 +278,7 @@ def _format_llm_status(config: NinaConfig) -> str:
     """Show the LLM provider's reachability, used by `nina status`.
 
     For local runtimes (Ollama, llama.cpp) it pings the server. For Codex
-    and OpenAI it just reports whether credentials are configured. Never
-    burns a real LLM request.
+    it checks the local CLI binary without sending a prompt.
     """
     try:
         status = check_provider_status(config.llm, timeout=2.0)
@@ -383,8 +292,8 @@ def _format_llm_status(config: NinaConfig) -> str:
     bits: list[str] = []
     if status.reachable:
         bits.append("reachable")
-    elif status.provider in {"openai", "codex"}:
-        bits.append("disconnected")
+    elif status.provider == "codex":
+        bits.append("unavailable")
     else:
         bits.append("unreachable")
     if status.model:
@@ -437,33 +346,30 @@ def _format_meeting_pipeline_status(config: NinaConfig) -> str:
     return f"Meeting pipeline: degraded ({'; '.join(issues)})"
 
 
-def _format_opencode_status() -> str:
-    """Surface the supervised opencode server state in `nina status`.
+def _format_codex_status() -> str:
+    """Surface the supervised codex server state in `nina status`.
 
-    Goes through the daemon's `/opencode/status` endpoint so we don't need
+    Goes through the daemon's `/codex/status` endpoint so we don't need
     to know whether the daemon was started in this process. Falls back to
     a clean "not running" line if the daemon is offline.
     """
-    try:
-        resp = httpx.get(f"{api_base()}/opencode/status", headers=headers(), timeout=2)
-        resp.raise_for_status()
-        data = resp.json()
-    except (httpx.HTTPError, ValueError, TypeError):
-        return "OpenCode: (unknown — daemon offline)"
+    data = try_request_json("GET", "/codex/status", timeout=2)
+    if not isinstance(data, dict):
+        return "Codex: (unknown — daemon offline)"
     state = data.get("state", "unknown")
     if state == "running":
         version = data.get("version") or "?"
         host = data.get("host", "?")
         port = data.get("port", "?")
-        return f"OpenCode: {version} (running) @ http://{host}:{port}"
+        return f"Codex: {version} (running) @ http://{host}:{port}"
     if state == "disabled":
-        return "OpenCode: disabled (set `opencode.enabled: true` in config)"
+        return "Codex: disabled (set `codex.enabled: true` in config)"
     if state == "not_installed":
-        return "OpenCode: not installed (binary not on PATH)"
+        return "Codex: not installed (binary not on PATH)"
     detail = data.get("last_error") or ""
     if detail:
-        return f"OpenCode: {state} — {detail}"
-    return f"OpenCode: {state}"
+        return f"Codex: {state} — {detail}"
+    return f"Codex: {state}"
 
 
 def _format_config_warnings(config: NinaConfig) -> list[str]:
@@ -472,10 +378,8 @@ def _format_config_warnings(config: NinaConfig) -> list[str]:
     llm_status = check_provider_status(config.llm, timeout=1.0)
     transcription = check_transcription_status(config.transcription)
 
-    if provider == "openai" and not (config.llm.api_key or os.environ.get("OPENAI_API_KEY")):
-        warnings.append("OpenAI provider selected but OPENAI_API_KEY is not set")
-    elif provider == "codex" and not llm_status.reachable:
-        warnings.append(f"Codex auth disconnected ({llm_status.detail or 'unknown error'})")
+    if provider in {"codex", "openai", "openai_web", "web"} and not llm_status.reachable:
+        warnings.append(f"Codex CLI unavailable ({llm_status.detail or 'unknown error'})")
     elif (
         provider in {"openai_compatible", "llamacpp", "vllm", "lmstudio"}
         and not config.llm.base_url
@@ -489,6 +393,33 @@ def _format_config_warnings(config: NinaConfig) -> list[str]:
             f"Transcription backend unavailable ({transcription.detail or 'unknown error'})"
         )
     return warnings
+
+
+def _open_target(path: Path, wait: bool) -> None:
+    if not path.exists():
+        console.print(f"[red]Path not found: {path}[/red]")
+        raise typer.Exit(1) from None
+
+    if os.name == "nt":
+        try:
+            os.startfile(str(path))
+            console.print(f"Opened {path}")
+            return
+        except OSError as exc:  # noqa: BLE001
+            console.print(f"[red]Failed to open {path}: {exc}[/red]")
+            raise typer.Exit(1) from None
+
+    opener = shutil.which("xdg-open") or shutil.which("open")
+    if not opener:
+        console.print("[red]No supported file opener found. Install `xdg-open` or `open`.[/red]")
+        raise typer.Exit(1) from None
+
+    command = [opener, str(path)]
+    if wait:
+        subprocess.run(command, check=False)
+    else:
+        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    console.print(f"Opened {path}")
 
 
 @app.command("ask", help="Ask a question over the local Obsidian vault.")
@@ -506,7 +437,43 @@ def ask(
             console.print("- {}".format(source["path"]))
 
 
-@app.command("t", help="Launch the OpenTUI terminal UI.")
+@app.command("open", help="Open Nina profile files and directories.")
+def open_path(
+    target: str = typer.Argument(
+        "config",
+        help="One of: config, config-folder, config-file, token, vault, db, logs, daemon-pid, all",
+    ),
+    profile: str = typer.Option("default", help="Profile name"),
+    wait: bool = typer.Option(
+        False,
+        "-w",
+        "--wait",
+        help="Wait for the viewer to close (best effort).",
+    ),
+) -> None:
+    config_dir = get_config_dir(profile)
+    targets: dict[str, Path] = {
+        "config": config_dir,
+        "all": config_dir,
+        "config-folder": config_dir,
+        "config-file": get_config_path(config_dir),
+        "token": get_token_path(config_dir),
+        "vault": Path(get_vault_path(config_dir)),
+        "db": get_database_path(config_dir),
+        "logs": get_log_path(config_dir),
+        "daemon-pid": get_pid_path(config_dir),
+    }
+
+    path = targets.get(target)
+    if path is None:
+        console.print(f"Unknown target: {target}")
+        console.print("Valid targets: " + ", ".join(sorted(targets)))
+        raise typer.Exit(1)
+
+    _open_target(path, wait=wait)
+
+
+@app.command("t", help="Launch the OpenTUI terminal UI.", hidden=True)
 @app.command("tui", help="Launch the OpenTUI terminal UI.")
 def tui() -> None:
     tui_bin = _resolve_tui_binary()
@@ -523,7 +490,7 @@ def tui() -> None:
     raise typer.Exit(1)
 
 
-@app.command("r", help="Record a meeting. Alias for `nina meeting record`.")
+@app.command("r", help="Record a meeting. Alias for `nina meeting record`.", hidden=True)
 def nina_r(
     title: str = typer.Argument("Untitled", help='Meeting title (or "Untitled" to use the date)'),
     source: str | None = typer.Option(
@@ -602,8 +569,8 @@ def nina_r(
     )
 
 
-@app.command("h", help="Show compact help.")
-@app.command("help", help="Show compact help. Alias for `nina h`.")
+@app.command("h", help="Show compact help.", hidden=True)
+@app.command("help", help="Show compact help. Alias for `nina h`.", hidden=True)
 def nina_h() -> None:
     """Compact help. Use `nina <command> --help` for command-specific options."""
     _print_short_help()
@@ -626,7 +593,7 @@ def _print_version() -> None:
     console.print(f"Nina {__version__}")
 
 
-@app.command("v", help="Print the Nina version. Alias for `nina version`.")
+@app.command("v", help="Print the Nina version. Alias for `nina version`.", hidden=True)
 def nina_v() -> None:
     _print_version()
 
@@ -639,21 +606,41 @@ def version() -> None:
 @app.command("status", help="Show daemon health, LLM status, and config paths.")
 def status(
     profile: str = typer.Option("default", help="Profile name"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON output."),
 ) -> None:
     config_dir = get_config_dir(profile)
     config = load_effective_config(config_dir)
 
     daemon_state, running = _daemon_status(profile)
-    console.print(daemon_state)
-    console.print(f"Health: {_daemon_health() if running else 'offline'}")
-    console.print(_format_provider_auth_status(config))
-    console.print()
-    console.print(_format_llm_status(config))
-    console.print(_format_transcription_status(config))
-    console.print(_format_meeting_pipeline_status(config))
-    if running:
-        console.print(_format_opencode_status())
     warnings = _format_config_warnings(config)
+    status_report = {
+        "daemon": {
+            "status": daemon_state,
+            "running": running,
+            "health": _daemon_health() if running else "offline",
+        },
+        "provider": _format_provider_auth_status(config),
+        "llm": _format_llm_status(config),
+        "transcription": _format_transcription_status(config),
+        "meeting_pipeline": _format_meeting_pipeline_status(config),
+        "codex": _format_codex_status() if running else "Codex: (unknown — daemon offline)",
+        "warnings": warnings,
+        "paths": {name: value for name, value in _configuration_entries(config_dir, config)},
+    }
+
+    if json_output:
+        print_json(status_report)
+        return
+
+    console.print(status_report["daemon"]["status"])
+    console.print(f"Health: {status_report['daemon']['health']}")
+    console.print(status_report["provider"])
+    console.print()
+    console.print(status_report["llm"])
+    console.print(status_report["transcription"])
+    console.print(status_report["meeting_pipeline"])
+    if running:
+        console.print(status_report["codex"])
     if warnings:
         console.print()
         console.print("Warnings:")
@@ -661,14 +648,114 @@ def status(
             console.print(f"  - {warning}")
     console.print()
     console.print("Configuration paths:")
-    for name, value in _configuration_entries(config_dir, config):
+    for name, value in status_report["paths"].items():
         console.print(f"  {name}: {value}")
+
+
+@app.command("doctor", help="Run a full health and configuration check.")
+def doctor(
+    profile: str = typer.Option("default", help="Profile name"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON output."),
+) -> None:
+    config_dir = get_config_dir(profile)
+    config = load_effective_config(config_dir)
+    daemon_state, running = _daemon_status(profile)
+
+    checks: dict[str, bool | str] = {
+        "config_dir_exists": config_dir.exists(),
+        "config_file_exists": (get_config_path(config_dir)).exists(),
+        "token_exists": (get_token_path(config_dir)).exists(),
+        "daemon_running": running,
+        "database_exists": (get_database_path(config_dir)).exists(),
+        "vault_exists": (get_vault_path(config_dir)).exists(),
+        "daemon_health": _daemon_health() if running else "offline",
+    }
+
+    report = {
+        "daemon": {"state": daemon_state, "running": running},
+        "config": {"profile": profile, "config_dir": str(config_dir)},
+        "checks": checks,
+        "provider": {"auth": _format_provider_auth_status(config), "status": _format_llm_status(config)},
+        "transcription": _format_transcription_status(config),
+        "pipeline": _format_meeting_pipeline_status(config),
+        "warnings": _format_config_warnings(config),
+    }
+
+    if json_output:
+        print_json(report)
+        return
+
+    console.print("Checks:")
+    for key, value in checks.items():
+        if value is True or value in {"healthy", "ok"}:
+            console.print(f"  OK   {key}: {value}")
+        else:
+            console.print(f"  WARN {key}: {value}")
+    if report["warnings"]:
+        console.print("\nWarnings:")
+        for warning in report["warnings"]:
+            console.print(f"  - {warning}")
+
+
+@app.command("recent", help="Show a recent activity summary.")
+def recent(
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum records per section"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON output."),
+) -> None:
+    def _safe_request(path: str) -> list[dict[str, Any]]:
+        payload = try_request_json("GET", path, params={"limit": str(limit)}, timeout=2)
+        if isinstance(payload, dict):
+            return (
+                payload.get("tasks", [])
+                or payload.get("tickets", [])
+                or payload.get("notes", [])
+                or payload.get("runs", [])
+                or payload.get("items", [])
+                or payload.get("meetings", [])
+                or []
+            )
+        if isinstance(payload, list):
+            return payload
+        return []
+
+    recent_data: dict[str, list[dict[str, Any]]] = {
+        "tasks": _safe_request("/tasks"),
+        "tickets": _safe_request("/tickets"),
+        "notes": _safe_request("/notes"),
+        "job_runs": _safe_request("/job-runs"),
+        "workflow_runs": _safe_request("/workflow-runs"),
+        "meetings": _safe_request("/meetings"),
+    }
+
+    if json_output:
+        print_json(recent_data)
+        return
+
+    if not any(recent_data.values()):
+        console.print("No recent activity found.")
+        return
+
+    for section, rows in recent_data.items():
+        if not rows:
+            continue
+        console.print(f"[bold]{section.title()}[/bold]")
+        for row in rows:
+            if section in {"tasks", "tickets"}:
+                console.print(f"- {row.get('id')}: {row.get('title') or row.get('status')}")
+            elif section == "notes":
+                title = row.get("title") or row.get("path", "")
+                console.print(f"- {row.get('path', '')}: {title}")
+            else:
+                console.print(f"- {row.get('id')}: {row.get('status', '')}")
+        console.print()
 
 
 @app.command("logs", help="Print the daemon log file (use --tail N for the last N lines).")
 def logs(
     profile: str = typer.Option("default", help="Profile name"),
     tail: int | None = typer.Option(None, "--tail", help="Show only the last N lines"),
+    task_id: str | None = typer.Option(None, "--task-id", help="Only show lines for a task id"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Continue printing new log lines"),
 ) -> None:
     config_dir = get_config_dir(profile)
     log_path = get_log_path(config_dir)
@@ -676,116 +763,40 @@ def logs(
         console.print(f"Log file not found: {log_path}")
         raise typer.Exit(1)
 
-    lines = log_path.read_text().splitlines()
+    def selected(lines: list[str]) -> list[str]:
+        if not task_id:
+            return lines
+        task_token = f"task={task_id}"
+        return [line for line in lines if task_token in line or task_id in line]
+
+    lines = selected(log_path.read_text(errors="replace").splitlines())
     if tail is not None and tail >= 0:
         lines = lines[-tail:]
 
     console.print(f"Log file: {log_path}", soft_wrap=True)
     if lines:
         console.print("\n".join(lines))
-
-
-def _get_env(profile: str) -> tuple[dict[str, str], NinaConfig]:
-    config_dir = get_config_dir(profile)
-    token_path = get_token_path(config_dir)
-    config_path = get_config_path(config_dir)
-    if not config_path.exists():
-        console.print("Run 'nina init' first.")
-        raise typer.Exit(1)
-    config = load_effective_config(config_dir)
-    env = os.environ.copy()
-    # Bootstrap-only env vars. All other settings live in `config.yaml` and
-    # are read by the daemon via `load_effective_config`. Keep this list
-    # minimal: profile + config dir + auth token.
-    env["NINA_PROFILE"] = profile
-    env["NINA_CONFIG_DIR"] = str(config_dir)
-    env["NINA_TOKEN"] = read_token(token_path)
-    return env, config
-
-
-def _resolve_pid_path(profile: str) -> Path:
-    return get_pid_path(get_config_dir(profile))
-
-
-@daemon_app.command("start", help="Start the local Nina daemon.")
-def daemon_start(
-    profile: str = typer.Option("default", help="Profile name"),
-) -> None:
-    pid_path = _resolve_pid_path(profile)
-    if pid_path.exists():
-        pid = _read_pid(pid_path)
-        if pid is not None and _process_exists(pid):
-            console.print(f"Daemon already running (pid {pid})")
-            return
-        pid_path.unlink(missing_ok=True)
-    env, config = _get_env(profile)
-    _write_runtime_state(get_config_dir(profile), config)
-    log_path = get_log_path(get_config_dir(profile))
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(
-        _server_command(),
-        env=env,
-        stdout=log_path.open("a"),
-        stderr=subprocess.STDOUT,
-        **_daemon_popen_kwargs(),
-    )
-    pid_path.write_text(str(proc.pid))
-    console.print(f"Daemon started (pid {proc.pid})")
-
-
-@daemon_app.command("stop", help="Stop the local Nina daemon.")
-def daemon_stop(
-    profile: str = typer.Option("default", help="Profile name"),
-) -> None:
-    pid_path = _resolve_pid_path(profile)
-    if not pid_path.exists():
-        console.print("Daemon not running")
+    if not follow:
         return
-    pid = _read_pid(pid_path)
-    if pid is None:
-        pid_path.unlink(missing_ok=True)
-        console.print("Daemon not running")
+
+    offset = log_path.stat().st_size
+    try:
+        while True:
+            time.sleep(1.0)
+            size = log_path.stat().st_size
+            if size < offset:
+                offset = 0
+            if size == offset:
+                continue
+            with log_path.open("r", errors="replace") as handle:
+                handle.seek(offset)
+                chunk = handle.read()
+                offset = handle.tell()
+            new_lines = selected(chunk.splitlines())
+            if new_lines:
+                console.print("\n".join(new_lines))
+    except KeyboardInterrupt:
         return
-    _terminate_process(pid)
-    pid_path.unlink(missing_ok=True)
-    console.print("Daemon stopped")
-
-
-@daemon_app.command("r", help="Restart the local Nina daemon.")
-@app.command("restart", help="Restart the local Nina daemon.")
-def daemon_restart(
-    profile: str = typer.Option("default", help="Profile name"),
-) -> None:
-    pid_path = _resolve_pid_path(profile)
-    if pid_path.exists():
-        pid = _read_pid(pid_path)
-        if pid is not None and _process_exists(pid):
-            _terminate_process(pid)
-            pid_path.unlink(missing_ok=True)
-            console.print("Daemon stopped")
-        else:
-            pid_path.unlink(missing_ok=True)
-    env, config = _get_env(profile)
-    _write_runtime_state(get_config_dir(profile), config)
-    log_path = get_log_path(get_config_dir(profile))
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(
-        _server_command(),
-        env=env,
-        stdout=log_path.open("a"),
-        stderr=subprocess.STDOUT,
-        **_daemon_popen_kwargs(),
-    )
-    pid_path.write_text(str(proc.pid))
-    console.print(f"Daemon restarted (pid {proc.pid})")
-
-
-@daemon_app.command("status", help="Print whether the local Nina daemon is running.")
-def daemon_status(
-    profile: str = typer.Option("default", help="Profile name"),
-) -> None:
-    daemon_state, _ = _daemon_status(profile)
-    console.print(daemon_state)
 
 
 def main() -> None:
@@ -798,9 +809,6 @@ def main() -> None:
     if sys.argv[1] in {"v", "-v", "--version"}:
         _print_version()
         return
-    if sys.argv[1] in {"-h", "--help"}:
-        # Translate short/full help flags to the full typer help.
-        sys.argv[1] = "--help"
     app()
 
 

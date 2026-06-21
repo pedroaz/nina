@@ -193,7 +193,7 @@ def main() -> int:
         installed_tui = install_tui_binary(bin_dir, built_tui)
         launcher_path = write_launcher(app_dir, launcher_dir, installed_tui)
 
-    run([str(python_executable(app_dir)), "-m", "nina_cli.main", "setup"])
+    run([str(python_executable(app_dir)), "-m", "nina_cli.main", "setup", "--no-system"])
 
     print("Local Nina build complete.")
     print(f"Launcher: {launcher_path}")

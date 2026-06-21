@@ -5,6 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .api import request
+from .repo_commands import resolve_repository_id
 
 console = Console()
 
@@ -14,25 +15,23 @@ ticket_app = typer.Typer(help="Ticket commands")
 @ticket_app.command("list")
 def ticket_list(
     task_type: str | None = typer.Option(None, "--type", help="Filter by task_type"),
-    status: str | None = typer.Option(None, help="Filter by agent status (idle/working)"),
+    status: str | None = typer.Option(None, help="Filter by agent status (idle/working/error)"),
 ) -> None:
     params: dict[str, Any] = {}
     if task_type:
         params["task_type"] = task_type
     if status:
         params["status"] = status
-    qs = "&".join(f"{k}={v}" for k, v in params.items())
-    path = "/tickets" + (f"?{qs}" if qs else "")
-    resp = request("GET", path)
+    resp = request("GET", "/tickets", params=params)
     tasks = resp.json()
-    table = Table("ID", "Title", "Type", "Status", "opencode_project_id")
+    table = Table("ID", "Title", "Type", "Agent", "Repository")
     for t in tasks:
         table.add_row(
             t["id"],
             t["title"],
             t["task_type"],
             t["status"],
-            t.get("opencode_project_id") or "",
+            t.get("repository_name") or t.get("repository_path") or "",
         )
     console.print(table)
 
@@ -41,21 +40,27 @@ def ticket_list(
 def ticket_create(
     title: str,
     description: str = typer.Option("", help="Description"),
-    opencode_project_id: str = typer.Option(
-        None, "--opencode-project-id", help="Server-assigned opencode project id"
+    repository: str = typer.Option(
+        None, "--repo", help="Repository id, name, or path for coding/reviewing tasks"
     ),
     task_type: str = typer.Option(
         None, "--type", help="Initial task_type (defaults to unclassified)"
     ),
     no_classify: bool = typer.Option(False, "--no-classify", help="Skip background classifier"),
+    auto_run: bool = typer.Option(
+        False, "--auto-run", help="After creation, classify if needed and run the task"
+    ),
 ) -> None:
     data: dict[str, Any] = {"title": title, "description": description}
-    if opencode_project_id:
-        data["opencode_project_id"] = opencode_project_id
+    repository_id = resolve_repository_id(repository)
+    if repository_id:
+        data["repository_id"] = repository_id
     if task_type:
         data["task_type"] = task_type
     if no_classify:
         data["auto_classify"] = False
+    if auto_run:
+        data["auto_run"] = True
     resp = request("POST", "/tickets", json=data)
     task = resp.json()
     console.print(f"Created ticket {task['id']} (type={task['task_type']})")
@@ -69,11 +74,12 @@ def ticket_show(ticket_id: str) -> None:
     console.print(f"Title: {task['title']}")
     console.print(f"Type: {task['task_type']}")
     console.print(f"Status: {task['status']}")
-    if task.get("opencode_project_id"):
-        console.print(f"opencode_project_id: {task['opencode_project_id']}")
+    if task.get("repository_id"):
+        console.print(f"Repository: {task.get('repository_name') or task['repository_id']}")
+        if task.get("repository_path"):
+            console.print(f"Repository path: {task['repository_path']}")
     if task["classification_reason"]:
         console.print(f"Reason: {task['classification_reason']}")
-    console.print(f"Note: {task['note_path']}")
 
 
 @ticket_app.command("delete")
@@ -111,8 +117,10 @@ def ticket_run(ticket_id: str) -> None:
         raise typer.Exit(1)
     output = payload.get("output", {})
     would = output.get("would_route_to")
-    if would:
-        console.print(f"Ticket {ticket_id} routed to {would} (placeholder).")
+    if output.get("status") == "completed" and output.get("task_type") == "done":
+        console.print(f"Ticket {ticket_id} completed.")
+    elif would:
+        console.print(f"Ticket {ticket_id} running {would}.")
     else:
         console.print(f"Ticket {ticket_id} skipped: {output.get('reason', 'no route')}")
 

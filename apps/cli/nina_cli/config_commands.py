@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import os
 import shutil
@@ -8,7 +7,6 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -25,7 +23,8 @@ from nina_core.config import (
 from nina_core.db import create_database
 from nina_core.search.indexer import create_fts_table
 
-from .api import api_base, headers
+from .api import try_request
+from .output import print_json
 
 console = Console()
 config_app = typer.Typer(help="Configuration commands")
@@ -131,17 +130,7 @@ def _sync_daemon(profile: str, patch: dict[str, Any]) -> bool:
     token_path = get_token_path(get_config_dir(profile))
     if not token_path.exists():
         return False
-    try:
-        response = httpx.patch(
-            f"{api_base()}/config",
-            headers=headers(),
-            json=patch,
-            timeout=10,
-        )
-        response.raise_for_status()
-    except Exception:
-        return False
-    return True
+    return try_request("PATCH", "/config", json=patch, timeout=10) is not None
 
 
 def _apply_update(profile: str, patch: dict[str, Any]) -> tuple[NinaConfig, bool]:
@@ -162,7 +151,7 @@ def show(
     config_dir, config = _load_config(profile)
     snapshot = _public_snapshot(config_dir, config)
     if json_output:
-        typer.echo(json.dumps(snapshot, indent=2, sort_keys=False))
+        print_json(snapshot)
         return
     _print_snapshot(snapshot)
 

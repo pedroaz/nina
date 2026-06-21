@@ -57,7 +57,7 @@ exclude = [
   "packages/nina_core/nina_core/workflows",
   "packages/nina_core/nina_core/scheduler",
   "packages/nina_core/nina_core/tasks",
-  "packages/nina_core/nina_core/opencode",
+  "packages/nina_core/nina_core/codex",
   "apps/server",
 ]
 pythonVersion = "3.12"
@@ -66,8 +66,9 @@ strict = ["packages/nina_core"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -m 'not daemon_smoke'"
 markers = [
     "unit: fast tests with no daemon process",
     "integration: daemon/API/CLI integration tests using isolated data",
+    "daemon_smoke: optional real CLI + daemon smoke test excluded from the default suite",
 ]

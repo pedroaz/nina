@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+from typing import Any
+
+import typer
+from rich.table import Table
+
+from .api import request
+from .output import console, print_json
+
+codex_app = typer.Typer(help="Codex CLI integration")
+projects_app = typer.Typer(help="Codex project commands")
+codex_app.add_typer(projects_app, name="projects")
+
+
+def _print_json(payload: Any) -> None:
+    print_json(payload)
+
+
+def _format_uptime(seconds: float | None) -> str:
+    if seconds is None:
+        return "—"
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, secs = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {secs}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m"
+
+
+def _format_status(status: dict[str, Any]) -> None:
+    state = status.get("state", "unknown")
+    version = status.get("version") or "—"
+    pid = status.get("pid")
+    host = status.get("host", "?")
+    port = status.get("port", "?")
+    binary = status.get("binary_path") or "—"
+    enabled = status.get("enabled")
+    installed = status.get("binary_installed")
+    uptime = _format_uptime(status.get("uptime_seconds"))
+    last_error = status.get("last_error")
+
+    if state == "running":
+        state_line = f"Codex CLI: {version} ([bold green]{state}[/bold green]"
+    elif state in {"disabled", "not_installed", "stopped", "failed"}:
+        state_line = "Codex CLI: ([bold yellow]{state}[/bold yellow]".format(state=state)
+    else:
+        state_line = f"Codex CLI: ([bold]{state}[/bold]"
+    if pid:
+        state_line += f" pid {pid}"
+    state_line += ")"
+    console.print(state_line)
+    console.print(f"  Binary: {binary}  (enabled={enabled}, installed={installed})")
+    console.print(f"  Host: http://{host}:{port}")
+    if status.get("state") == "running":
+        console.print(f"  Uptime: {uptime}")
+    if last_error:
+        console.print(f"  [yellow]Last error:[/yellow] {last_error}")
+
+
+@codex_app.command("status", help="Show the local Codex CLI integration status.")
+def codex_status(
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    status = request("GET", "/codex/status").json()
+    if as_json:
+        _print_json(status)
+        return
+    _format_status(status)
+
+
+@codex_app.command("exec", help="Execute a prompt with the Codex CLI.")
+def codex_exec(
+    prompt: str = typer.Argument(..., help="Prompt to send to codex"),
+    codex_json: bool = typer.Option(False, "--codex-json", help="Ask codex for machine-readable JSON"),
+    as_json: bool = typer.Option(False, "--json", help="Emit the full command response as JSON"),
+) -> None:
+    payload = request("POST", "/codex/exec", json={"prompt": prompt, "json": codex_json}).json()
+    if as_json:
+        _print_json(payload)
+        return
+    if codex_json and isinstance(payload, dict) and "json" in payload:
+        _print_json(payload["json"])
+        return
+    stdout = payload.get("stdout", "") if isinstance(payload, dict) else ""
+    stderr = payload.get("stderr") if isinstance(payload, dict) else None
+    if stdout:
+        console.print(stdout)
+    if stderr:
+        console.print(f"[yellow]{stderr}[/yellow]")
+
+
+@projects_app.command("list", help="List projects the codex server reports.")
+def codex_projects_list(
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    projects = request("GET", "/codex/projects").json()
+    if as_json:
+        _print_json(projects)
+        return
+    if not projects:
+        console.print("[yellow]No codex projects registered.[/yellow]")
+        return
+    table = Table("ID", "Worktree", "VCS", "Created", "Updated")
+    for project in projects:
+        time = project.get("time") or {}
+        table.add_row(
+            project.get("id", ""),
+            project.get("worktree", ""),
+            project.get("vcs") or "—",
+            str(time.get("created", "")),
+            str(time.get("updated", "")),
+        )
+    console.print(table)
+
+
+@projects_app.command("current", help="Show the current codex project (if any).")
+def codex_projects_current(
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    project = request("GET", "/codex/projects/current").json()
+    if as_json:
+        _print_json(project)
+        return
+    time = project.get("time") or {}
+    console.print(f"ID: {project.get('id', '')}")
+    console.print(f"Worktree: {project.get('worktree', '')}")
+    console.print(f"VCS: {project.get('vcs') or '—'}")
+    console.print(f"Created: {time.get('created', '')}")
+    console.print(f"Updated: {time.get('updated', '')}")

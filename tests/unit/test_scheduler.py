@@ -18,8 +18,8 @@ from sqlalchemy.orm import sessionmaker
 
 def _session_for(db_path: str):
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
-    SessionLocal = sessionmaker(bind=engine)
-    return SessionLocal()
+    session_local = sessionmaker(bind=engine)
+    return session_local()
 
 
 def _add_job(

@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-import json
 import sys
+from pathlib import Path
 from typing import Any
 
 import typer
-from rich.console import Console
 
 from .api import request
+from .output import console, print_json
 
-console = Console()
 note_app = typer.Typer(help="Note commands")
 
 
 def _print_json(data: Any) -> None:
-    typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
+    print_json(data)
 
 
 @note_app.command("list")
@@ -29,8 +28,7 @@ def note_list(
         params.append(("folder", folder))
     if nina_type:
         params.append(("nina_type", nina_type))
-    query = "&".join(f"{k}={v}" for k, v in params)
-    response = request("GET", f"/notes?{query}")
+    response = request("GET", "/notes", params=params)
     data = response.json()
     if json_output:
         _print_json(data)
@@ -76,7 +74,7 @@ def note_create(
     ),
 ) -> None:
     if from_file:
-        body = open(from_file).read()
+        body = Path(from_file).read_text()
     response = request(
         "POST",
         "/notes",
@@ -95,7 +93,7 @@ def note_append(
     ),
 ) -> None:
     if from_file:
-        body = open(from_file).read()
+        body = Path(from_file).read_text()
     encoded = path.lstrip("/")
     response = request("PATCH", f"/notes/{encoded}", json={"append": body})
     data = response.json()
@@ -109,7 +107,7 @@ def note_update(
     from_file: str | None = typer.Option(None, "--from-file", help="Read new body from this file"),
 ) -> None:
     if from_file:
-        body = open(from_file).read()
+        body = Path(from_file).read_text()
     if body is None:
         console.print("Provide --body or --from-file.")
         raise typer.Exit(1)

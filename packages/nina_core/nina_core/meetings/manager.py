@@ -9,8 +9,8 @@ from typing import Any
 from nina_core.config.settings import NinaConfig
 from nina_core.config.paths import get_recordings_path
 
+from ._protocols import RecorderError
 from .recorder import (
-    RecorderError,
     apply_ffmpeg_noise_reduction,
     boost_wav,
     make_audio_source,

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from nina_core.models.models import TASK_TYPES, Task
+from nina_core.models.models import TASK_AGENT_STATUSES, TASK_TYPES, Repository, Task
 
 from nina_core.obsidian.service import ObsidianService
 
@@ -16,11 +16,7 @@ _CLASSIFICATION_LOCK = threading.Lock()
 
 
 def _background_classify_enabled() -> bool:
-    """Whether `TaskService.create` should run the AI classifier in a thread.
-
-    Tests set `NINA_BACKGROUND_CLASSIFY=0` to run classification synchronously
-    so the daemon's flow is deterministic.
-    """
+    """Whether TaskService.create should run the AI classifier in a thread."""
 
     return os.environ.get("NINA_BACKGROUND_CLASSIFY", "1") != "0"
 
@@ -46,7 +42,6 @@ def _drain_classification_threads(timeout: float = 0.0) -> None:
                 _CLASSIFICATION_THREADS.remove(thread)
 
 
-# Make sure we never leave threads running across the test process.
 atexit.register(_drain_classification_threads)
 
 
@@ -58,8 +53,28 @@ def _validate_task_type(value: str | None) -> str | None:
     if value is None:
         return None
     if value not in TASK_TYPES:
-        raise ValueError(f"Invalid task_type {value!r}. Expected one of: {', '.join(TASK_TYPES)}")
+        allowed = ", ".join(TASK_TYPES)
+        raise ValueError(f"Invalid task_type {value!r}. Expected one of: {allowed}")
     return value
+
+
+def _validate_status(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if value not in TASK_AGENT_STATUSES:
+        raise ValueError(f"status {value!r} is invalid")
+    return value
+
+
+NO_REPOSITORY_TASK_TYPES = {"unclassified", "reminder", "research", "blocked", "human", "done"}
+
+
+def _task_type_allows_missing_repository(task_type: str) -> bool:
+    return task_type in NO_REPOSITORY_TASK_TYPES
+
+
+def _repository_required_message(task_type: str) -> str:
+    return f"task_type {task_type!r} requires a registered repository"
 
 
 class TaskService:
@@ -81,16 +96,18 @@ class TaskService:
         self,
         title: str,
         description: str = "",
-        opencode_project_id: str | None = None,
+        repository_id: str | None = None,
         task_type: str = "unclassified",
         auto_classify: bool = True,
     ) -> Task:
         normalized_type = _validate_task_type(task_type) or "unclassified"
+        normalized_repository_id = self._normalize_repository_id(repository_id)
+        self._validate_repository_for_task_type(normalized_type, normalized_repository_id)
         task = Task(
             id=str(uuid.uuid4()),
             title=title,
             description=description,
-            opencode_project_id=opencode_project_id,
+            repository_id=normalized_repository_id,
             task_type=normalized_type,
             status="idle",
             created_at=_now(),
@@ -106,6 +123,20 @@ class TaskService:
             else:
                 self._classify_synchronously(task.id)
         return task
+
+    def _normalize_repository_id(self, repository_id: str | None) -> str | None:
+        if repository_id is None or repository_id == "":
+            return None
+        repo = self.db.query(Repository).filter(Repository.id == repository_id).first()
+        if repo is None:
+            raise ValueError(f"Repository not found: {repository_id}")
+        return repo.id
+
+    def _validate_repository_for_task_type(
+        self, task_type: str, repository_id: str | None
+    ) -> None:
+        if not repository_id and not _task_type_allows_missing_repository(task_type):
+            raise ValueError(_repository_required_message(task_type))
 
     def _classify_synchronously(self, task_id: str) -> None:
         from nina_core.workflows.runner import WorkflowRunner
@@ -130,20 +161,20 @@ class TaskService:
 
     def list(
         self,
-        opencode_project_id: str | None = None,
         task_type: str | None = None,
         status: str | None = None,
         include_archived: bool = False,
+        repository_id: str | None = None,
     ) -> list[Task]:
         query = self.db.query(Task).filter(Task.task_type != "deleted")
         if not include_archived:
             query = query.filter(Task.task_type != "archived")
-        if opencode_project_id:
-            query = query.filter(Task.opencode_project_id == opencode_project_id)
         if task_type:
             query = query.filter(Task.task_type == task_type)
         if status:
             query = query.filter(Task.status == status)
+        if repository_id:
+            query = query.filter(Task.repository_id == repository_id)
         query = query.order_by(Task.created_at.desc())
         return query.all()
 
@@ -157,11 +188,19 @@ class TaskService:
         description: str | None = None,
         task_type: str | None = None,
         status: str | None = None,
-        opencode_project_id: str | None = None,
+        repository_id: str | None = None,
     ) -> Task | None:
         task = self.get(task_id)
         if not task:
             return None
+        target_type = task.task_type
+        if task_type is not None:
+            target_type = _validate_task_type(task_type) or task.task_type
+        target_repository_id = task.repository_id
+        if repository_id is not None:
+            target_repository_id = self._normalize_repository_id(repository_id)
+        if task_type is not None or repository_id is not None:
+            self._validate_repository_for_task_type(target_type, target_repository_id)
         if title is not None:
             task.title = title
         if description is not None:
@@ -172,11 +211,9 @@ class TaskService:
                 raise ValueError(f"task_type {task_type!r} is invalid")
             task.task_type = normalized
         if status is not None:
-            if status not in ("idle", "working"):
-                raise ValueError(f"status {status!r} is invalid")
-            task.status = status
-        if opencode_project_id is not None:
-            task.opencode_project_id = opencode_project_id or None
+            task.status = _validate_status(status) or task.status
+        if repository_id is not None:
+            task.repository_id = target_repository_id
         task.updated_at = _now()
         self.db.commit()
         self.obsidian.update_task_note(task)
@@ -213,16 +250,21 @@ class TaskService:
         return task
 
     def set_agent_status(self, task_id: str, status: str) -> Task | None:
-        if status not in ("idle", "working"):
-            raise ValueError(f"status {status!r} is invalid")
-        return self.update(task_id, status=status)
+        return self.update(task_id, status=_validate_status(status))
+
+    def add_activity(self, task_id: str, message: str) -> Task | None:
+        task = self.get(task_id)
+        if task is None:
+            return None
+        self.obsidian.append_task_activity(task, message)
+        return task
 
     def _enqueue_classification(self, task_id: str) -> None:
         """Run the classify-task workflow on a background thread.
 
         The POST /tasks call returns immediately; the workflow updates the
         row in-place when it completes. If the daemon dies mid-classification
-        the task simply stays as `unclassified` (no persistent queue yet).
+        the task simply stays as unclassified (no persistent queue yet).
         """
 
         from nina_core.workflows.runner import WorkflowRunner
@@ -235,8 +277,6 @@ class TaskService:
                 runner = WorkflowRunner(db_path, config=config)
                 runner.run("classify-task", {"task_id": task_id})
             except Exception:
-                # Classification is best-effort; a failure leaves the task as
-                # `unclassified` and the user can re-trigger manually.
                 pass
 
         thread = threading.Thread(target=_runner, name=f"classify-task-{task_id}", daemon=True)

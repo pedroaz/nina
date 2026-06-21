@@ -182,12 +182,13 @@ class SessionService:
         obsidian: ObsidianService | None = None,
         history_limit: int = 6,
         llm_config: LLMConfig | None = None,
+        codex_binary_path: str | None = None,
         search_config: "SearchConfig | None" = None,  # noqa: F821
     ) -> None:
         self.db_path = db_path
         self.vault_path = Path(vault_path)
         self.command_runner = command_runner or NinaCommandRunner()
-        self.llm = llm or LLMService(db_path, config=llm_config)
+        self.llm = llm or LLMService(db_path, config=llm_config, codex_binary_path=codex_binary_path)
         self.obsidian = obsidian or ObsidianService(self.vault_path)
         self.tools = tools or default_tool_registry()
         self.history_limit = history_limit
