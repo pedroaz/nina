@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { KeyEvent } from "@opentui/core";
-import { RESERVED_CTRL_KEYS, ctrlDigitIndex, isCtrlKey, isCtrlSpace, tabDirection } from "./keymap";
+import { RESERVED_CTRL_KEYS, ctrlDigitIndex, ctrlLineScrollDirection, isCtrlKey, isCtrlSpace, scrollPageKey, tabDirection } from "./keymap";
 
 function key(name: string, overrides: Partial<KeyEvent> = {}): KeyEvent {
   return {
@@ -46,6 +46,21 @@ describe("TUI keymap", () => {
     expect(tabDirection(key("shift-tab"))).toBe(-1);
     expect(tabDirection(key("tab", { sequence: "\u001b[Z", raw: "\u001b[Z" }))).toBe(-1);
     expect(tabDirection(key("tab", { ctrl: true }))).toBeNull();
+  });
+
+  test("scroll page keys normalize terminal variants", () => {
+    expect(scrollPageKey(key("pageup"))).toBe("pageup");
+    expect(scrollPageKey(key("page-up"))).toBe("pageup");
+    expect(scrollPageKey(key("page_down"))).toBe("pagedown");
+    expect(scrollPageKey(key("Home"))).toBe("home");
+    expect(scrollPageKey(key("end", { meta: true }))).toBeNull();
+  });
+
+  test("ctrl up and down map to line scroll directions", () => {
+    expect(ctrlLineScrollDirection(key("up", { ctrl: true }))).toBe(-1);
+    expect(ctrlLineScrollDirection(key("down", { ctrl: true }))).toBe(1);
+    expect(ctrlLineScrollDirection(key("down"))).toBeNull();
+    expect(ctrlLineScrollDirection(key("down", { ctrl: true, meta: true }))).toBeNull();
   });
 
   test("reserved ctrl letters document terminal conflicts", () => {

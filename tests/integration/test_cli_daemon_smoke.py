@@ -14,7 +14,13 @@ import pytest
 pytestmark = [pytest.mark.integration, pytest.mark.daemon_smoke]
 
 
-def run_cli(repo_root: Path, config_dir: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+def run_cli(
+    repo_root: Path,
+    config_dir: Path,
+    args: list[str],
+    *,
+    timeout: int = 30,
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["NINA_CONFIG_DIR"] = str(config_dir)
     return subprocess.run(
@@ -23,7 +29,7 @@ def run_cli(repo_root: Path, config_dir: Path, args: list[str]) -> subprocess.Co
         env=env,
         text=True,
         capture_output=True,
-        timeout=30,
+        timeout=timeout,
         check=False,
     )
 
@@ -48,6 +54,25 @@ def wait_for_daemon(repo_root: Path, config_dir: Path) -> None:
     log_path = config_dir / "logs" / "daemon.log"
     log = log_path.read_text() if log_path.exists() else ""
     raise AssertionError(f"daemon did not become healthy; log:\n{log}")
+
+
+def _configure_codex_research(
+    repo_root: Path,
+    config_dir: Path,
+    *,
+    model: str,
+    timeout_seconds: int,
+) -> None:
+    commands = [
+        ["config", "llm-model", model],
+        ["config", "research-provider", "codex"],
+        ["config", "research-model", model],
+        ["config", "research-search-mode", "live"],
+        ["config", "research-timeout", str(timeout_seconds)],
+    ]
+    for command in commands:
+        result = run_cli(repo_root, config_dir, command)
+        assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_real_cli_daemon_task_and_job_flow(tmp_path: Path) -> None:
@@ -92,5 +117,59 @@ def test_real_cli_daemon_task_and_job_flow(tmp_path: Path) -> None:
         runs = run_cli(repo_root, config_dir, ["job", "runs", "--name", "cli-daemon-summary"])
         assert runs.returncode == 0, runs.stderr
         assert "completed" in runs.stdout
+    finally:
+        run_cli(repo_root, config_dir, ["daemon", "stop"])
+
+
+def test_real_cli_daemon_live_research_flow(tmp_path: Path) -> None:
+    if os.environ.get("NINA_LIVE_CODEX_RESEARCH") != "1":
+        pytest.skip("set NINA_LIVE_CODEX_RESEARCH=1 to spend a real Codex research call")
+
+    repo_root = Path(__file__).resolve().parents[2]
+    config_dir = tmp_path / "nina-cli-research-daemon"
+    model = os.environ.get("NINA_LIVE_CODEX_MODEL", "gpt-5.5")
+    topic = os.environ.get("NINA_LIVE_CODEX_TOPIC", "modern mobile authentication patterns")
+    timeout_seconds = int(os.environ.get("NINA_LIVE_CODEX_TIMEOUT", "600"))
+
+    init = run_cli(repo_root, config_dir, ["init", "--force"])
+    assert init.returncode == 0, init.stderr
+
+    start = run_cli(repo_root, config_dir, ["daemon", "start"])
+    assert start.returncode == 0, start.stderr
+    try:
+        wait_for_daemon(repo_root, config_dir)
+        _configure_codex_research(
+            repo_root,
+            config_dir,
+            model=model,
+            timeout_seconds=timeout_seconds,
+        )
+
+        researched = run_cli(
+            repo_root,
+            config_dir,
+            [
+                "research",
+                "run",
+                topic,
+                "--search-mode",
+                "live",
+                "--timeout",
+                str(timeout_seconds + 90),
+                "--json",
+            ],
+            timeout=timeout_seconds + 90,
+        )
+        assert researched.returncode == 0, researched.stderr or researched.stdout
+
+        payload = json.loads(researched.stdout)
+        assert payload["status"] == "completed"
+        assert payload["search_mode"] == "live"
+        assert payload["summary"].strip()
+        assert payload["sources"], payload
+
+        note_path = config_dir / "vault" / payload["note_path"]
+        assert note_path.exists()
+        assert len(note_path.read_text().strip()) > 100
     finally:
         run_cli(repo_root, config_dir, ["daemon", "stop"])

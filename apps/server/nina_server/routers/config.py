@@ -43,6 +43,8 @@ def _config_response(config_dir: Path, config: Any) -> ConfigResponse:
         research=ResearchConfigResponse(
             provider=config.research.provider,
             model=config.research.model,
+            search_mode=config.research.search_mode,
+            timeout_seconds=config.research.timeout_seconds,
         ),
         scheduler=SchedulerConfigResponse(daily_summary_time=config.scheduler.daily_summary_time),
         transcription=TranscriptionConfigResponse(

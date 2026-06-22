@@ -22,12 +22,29 @@ class LLMConfig(BaseModel):
 class ResearchConfig(BaseModel):
     provider: str = "codex"
     model: str = "codex-cli"
+    search_mode: str = "live"
+    timeout_seconds: float = 600.0
 
     @field_validator("provider")
     @classmethod
     def normalize_provider(cls, value: str) -> str:
         provider = (value or "codex").lower()
         return "codex" if provider in {"openai", "openai_web", "web"} else provider
+
+    @field_validator("search_mode")
+    @classmethod
+    def normalize_search_mode(cls, value: str) -> str:
+        mode = (value or "live").lower()
+        if mode not in {"live", "cached", "disabled"}:
+            raise ValueError("research.search_mode must be one of: live, cached, disabled")
+        return mode
+
+    @field_validator("timeout_seconds")
+    @classmethod
+    def validate_timeout_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("research.timeout_seconds must be greater than zero")
+        return value
 
 
 class SchedulerConfig(BaseModel):

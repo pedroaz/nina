@@ -32,6 +32,28 @@ async def test_codex_cli_provider_returns_plain_text_when_no_json(
     assert response.finish_reason == "stop"
     assert "Messages JSON:" in str(captured["prompt"])
     assert captured["kwargs"]["output_last_message"] is True  # type: ignore[index]
+    assert captured["kwargs"]["model"] is None  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_codex_cli_provider_passes_configured_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_exec(self, prompt: str, **kwargs: object) -> object:
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(stdout="", last_message="model answer", json_payload=None)
+
+    monkeypatch.setattr("nina_core.codex.client.CodexClient.exec", fake_exec)
+
+    provider = CodexCliProvider(model="gpt-5.5")
+    response = await provider.complete(LLMRequest(purpose="chat", prompt="Hello"))
+
+    assert response.model == "gpt-5.5"
+    assert response.response == "model answer"
+    assert captured["kwargs"]["model"] == "gpt-5.5"  # type: ignore[index]
 
 
 @pytest.mark.asyncio

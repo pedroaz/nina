@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import re
@@ -23,6 +22,13 @@ from nina_core.models.models import LLMInteraction
 
 CODEX_DEFAULT_MODEL = "codex-cli"
 CODEX_DEFAULT_TIMEOUT_SECONDS = 180.0
+
+
+def _codex_model_arg(model: str | None) -> str | None:
+    value = (model or "").strip()
+    if not value or value == CODEX_DEFAULT_MODEL:
+        return None
+    return value
 
 
 def _now() -> str:
@@ -130,11 +136,13 @@ class CodexCliProvider(LLMProvider):
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         prompt = self._build_prompt(request)
+        selected_model = request.model or self.model
         result = await self.client.exec(
             prompt,
             json_mode=False,
             timeout=self.timeout,
             output_last_message=True,
+            model=_codex_model_arg(selected_model),
         )
         text = (result.last_message or result.stdout or "").strip()
         return self._parse_result(text, request)

@@ -133,8 +133,11 @@ def _research_run(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     from nina_core.workflows.runner import WorkflowRunner
 
     topic = _require(args.get("topic"), "topic")
+    payload = {"topic": topic}
+    if args.get("search_mode") is not None:
+        payload["search_mode"] = str(args["search_mode"])
     runner = WorkflowRunner(ctx.db_path)
-    result = runner.run("research-topic", {"topic": topic})
+    result = runner.run("research-topic", payload)
     if result.get("status") != "completed":
         return {"error": f"Research workflow failed: {result.get('status')}", "result": result}
     output = dict(result.get("output", {}))
@@ -288,7 +291,7 @@ def register_write_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="tickets_run",
-            description="Route a task to its handler. Refuses for reminder/blocked; runs coding/reviewing through Codex; placeholder for research.",
+            description="Route a task to its handler. Refuses for reminder/blocked; runs coding/reviewing through Codex; runs research tasks through the research workflow.",
             parameters=_string_schema(
                 {"id": {"type": "string"}},
                 required=["id"],
@@ -375,7 +378,16 @@ def register_write_tools(registry: ToolRegistry) -> None:
         ToolSpec(
             name="research_run",
             description="Run the research workflow for a topic. Writes a research note into the vault.",
-            parameters=_string_schema({"topic": {"type": "string"}}, required=["topic"]),
+            parameters=_string_schema(
+                {
+                    "topic": {"type": "string"},
+                    "search_mode": {
+                        "type": "string",
+                        "description": "Optional: live, cached, or disabled.",
+                    },
+                },
+                required=["topic"],
+            ),
             handler=_research_run,
             read_only=False,
         )

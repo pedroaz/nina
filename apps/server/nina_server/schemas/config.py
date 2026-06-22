@@ -12,6 +12,8 @@ class LLMConfigResponse(BaseModel):
 class ResearchConfigResponse(BaseModel):
     provider: str
     model: str
+    search_mode: str
+    timeout_seconds: float
 
 
 class SchedulerConfigResponse(BaseModel):
@@ -76,6 +78,8 @@ class LLMConfigUpdate(BaseModel):
 class ResearchConfigUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
+    search_mode: str | None = None
+    timeout_seconds: float | None = None
 
 
 class SchedulerConfigUpdate(BaseModel):

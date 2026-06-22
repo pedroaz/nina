@@ -165,6 +165,17 @@ class NoteService:
         full_path.write_text(frontmatter.dumps(post))
         return self._index_after_write(path, body, frontmatter_patch=frontmatter_patch)
 
+    def index_existing_note(
+        self,
+        path: str,
+        nina_type: str | None = None,
+        frontmatter_patch: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        full_path = safe_resolve_path(self.vault_path, path)
+        if not full_path.is_file():
+            raise NotePathError(f"Cannot index missing note: {path}")
+        return self._index_after_write(path, full_path.read_text(), nina_type, frontmatter_patch)
+
     def open_in_obsidian(self, path: str) -> bool:
         import subprocess
 

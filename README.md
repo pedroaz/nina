@@ -129,7 +129,10 @@ Then confirm Nina is set to Codex-backed providers:
 
 ```bash
 nina config llm-provider codex
+nina config llm-model gpt-5.5
 nina config research-provider codex
+nina config research-model gpt-5.5
+nina config research-search-mode live
 nina llm test "Reply with auth ok"
 ```
 
@@ -149,6 +152,7 @@ Create and inspect work:
 nina ticket create "Write the README" --description "Document setup, architecture, and validation."
 nina ticket list
 nina ask "What is in my vault about Codex?"
+nina research run "modern mobile authentication patterns"
 ```
 
 Launch the terminal UI:
@@ -185,7 +189,11 @@ nina config database <path>
 nina config daemon-port 8765
 nina config log-level INFO
 nina config llm-provider codex
+nina config llm-model gpt-5.5
 nina config research-provider codex
+nina config research-model gpt-5.5
+nina config research-search-mode live
+nina config research-timeout 600
 nina open config
 ```
 
@@ -201,6 +209,7 @@ make dev
 make dev-status
 make cli ARGS="status"
 make tui
+make smoke-research
 make test
 make check
 ```
@@ -227,12 +236,15 @@ End-to-end smoke:
 
 ```bash
 make smoke
+make smoke-research
+RESEARCH_TOPIC="modern mobile authentication patterns" CODEX_MODEL=gpt-5.5 make smoke-research
 ```
 
-`make smoke` uses the selected Nina profile, defaulting to `default`. The optional real CLI plus daemon smoke test is excluded from the default test suite and can be run with:
+`make smoke` uses the selected Nina profile, defaulting to `default`. `make smoke-research` uses the running daemon or starts it, runs `nina research run ... --json` through live Codex web search, and verifies that the Obsidian note exists with a summary and sources. The optional real CLI plus daemon smoke test is excluded from the default test suite and can be run with:
 
 ```bash
 uv run pytest -m daemon_smoke tests/integration/test_cli_daemon_smoke.py
+NINA_LIVE_CODEX_RESEARCH=1 uv run pytest -m daemon_smoke tests/integration/test_cli_daemon_smoke.py -k live_research
 ```
 
 ## Documentation

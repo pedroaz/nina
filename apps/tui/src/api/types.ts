@@ -137,6 +137,9 @@ export interface ResearchRunResult {
   workflow_run_id?: string;
   status?: string;
   created_at?: string;
+  provider?: string;
+  model?: string;
+  search_mode?: string;
 }
 
 export interface HealthResponse {
@@ -167,6 +170,8 @@ export interface ConfigSnapshot {
   research: {
     provider: string;
     model: string;
+    search_mode: string;
+    timeout_seconds: number;
   };
   scheduler: {
     daily_summary_time: string;
@@ -260,6 +265,10 @@ export type ConfigFieldKey =
   | "log_level"
   | "llm.provider"
   | "llm.model"
+  | "research.provider"
+  | "research.model"
+  | "research.search_mode"
+  | "research.timeout_seconds"
   | "scheduler.daily_summary_time"
   | "transcription.backend"
   | "transcription.model"

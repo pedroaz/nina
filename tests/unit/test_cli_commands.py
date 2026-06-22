@@ -577,6 +577,8 @@ def test_config_show_json_lists_config_values(isolated_config) -> None:  # type:
     assert payload["daemon_host"] == "127.0.0.1"
     # `default_gain` should be in the snapshot with the model default (1.0).
     assert payload["meetings"]["default_gain"] == 1.0
+    assert payload["research"]["search_mode"] == "live"
+    assert payload["research"]["timeout_seconds"] == 600.0
 
 
 def test_config_show_includes_default_gain_in_table(isolated_config) -> None:  # type: ignore[no-untyped-def]
@@ -774,6 +776,7 @@ def test_research_run_calls_research_endpoint(monkeypatch) -> None:  # type: ign
                 "note_path": "Research/2026-06-13-openai-web-search.md",
                 "summary": "Summary",
                 "sources": [{"title": "Example", "url": "https://example.com"}],
+                "search_mode": "live",
             }
         )
 
@@ -782,10 +785,59 @@ def test_research_run_calls_research_endpoint(monkeypatch) -> None:  # type: ign
     result = runner.invoke(app, ["research", "run", "OpenAI web search"])
 
     assert result.exit_code == 0
-    assert calls == [("POST", "/research/run", {"json": {"topic": "OpenAI web search"}})]
+    assert calls == [
+        (
+            "POST",
+            "/research/run",
+            {"json": {"topic": "OpenAI web search"}, "timeout": 700.0},
+        )
+    ]
     assert "Research note: Research/2026-06-13-openai-web-search.md" in result.stdout
+    assert "Search mode: live" in result.stdout
     assert "Summary: Summary" in result.stdout
     assert "Example" in result.stdout
+
+
+def test_research_run_supports_search_mode_and_json(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
+        calls.append((method, path, kwargs))
+        return FakeResponse(
+            {
+                "note_path": "Research/2026-06-13-auth.md",
+                "summary": "Summary",
+                "sources": [],
+                "search_mode": "cached",
+            }
+        )
+
+    monkeypatch.setattr("nina_cli.research_commands.request", fake_request)
+
+    result = runner.invoke(
+        app,
+        [
+            "research",
+            "run",
+            "mobile auth",
+            "--search-mode",
+            "cached",
+            "--timeout",
+            "123",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/research/run",
+            {"json": {"topic": "mobile auth", "search_mode": "cached"}, "timeout": 123.0},
+        )
+    ]
+    payload = json.loads(result.stdout)
+    assert payload["search_mode"] == "cached"
 
 
 def test_note_show_uses_get_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]

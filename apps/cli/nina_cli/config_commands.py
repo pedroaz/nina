@@ -53,6 +53,8 @@ def _public_snapshot(config_dir: Path, config: NinaConfig) -> dict[str, Any]:
         "research": {
             "provider": config.research.provider,
             "model": config.research.model,
+            "search_mode": config.research.search_mode,
+            "timeout_seconds": config.research.timeout_seconds,
         },
         "scheduler": {
             "daily_summary_time": config.scheduler.daily_summary_time,
@@ -94,6 +96,8 @@ def _print_snapshot(snapshot: dict[str, Any]) -> None:
     table.add_row("LLM base URL", str(snapshot["llm"]["base_url"] or ""))
     table.add_row("Research provider", str(snapshot["research"]["provider"]))
     table.add_row("Research model", str(snapshot["research"]["model"]))
+    table.add_row("Research search", str(snapshot["research"]["search_mode"]))
+    table.add_row("Research timeout", f'{snapshot["research"]["timeout_seconds"]}s')
     table.add_row("Daily summary", str(snapshot["scheduler"]["daily_summary_time"]))
     table.add_row("Transcription backend", str(snapshot["transcription"]["backend"]))
     table.add_row("Transcription model", str(snapshot["transcription"]["model"]))
@@ -236,6 +240,26 @@ def research_model(
 ) -> None:
     updated, synced = _apply_update(profile, {"research": {"model": model}})
     console.print(f"Research model: {updated.research.model}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("research-search-mode")
+def research_search_mode(
+    mode: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"research": {"search_mode": mode}})
+    console.print(f"Research search mode: {updated.research.search_mode}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("research-timeout")
+def research_timeout(
+    seconds: float,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"research": {"timeout_seconds": seconds}})
+    console.print(f"Research timeout: {updated.research.timeout_seconds}s")
     console.print("Applied to the running daemon." if synced else "Saved on disk.")
 
 

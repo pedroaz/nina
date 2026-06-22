@@ -16,7 +16,7 @@ import { spawn } from "child_process";
 import { readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { consumeKey, ctrlDigitIndex, globalShortcutHelp, isCtrlKey, isCtrlSpace, tabDirection } from "./keymap";
+import { consumeKey, ctrlDigitIndex, ctrlLineScrollDirection, globalShortcutHelp, isCtrlKey, isCtrlSpace, scrollPageKey, tabDirection } from "./keymap";
 import { THEME } from "../ui/theme";
 
 import type {
@@ -32,7 +32,6 @@ import type {
   SessionMessage,
   SessionRecord,
   SessionSendResponse,
-  ResearchSource,
   VaultSource,
   ToolInvocation,
   ResearchRunResult,
@@ -522,6 +521,38 @@ const CONFIG_FIELDS: ConfigFieldDefinition[] = [
     buildPatch: (value) => ({ llm: { model: value } }),
   },
   {
+    key: "research.provider",
+    label: "Research provider",
+    description: "Research backend",
+    restartRequired: false,
+    getValue: (config) => config.research.provider,
+    buildPatch: (value) => ({ research: { provider: value } }),
+  },
+  {
+    key: "research.model",
+    label: "Research model",
+    description: "Codex model or codex-cli",
+    restartRequired: false,
+    getValue: (config) => config.research.model,
+    buildPatch: (value) => ({ research: { model: value } }),
+  },
+  {
+    key: "research.search_mode",
+    label: "Research search",
+    description: "live | cached | disabled",
+    restartRequired: false,
+    getValue: (config) => config.research.search_mode,
+    buildPatch: (value) => ({ research: { search_mode: value } }),
+  },
+  {
+    key: "research.timeout_seconds",
+    label: "Research timeout",
+    description: "Codex research timeout in seconds",
+    restartRequired: false,
+    getValue: (config) => String(config.research.timeout_seconds),
+    buildPatch: (value) => ({ research: { timeout_seconds: Number.parseFloat(value) } }),
+  },
+  {
     key: "scheduler.daily_summary_time",
     label: "Daily summary time",
     description: "Daily summary schedule",
@@ -741,6 +772,7 @@ export async function runTui(): Promise<void> {
     detailTicket: Ticket | null;
     chatPending: { text: string; startedAt: number } | null;
     agentPending: { text: string; startedAt: number } | null;
+    researchPending: { text: string; startedAt: number } | null;
     chatAbort: AbortController | null;
     agentAbort: AbortController | null;
   } = {
@@ -776,6 +808,7 @@ export async function runTui(): Promise<void> {
     detailTicket: null,
     chatPending: null,
     agentPending: null,
+    researchPending: null,
     chatAbort: null,
     agentAbort: null,
   };
@@ -1404,6 +1437,18 @@ export async function runTui(): Promise<void> {
       setPageFocus(page, "scroll");
       scroll.focus();
     };
+    scroll.onMouseScroll = (event: TuiMouseEvent) => {
+      setPageFocus(page, "scroll");
+      scroll.focus();
+      const amount = Math.max(1, event.scroll?.delta ?? 1) * 3;
+      if (event.scroll?.direction === "up") {
+        scroll.scrollBy(-amount, "absolute");
+      } else if (event.scroll?.direction === "down") {
+        scroll.scrollBy(amount, "absolute");
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
     pageRoot.add(scroll);
     return scroll;
   }
@@ -1416,10 +1461,10 @@ export async function runTui(): Promise<void> {
     scroll.scrollTo(scroll.scrollHeight);
   }
 
-  function handleScrollKey(name: string, ctrl: boolean): void {
+  function handleScrollKey(name: string, ctrl: boolean): boolean {
     const scroll = activeScrollArea;
     if (!scroll) {
-      return;
+      return false;
     }
     setPageFocus(state.currentPage, "scroll");
     scroll.focus();
@@ -1453,6 +1498,18 @@ export async function runTui(): Promise<void> {
         }
         break;
     }
+    return true;
+  }
+
+  function handleLineScroll(direction: -1 | 1): boolean {
+    const scroll = activeScrollArea;
+    if (!scroll) {
+      return false;
+    }
+    setPageFocus(state.currentPage, "scroll");
+    scroll.focus();
+    scroll.scrollBy(direction * 3, "absolute");
+    return true;
   }
 
   function renderNewMessagesIndicator(scroll: ScrollBoxRenderable, page: PageName): void {
@@ -2026,23 +2083,35 @@ ${repositoryWorktreeLines(repo)}`;
     const scroll = makeScrollArea(pageRoot, accentForPage("Research"));
     activeScrollArea = scroll;
     if (!state.researchReport) {
-      scroll.add(buildCard(renderer, "No research yet", accentForPage("Research"), "Research a topic to create a summary-plus-links note in Obsidian."));
-    } else {
-      const sourceLines =
-        state.researchReport.sources.length === 0
-          ? "- No sources captured"
-          : state.researchReport.sources.map((source) => `- ${source.title} -> ${source.url}`).join("\n");
       scroll.add(
         buildCard(
           renderer,
-          `Research note: ${state.researchReport.note_path}`,
+          "No research yet",
           accentForPage("Research"),
-          `${state.researchReport.summary}\n\nSources:\n${sourceLines}`,
+          "Research a topic with Codex web search. The full report and sources are written to Obsidian.",
+        ),
+      );
+    } else {
+      scroll.add(
+        buildCard(
+          renderer,
+          "Research summary",
+          accentForPage("Research"),
+          state.researchReport.summary.trim() || "No summary available.",
+        ),
+      );
+    }
+    if (state.researchPending) {
+      scroll.add(
+        buildLoadingCard(
+          state.researchPending.text,
+          state.researchPending.startedAt,
+          `Research • ${formatElapsed(Date.now() - state.researchPending.startedAt)}`,
         ),
       );
     }
 
-    const input = makeInputSection(pageRoot, "Research topic", "Research a topic and write a note into Obsidian", accentForPage("Research"));
+    const input = makeInputSection(pageRoot, "Research topic", "Research with Codex and write a note into Obsidian", accentForPage("Research"));
     activeInput = input;
     input.on(InputRenderableEvents.ENTER, (value: string) => {
       void runResearch(value, input);
@@ -2798,6 +2867,22 @@ ${repositoryWorktreeLines(repo)}`;
     renderPage("Meetings");
   }
 
+  async function openResearchInObsidian(notePath?: string): Promise<void> {
+    if (!token) {
+      throw new Error("No Nina token found. Run `nina init` first.");
+    }
+    const path = notePath ?? state.researchReport?.note_path;
+    if (!path) {
+      throw new Error("No research note has been written yet.");
+    }
+    await apiFetch<{ opened: boolean }>(token, "/search/open", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+    state.banner = { kind: "info", text: `Requested Obsidian to open ${path}` };
+    renderPage("Research");
+  }
+
   async function openMeetingInObsidian(meetingId: string): Promise<void> {
     if (!token) {
       throw new Error("No Nina token found. Run `nina init` first.");
@@ -3144,15 +3229,26 @@ ${repositoryWorktreeLines(repo)}`;
       }
       state.banner = null;
       state.lastError = null;
+      state.researchPending = { text: topic, startedAt: Date.now() };
       input.value = "";
+      renderPage("Research");
       const report = await apiFetch<ResearchRunResult>(token, "/research/run", {
         method: "POST",
         body: JSON.stringify({ topic }),
       });
       state.researchReport = report;
       state.banner = { kind: "success", text: `Research note written to ${report.note_path}` };
+      try {
+        await openResearchInObsidian(report.note_path);
+        state.banner = { kind: "success", text: `Research note written and requested Obsidian to open ${report.note_path}` };
+      } catch (openError) {
+        const detail = openError instanceof Error ? openError.message : String(openError);
+        state.banner = { kind: "success", text: `Research note written to ${report.note_path}. Open in Obsidian failed: ${detail}` };
+      }
+      state.researchPending = null;
       renderPage("Research");
     } catch (error) {
+      state.researchPending = null;
       state.lastError = error instanceof Error ? error.message : String(error);
       renderPage("Research");
     }
@@ -3357,6 +3453,16 @@ ${repositoryWorktreeLines(repo)}`;
       consumeKey(key);
       return;
     }
+    const pageScrollKey = scrollPageKey(key);
+    if (pageScrollKey && handleScrollKey(pageScrollKey, Boolean(key.ctrl))) {
+      consumeKey(key);
+      return;
+    }
+    const lineScrollDirection = ctrlLineScrollDirection(key);
+    if (lineScrollDirection !== null && state.currentPage !== "Tickets" && handleLineScroll(lineScrollDirection)) {
+      consumeKey(key);
+      return;
+    }
     if (state.currentPage === "Config" && configSelect && (key.name === "up" || key.name === "down") && !key.ctrl && !key.meta && !key.option && !key.super) {
       moveConfigSelection(key.name === "up" ? -1 : 1);
       key.preventDefault();
@@ -3411,6 +3517,15 @@ ${repositoryWorktreeLines(repo)}`;
     }
     if (key.ctrl && key.name === "r") {
       void switchPage(state.currentPage);
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
+    if (state.currentPage === "Research" && key.ctrl && key.name === "o") {
+      void openResearchInObsidian().catch((err: unknown) => {
+        state.lastError = err instanceof Error ? err.message : String(err);
+        renderPage("Research");
+      });
       key.preventDefault();
       key.stopPropagation();
       return;
@@ -3591,28 +3706,6 @@ ${repositoryWorktreeLines(repo)}`;
         key.stopPropagation();
         return;
       }
-    }
-    if (key.name === "pageup" || key.name === "pagedown" || key.name === "home" || key.name === "end") {
-      handleScrollKey(key.name, key.ctrl);
-      key.preventDefault();
-      key.stopPropagation();
-      return;
-    }
-    if (
-      key.ctrl &&
-      (key.name === "up" || key.name === "down") &&
-      state.currentPage !== "Tickets"
-    ) {
-      const delta = key.name === "up" ? -1 : 1;
-      handleScrollKey("pagedown", false);
-      const scroll = activeScrollArea;
-      if (scroll) {
-        const lineDelta = delta * 3;
-        scroll.scrollBy(lineDelta, "absolute");
-      }
-      key.preventDefault();
-      key.stopPropagation();
-      return;
     }
     if (state.currentPage === "Tickets" && key.ctrl && key.name === "d" && !state.pendingAction) {
       const selected = state.detailTicket ?? getSelectedTask()?.ticket ?? null;

@@ -36,6 +36,10 @@ export function ctrlDigitIndex(key: KeyEvent): number | null {
   return Number.parseInt(key.name, 10) - 1;
 }
 
+function normalizedKeyName(key: KeyEvent): string {
+  return (key.name || "").toLowerCase().replace(/[\s_-]/g, "");
+}
+
 export function tabDirection(key: KeyEvent): 1 | -1 | null {
   if (!hasNoCommandModifiers(key)) {
     return null;
@@ -43,12 +47,39 @@ export function tabDirection(key: KeyEvent): 1 | -1 | null {
   if (key.sequence === "\u001b[Z" || key.raw === "\u001b[Z") {
     return -1;
   }
-  const normalizedName = key.name.toLowerCase().replace(/[\s_-]/g, "");
+  const normalizedName = normalizedKeyName(key);
   if (normalizedName === "backtab" || normalizedName === "shifttab") {
     return -1;
   }
   if (normalizedName === "tab") {
     return key.shift ? -1 : 1;
+  }
+  return null;
+}
+
+export type ScrollPageKey = "pageup" | "pagedown" | "home" | "end";
+
+export function scrollPageKey(key: KeyEvent): ScrollPageKey | null {
+  if (key.meta || key.option || key.super) {
+    return null;
+  }
+  const normalizedName = normalizedKeyName(key);
+  if (["pageup", "pagedown", "home", "end"].includes(normalizedName)) {
+    return normalizedName as ScrollPageKey;
+  }
+  return null;
+}
+
+export function ctrlLineScrollDirection(key: KeyEvent): -1 | 1 | null {
+  if (!hasOnlyCtrlModifier(key)) {
+    return null;
+  }
+  const normalizedName = normalizedKeyName(key);
+  if (normalizedName === "up") {
+    return -1;
+  }
+  if (normalizedName === "down") {
+    return 1;
   }
   return null;
 }

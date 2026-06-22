@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class ResearchRunInput(BaseModel):
     topic: str
+    search_mode: str | None = None
 
 
 class WorkflowInput(BaseModel):

@@ -83,6 +83,81 @@ async def test_exec_returns_stdout_and_parses_json_payload(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_exec_error_includes_process_excerpt(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(_self: CodexClient, command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return _fake_completed_process(
+            command,
+            returncode=1,
+            stdout="",
+            stderr="error: unknown model gpt-4-mini\nrun with --help\n",
+        )
+
+    monkeypatch.setattr(CodexClient, "_run_subprocess", fake_run)
+    client = CodexClient("127.0.0.1", 5555, "nina", "secret", binary_path="/usr/bin/codex")
+
+    with pytest.raises(CodexError) as exc:
+        await client.exec("research")
+
+    assert exc.value.status_code == 1
+    assert "codex exec failed" in str(exc.value)
+    assert "unknown model gpt-4-mini" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_exec_applies_live_search_model_and_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(_self: CodexClient, command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return _fake_completed_process(command, returncode=0, stdout="done")
+
+    monkeypatch.setattr(CodexClient, "_run_subprocess", fake_run)
+    client = CodexClient("127.0.0.1", 5555, "nina", "secret", binary_path="/usr/bin/codex")
+
+    await client.exec(
+        "research",
+        model="gpt-5.5",
+        web_search="live",
+        output_schema="/tmp/schema.json",
+    )
+
+    command = calls[0]
+    assert command[1:3] == ["--search", "exec"]
+    assert "--model" in command
+    assert command[command.index("--model") + 1] == "gpt-5.5"
+    assert "--output-schema" in command
+    assert command[command.index("--output-schema") + 1] == "/tmp/schema.json"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "config_value"),
+    [("cached", 'web_search="cached"'), ("disabled", 'web_search="disabled"')],
+)
+async def test_exec_applies_non_live_search_config(
+    mode: str,
+    config_value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(_self: CodexClient, command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return _fake_completed_process(command, returncode=0, stdout="done")
+
+    monkeypatch.setattr(CodexClient, "_run_subprocess", fake_run)
+    client = CodexClient("127.0.0.1", 5555, "nina", "secret", binary_path="/usr/bin/codex")
+
+    await client.exec("research", web_search=mode)
+
+    command = calls[0]
+    assert "--search" not in command
+    assert command[1] == "--config"
+    assert command[2] == config_value
+    assert command[3] == "exec"
+
+
+@pytest.mark.asyncio
 async def test_list_projects_is_compat_stub() -> None:
     client = CodexClient("127.0.0.1", 5555, "nina", "secret", binary_path="/usr/bin/codex")
     projects = await client.list_projects()

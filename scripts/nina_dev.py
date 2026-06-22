@@ -20,6 +20,8 @@ from nina_core.search.indexer import create_fts_table
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROFILE = "default"
+DEFAULT_RESEARCH_SMOKE_MODEL = "gpt-5.5"
+DEFAULT_RESEARCH_SMOKE_TOPIC = "modern mobile authentication patterns"
 
 
 def run(
@@ -178,6 +180,21 @@ def cmd_promote(args: argparse.Namespace) -> int:
     return 0
 
 
+def ensure_daemon_running(profile: str, env: dict[str, str], config_dir: Path) -> dict[str, object]:
+    try:
+        data = wait_for_health(config_dir, seconds=2)
+        print("Daemon already healthy")
+        return data
+    except SystemExit:
+        print("Starting daemon")
+        start = run(["uv", "run", "nina", "daemon", "start", "--profile", profile], env=env)
+        already_running = "already running" in (start.stdout + start.stderr).lower()
+        if start.returncode != 0 and not already_running:
+            sys.stderr.write(start.stderr)
+            raise SystemExit(start.returncode) from None
+        return wait_for_health(config_dir)
+
+
 def cmd_smoke(args: argparse.Namespace) -> int:
     profile = args.profile
     env = with_profile(profile)
@@ -189,16 +206,9 @@ def cmd_smoke(args: argparse.Namespace) -> int:
     print(f"Using Nina profile '{profile}' at {config_dir}")
 
     try:
-        data = wait_for_health(config_dir, seconds=2)
-        print("Daemon already healthy")
-    except SystemExit:
-        print("Starting daemon")
-        start = run(["uv", "run", "nina", "daemon", "start", "--profile", profile], env=env)
-        already_running = "already running" in (start.stdout + start.stderr).lower()
-        if start.returncode != 0 and not already_running:
-            sys.stderr.write(start.stderr)
-            return start.returncode
-        data = wait_for_health(config_dir)
+        data = ensure_daemon_running(profile, env, config_dir)
+    except SystemExit as exc:
+        return int(exc.code or 1)
 
     print(f"Health: {data.get('status')}")
     print(f"Vault: {data.get('vault_path')}")
@@ -268,6 +278,99 @@ def cmd_smoke(args: argparse.Namespace) -> int:
     return result_code
 
 
+def cmd_research_smoke(args: argparse.Namespace) -> int:
+    profile = args.profile
+    env = with_profile(profile)
+    config_dir = ensure_profile(profile, env)
+    require_config(config_dir)
+
+    print(f"Using Nina profile '{profile}' at {config_dir}")
+    try:
+        data = ensure_daemon_running(profile, env, config_dir)
+    except SystemExit as exc:
+        return int(exc.code or 1)
+    print(f"Health: {data.get('status')}")
+    print(f"Vault: {data.get('vault_path')}")
+
+    timeout_seconds = float(args.timeout)
+    config_commands = [
+        ["uv", "run", "nina", "config", "llm-model", args.model],
+        ["uv", "run", "nina", "config", "research-provider", "codex"],
+        ["uv", "run", "nina", "config", "research-model", args.model],
+        ["uv", "run", "nina", "config", "research-search-mode", args.search_mode],
+        ["uv", "run", "nina", "config", "research-timeout", str(timeout_seconds)],
+    ]
+    for command in config_commands:
+        configured = run(command, env=env)
+        if configured.returncode != 0:
+            sys.stderr.write(configured.stdout)
+            sys.stderr.write(configured.stderr)
+            return configured.returncode
+        print(configured.stdout.strip())
+
+    research_timeout = int(timeout_seconds) + 90
+    print(f"Running live research via CLI: {args.topic}")
+    researched = run(
+        [
+            "uv",
+            "run",
+            "nina",
+            "research",
+            "run",
+            args.topic,
+            "--search-mode",
+            args.search_mode,
+            "--timeout",
+            str(research_timeout),
+            "--json",
+        ],
+        env=env,
+        timeout=research_timeout,
+    )
+    if researched.returncode != 0:
+        sys.stderr.write(researched.stdout)
+        sys.stderr.write(researched.stderr)
+        return researched.returncode
+
+    try:
+        payload = json.loads(researched.stdout)
+    except json.JSONDecodeError:
+        sys.stderr.write(f"Research smoke failed: CLI did not return JSON:\n{researched.stdout}\n")
+        return 1
+
+    note_path = payload.get("note_path")
+    if not isinstance(note_path, str) or not note_path:
+        sys.stderr.write(f"Research smoke failed: missing note_path in payload: {payload}\n")
+        return 1
+
+    note_file = expected_vault(config_dir) / note_path
+    if not note_file.exists():
+        sys.stderr.write(f"Research smoke failed: note was not written at {note_file}\n")
+        return 1
+
+    summary = payload.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        sys.stderr.write("Research smoke failed: response did not include a summary\n")
+        return 1
+
+    sources = payload.get("sources") or []
+    if not args.allow_empty_sources and args.search_mode == "live" and not sources:
+        sys.stderr.write("Research smoke failed: live research returned no sources\n")
+        return 1
+
+    note_text = note_file.read_text(encoding="utf-8", errors="replace")
+    if len(note_text.strip()) < 100:
+        sys.stderr.write(f"Research smoke failed: note is unexpectedly short: {note_file}\n")
+        return 1
+
+    print("Research smoke: ok")
+    print(f"Model: {args.model}")
+    print(f"Search mode: {payload.get('search_mode')}")
+    print(f"Note: {note_file}")
+    print(f"Sources: {len(sources)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Nina local development helper")
     sub = parser.add_subparsers(required=True)
@@ -288,6 +391,32 @@ def build_parser() -> argparse.ArgumentParser:
     smoke_parser = sub.add_parser("smoke")
     smoke_parser.add_argument("--profile", default=DEFAULT_PROFILE)
     smoke_parser.set_defaults(func=cmd_smoke)
+
+    research_smoke_parser = sub.add_parser(
+        "research-smoke",
+        help="Run a live Codex research request through the CLI and verify the note output.",
+    )
+    research_smoke_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    research_smoke_parser.add_argument(
+        "--topic",
+        default=os.environ.get("NINA_RESEARCH_SMOKE_TOPIC", DEFAULT_RESEARCH_SMOKE_TOPIC),
+    )
+    research_smoke_parser.add_argument(
+        "--model",
+        default=os.environ.get("NINA_RESEARCH_SMOKE_MODEL", DEFAULT_RESEARCH_SMOKE_MODEL),
+    )
+    research_smoke_parser.add_argument(
+        "--search-mode",
+        choices=["live", "cached", "disabled"],
+        default=os.environ.get("NINA_RESEARCH_SMOKE_SEARCH_MODE", "live"),
+    )
+    research_smoke_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=float(os.environ.get("NINA_RESEARCH_SMOKE_TIMEOUT", "600")),
+    )
+    research_smoke_parser.add_argument("--allow-empty-sources", action="store_true")
+    research_smoke_parser.set_defaults(func=cmd_research_smoke)
 
     return parser
 

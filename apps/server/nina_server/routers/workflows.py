@@ -14,13 +14,31 @@ from ..schemas import ResearchRunInput, WorkflowInput
 router = APIRouter()
 
 
+def _workflow_failure_detail(result: dict[str, Any]) -> str:
+    output = result.get("output")
+    if isinstance(output, dict):
+        error = output.get("error")
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+    error = result.get("error")
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+    return "Research workflow failed"
+
+
 @router.post("/research/run")
 async def run_research(request: Request, data: ResearchRunInput) -> Any:
     db_path = _active_config_path()
     runner = WorkflowRunner(db_path, config=_request_config(request))
-    result = runner.run("research-topic", {"topic": data.topic})
+    payload: dict[str, Any] = {"topic": data.topic}
+    if data.search_mode is not None:
+        payload["search_mode"] = data.search_mode
+    result = runner.run("research-topic", payload)
     if result.get("status") != "completed":
-        return JSONResponse(status_code=400, content=result)
+        return JSONResponse(
+            status_code=400,
+            content={**result, "detail": _workflow_failure_detail(result)},
+        )
     output = dict(result.get("output", {}))
     output["workflow_run_id"] = result.get("id")
     output["status"] = result.get("status")

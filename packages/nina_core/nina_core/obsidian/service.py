@@ -131,6 +131,9 @@ class ObsidianService:
         sources: Iterable[Mapping[str, str]],
         workflow_run_id: str | None,
         created_at: str,
+        provider: str | None = None,
+        model: str | None = None,
+        search_mode: str | None = None,
     ) -> str:
         created_date = created_at[:10]
         relative_path = Path("Research") / f"{created_date} - {_slugify(topic)}.md"
@@ -163,6 +166,12 @@ class ObsidianService:
             "created_at": created_at,
             "sources": source_list,
         }
+        if provider:
+            metadata["provider"] = provider
+        if model:
+            metadata["model"] = model
+        if search_mode:
+            metadata["search_mode"] = search_mode
         self.write_note(relative_path, body, metadata)
         return str(relative_path)
 

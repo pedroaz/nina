@@ -267,11 +267,34 @@ def test_run_task_preserves_repository_required_classification(services) -> None
         service.db.close()
 
 
-def test_run_task_routes_research_to_research_placeholder(services) -> None:
+def test_run_task_routes_research_to_research_workflow(services, monkeypatch) -> None:
+    from nina_core.research.service import FakeResearchProvider, ResearchService
+
+    monkeypatch.setattr(ResearchService, "_build_provider", lambda self: FakeResearchProvider())
     svc, _, runner_factory, _repo_id = services
-    task_id = _make_task(svc, title="Investigate X", task_type="research")
-    result = runner_factory().run("run-task", {"task_id": task_id})
-    assert result["output"]["would_route_to"] == "research"
+    task_id = _make_task(
+        svc,
+        title="Investigate X",
+        description="Prefer official docs",
+        task_type="research",
+    )
+    result = runner_factory().run("run-task", {"task_id": task_id, "search_mode": "cached"})
+
+    assert result["status"] == "completed"
+    output = result["output"]
+    assert output["would_route_to"] == "research"
+    assert output["status"] == "completed"
+    assert output["note_path"].startswith("Research/")
+    assert output["search_mode"] == "cached"
+
+    service = svc()
+    try:
+        refreshed = service.get(task_id)
+        assert refreshed is not None
+        assert refreshed.task_type == "research"
+        assert refreshed.status == "idle"
+    finally:
+        service.db.close()
 
 
 def test_run_task_is_noop_for_done(services) -> None:

@@ -264,6 +264,7 @@ def test_research_run_writes_summary_and_sources_note(
     cfg.setdefault("research", {})
     cfg["research"]["provider"] = "fake"
     cfg["research"]["model"] = "fake"
+    cfg["research"]["search_mode"] = "live"
     config_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
     # Re-apply the config on the running app.
     from nina_core.config import load_effective_config
@@ -274,21 +275,141 @@ def test_research_run_writes_summary_and_sources_note(
     researched = api_client.post(
         "/research/run",
         headers=auth_headers,
-        json={"topic": "OpenAI web search"},
+        json={"topic": "OpenAI web search", "search_mode": "cached"},
     )
     assert researched.status_code == 200
     payload = researched.json()
     assert payload["status"] == "completed"
     assert payload["workflow_run_id"]
     assert payload["note_path"].startswith("Research/")
+    assert payload["search_mode"] == "cached"
 
     note_path = isolated_config / "vault" / payload["note_path"]
     note = frontmatter.loads(note_path.read_text())
     assert note.metadata["nina_type"] == "research_report"
     assert note.metadata["topic"] == "OpenAI web search"
     assert note.metadata["workflow_run_id"] == payload["workflow_run_id"]
+    assert note.metadata["search_mode"] == "cached"
+    assert note.metadata["provider"] == "fake"
     assert note.metadata["sources"][0]["url"].startswith("https://example.com/")
     assert "Fake research summary" in note.content
+
+    listed = api_client.get(
+        "/notes?folder=Research&nina_type=research_report",
+        headers=auth_headers,
+    )
+    assert listed.status_code == 200
+    assert any(item["path"] == payload["note_path"] for item in listed.json()["notes"])
+
+    fetched_path = payload["note_path"]
+    fetched = api_client.get(f"/notes/{fetched_path}", headers=auth_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["nina_type"] == "research_report"
+
+
+def test_research_run_failure_returns_detail(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    response = api_client.post(
+        "/research/run",
+        headers=auth_headers,
+        json={"topic": "OpenAI web search", "search_mode": "bogus"},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert "research search_mode" in payload["detail"]
+
+
+def test_search_reindex_backfills_note_metadata(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+) -> None:
+    note_path = isolated_config / "vault" / "Research" / "raw.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text(
+        "---\ntitle: Raw Research\nnina_type: research_report\n---\n\nRaw body."
+    )
+
+    missing = api_client.get("/notes/Research/raw.md", headers=auth_headers)
+    assert missing.status_code == 404
+
+    reindexed = api_client.post("/search/reindex", headers=auth_headers, json={})
+    assert reindexed.status_code == 200
+    assert reindexed.json() == {"reindexed": True}
+
+    fetched = api_client.get("/notes/Research/raw.md", headers=auth_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["nina_type"] == "research_report"
+
+
+def test_search_open_uses_configured_open_command(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    note_path = isolated_config / "vault" / "Research" / "open file.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text("# Open me\n")
+
+    updated = api_client.patch(
+        "/config",
+        headers=auth_headers,
+        json={"meetings": {"open_command": "obsidian-open {path}"}},
+    )
+    assert updated.status_code == 200
+
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("nina_server.routers.search.subprocess.run", fake_run)
+
+    opened = api_client.post(
+        "/search/open",
+        headers=auth_headers,
+        json={"path": "Research/open file.md"},
+    )
+
+    assert opened.status_code == 200
+    assert opened.json() == {"opened": True}
+    assert calls == [
+        (
+            ["obsidian-open", str(note_path)],
+            {"capture_output": True, "text": True, "timeout": 10},
+        )
+    ]
+
+
+def test_search_open_reports_open_command_failure(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    note_path = isolated_config / "vault" / "Research" / "open.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text("# Open me\n")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="no obsidian handler")
+
+    monkeypatch.setattr("nina_server.routers.search.subprocess.run", fake_run)
+
+    opened = api_client.post(
+        "/search/open",
+        headers=auth_headers,
+        json={"path": "Research/open.md"},
+    )
+
+    assert opened.status_code == 500
+    assert opened.json()["detail"] == "no obsidian handler"
 
 
 def test_notes_endpoints_round_trip(

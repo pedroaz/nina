@@ -63,6 +63,26 @@ def test_create_and_get_note(isolated_config: Path) -> None:
     assert "Body text." in fetched["body"]
 
 
+def test_index_existing_note_updates_metadata_table(isolated_config: Path) -> None:
+    service = NoteService(
+        str(get_database_path(isolated_config)),
+        get_vault_path(isolated_config),
+    )
+    note_path = get_vault_path(isolated_config) / "Research" / "generated.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text(
+        "---\ntitle: Generated Research\nnina_type: research_report\n---\n\nGenerated body."
+    )
+
+    indexed = service.index_existing_note("Research/generated.md")
+
+    assert indexed["path"] == "Research/generated.md"
+    fetched = service.get_note("Research/generated.md")
+    assert fetched is not None
+    assert fetched["title"] == "Generated Research"
+    assert fetched["nina_type"] == "research_report"
+
+
 def test_create_note_rejects_unsafe_path(isolated_config: Path) -> None:
     service = NoteService(
         str(get_database_path(isolated_config)),

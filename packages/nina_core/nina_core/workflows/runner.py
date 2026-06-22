@@ -68,7 +68,8 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "run-task": (
         "Routes a task to its handler. Unclassified tasks are classified first; "
         "coding and reviewing tasks run one Codex session. Refuses `reminder` "
-        "and `blocked`; research routing remains a placeholder."
+        "and `blocked`; research tasks run the research workflow and write an "
+        "Obsidian report note."
     ),
 }
 
@@ -239,6 +240,10 @@ class WorkflowRunner:
         topic = str(input_data.get("topic", "")).strip()
         if not topic:
             raise ValueError("Workflow 'research-topic' requires a 'topic' field")
+        search_mode = input_data.get("search_mode")
+        if search_mode is not None:
+            search_mode = str(search_mode)
+        context = str(input_data.get("context") or "").strip() or None
 
         plan_step = self._create_step(db, run, "plan")
         self._complete_step(db, plan_step, {"topic": topic})
@@ -250,7 +255,13 @@ class WorkflowRunner:
             config=self.config.research,
             codex_binary_path=self.config.codex.binary_path,
         )
-        report = service.run(topic, workflow_run_id=run.id, created_at=run.created_at)
+        report = service.run(
+            topic,
+            workflow_run_id=run.id,
+            created_at=run.created_at,
+            search_mode=search_mode,
+            context=context,
+        )
         self._complete_step(db, research_step, report)
 
         finish_step = self._create_step(db, run, "finalize")
@@ -774,6 +785,9 @@ class WorkflowRunner:
                 "would_route_to": None,
             }
 
+        if task_type == "research":
+            return self._run_research_task(db, run, service, task, input_data)
+
         if task_type not in {"coding", "reviewing"}:
             service.update(task_id, status="idle")
             _log_task_event(task_id=task_id, workflow_id=run.id, event="routed", status=task_type)
@@ -792,6 +806,90 @@ class WorkflowRunner:
             }
 
         return self._run_codex_task(db, run, service, task, input_data)
+
+    def _run_research_task(
+        self,
+        db: Session,
+        run: WorkflowRun,
+        service: Any,
+        task: Any,
+        input_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        topic = str(input_data.get("topic") or task.title or "").strip()
+        if not topic:
+            return {
+                "task_id": task.id,
+                "task_type": task.task_type,
+                "status": "error",
+                "reason": "research task requires a title or topic",
+                "would_route_to": None,
+            }
+        search_mode = input_data.get("search_mode")
+        if search_mode is not None:
+            search_mode = str(search_mode)
+        context = str(input_data.get("context") or task.description or "").strip() or None
+        service.update(task.id, status="working")
+        service.add_activity(task.id, f"Research started for: {topic}")
+        _log_task_event(
+            task_id=task.id,
+            workflow_id=run.id,
+            event="research_start",
+            status="working",
+        )
+        step = self._create_step(db, run, "research_task")
+        research = ResearchService(
+            self.db_path,
+            str(self.vault_path),
+            config=self.config.research,
+            codex_binary_path=self.config.codex.binary_path,
+        )
+        try:
+            report = research.run(
+                topic,
+                workflow_run_id=run.id,
+                created_at=run.created_at,
+                search_mode=search_mode,
+                context=context,
+            )
+        except Exception as exc:
+            message = str(exc)
+            self._fail_step(db, step, message)
+            service.update(task.id, status="error")
+            service.add_activity(task.id, f"Research failed: {message}")
+            _log_task_event(
+                task_id=task.id,
+                workflow_id=run.id,
+                event="research_error",
+                status="error",
+                message=message,
+            )
+            return {
+                "task_id": task.id,
+                "task_type": task.task_type,
+                "status": "error",
+                "reason": message,
+                "would_route_to": "research",
+            }
+        self._complete_step(db, step, report)
+        service.update(task.id, status="idle")
+        service.add_activity(task.id, f"Research note written: {report.get('note_path')}")
+        _log_task_event(
+            task_id=task.id,
+            workflow_id=run.id,
+            event="research_done",
+            status="idle",
+            message=str(report.get("note_path") or ""),
+        )
+        return {
+            "task_id": task.id,
+            "task_type": task.task_type,
+            "status": "completed",
+            "reason": "research completed",
+            "would_route_to": "research",
+            "note_path": report.get("note_path"),
+            "source_count": len(report.get("sources", [])),
+            "search_mode": report.get("search_mode"),
+        }
 
     def _run_codex_task(
         self,

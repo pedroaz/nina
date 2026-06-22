@@ -84,6 +84,10 @@ def request(method: str, path: str, **kwargs: Any) -> httpx.Response:
     except httpx.ConnectError:
         console.print("Daemon is not running. Start it with `nina daemon start` or `make dev`.")
         raise typer.Exit(1) from None
+    except httpx.TimeoutException:
+        timeout = kwargs.get("timeout", DEFAULT_API_TIMEOUT)
+        console.print(f"Request timed out after {timeout}s. The daemon may still be working.")
+        raise typer.Exit(1) from None
     except httpx.HTTPStatusError as exc:
         console.print(f"Request failed ({exc.response.status_code}): {_error_detail(exc.response)}")
         raise typer.Exit(1) from None

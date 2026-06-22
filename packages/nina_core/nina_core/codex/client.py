@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,6 +19,26 @@ from .models import Health, Project
 
 
 logger = logging.getLogger(__name__)
+
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _clean_process_excerpt(text: str | None, *, limit: int = 600) -> str:
+    if not text:
+        return ""
+    cleaned = _CONTROL_CHARS.sub("", text).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[:limit].rstrip()}..."
+
+
+def _failure_message(prefix: str, *, stdout: str | None, stderr: str | None) -> str:
+    detail = _clean_process_excerpt(stderr) or _clean_process_excerpt(stdout)
+    if not detail:
+        return prefix
+    return f"{prefix}: {detail}"
 
 
 class CodexError(RuntimeError):
@@ -79,7 +100,7 @@ class CodexClient:
         if not self.binary_path:
             raise CodexError("codex binary not found on PATH")
         command = [self.binary_path, *args]
-        logged_args = args[:-1] if args and args[0] == "exec" else args
+        logged_args = args[:-1] if "exec" in args else args
         logger.info(
             "nina.codex event=command_start binary=%s cwd=%s args=%s",
             self.binary_path,
@@ -113,6 +134,15 @@ class CodexClient:
             len(stdout),
             len(stderr),
         )
+        if process.returncode != 0:
+            excerpt = _clean_process_excerpt(stderr) or _clean_process_excerpt(stdout)
+            if excerpt:
+                logger.warning(
+                    "nina.codex event=command_failed binary=%s exit_code=%s output_excerpt=%s",
+                    self.binary_path,
+                    process.returncode,
+                    excerpt,
+                )
         return CodexExecResult(
             exit_code=process.returncode,
             stdout=stdout,
@@ -252,7 +282,7 @@ class CodexClient:
 
         if result.exit_code != 0:
             raise CodexError(
-                "codex task exec failed",
+                _failure_message("codex task exec failed", stdout=result.stdout, stderr=result.stderr),
                 status_code=result.exit_code,
                 stdout=result.stdout,
                 stderr=result.stderr,
@@ -269,19 +299,34 @@ class CodexClient:
         timeout: float = 120.0,
         cwd: str | None = None,
         output_last_message: bool = False,
+        model: str | None = None,
+        web_search: str | None = None,
+        output_schema: Path | str | None = None,
     ) -> CodexExecResult:
         previous_timeout = self._timeout
         self._timeout = timeout
         output_path: Path | None = None
         try:
-            args: list[str] = ["exec"]
+            args: list[str] = []
+            search_mode = (web_search or "").strip().lower()
+            if search_mode == "live":
+                args.append("--search")
+            elif search_mode in {"cached", "disabled"}:
+                args.extend(["--config", f'web_search="{search_mode}"'])
+            elif search_mode:
+                raise CodexError(f"Unsupported Codex web search mode: {web_search}")
+            args.append("exec")
             if cwd:
                 args.extend(["--cd", cwd])
+            if model:
+                args.extend(["--model", model])
             args.append("--skip-git-repo-check")
             if output_last_message:
                 with tempfile.NamedTemporaryFile(prefix="nina-codex-llm-", suffix=".txt", delete=False) as handle:
                     output_path = Path(handle.name)
                 args.extend(["--output-last-message", str(output_path)])
+            if output_schema is not None:
+                args.extend(["--output-schema", str(output_schema)])
             if json_mode:
                 args.append("--json")
             args.append(prompt)
@@ -298,7 +343,7 @@ class CodexClient:
 
         if result.exit_code != 0:
             raise CodexError(
-                "codex exec failed",
+                _failure_message("codex exec failed", stdout=result.stdout, stderr=result.stderr),
                 status_code=result.exit_code,
                 stdout=result.stdout,
                 stderr=result.stderr,
@@ -312,7 +357,7 @@ class CodexClient:
         result = await self._run(["--version"])
         if result.exit_code != 0:
             raise CodexError(
-                "codex failed to report version",
+                _failure_message("codex failed to report version", stdout=result.stdout, stderr=result.stderr),
                 status_code=result.exit_code,
                 stdout=result.stdout,
                 stderr=result.stderr,

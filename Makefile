@@ -1,10 +1,13 @@
-.PHONY: help build b doctor uninstall format lint typecheck test test-unit test-integration check smoke dev-init dev-reset dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs start stop status logs cli c chat tui codex-plugin-install promote
+.PHONY: help build b doctor uninstall format lint typecheck test test-unit test-integration check smoke smoke-research dev-init dev-reset dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs start stop status logs cli c chat tui codex-plugin-install promote
 
 PYTHON := uv run python
 UV := uv
 NINA_PROFILE ?= default
 DEFAULT_CONFIG_DIR ?= $(HOME)/.nina/$(NINA_PROFILE)
 NINA_DEV_ENV := NINA_PROFILE=$(NINA_PROFILE)
+RESEARCH_TOPIC ?= modern mobile authentication patterns
+CODEX_MODEL ?= gpt-5.5
+RESEARCH_TIMEOUT ?= 600
 
 help:
 	@echo "Available targets:"
@@ -20,6 +23,7 @@ help:
 	@echo "  test-integration  - API, DB, Obsidian, CLI integration tests"
 	@echo "  check             - Format check, lint, typecheck, tests"
 	@echo "  smoke             - End-to-end smoke test against the default profile"
+	@echo "  smoke-research    - Live Codex research smoke via CLI and daemon"
 	@echo "  dev, dev-start    - Initialize default profile and start daemon"
 	@echo "  dev-stop          - Stop daemon for the default profile"
 	@echo "  dev-status        - Check daemon status and health"
@@ -34,6 +38,8 @@ help:
 	@echo "Config variables:"
 	@echo "  NINA_PROFILE=$(NINA_PROFILE)"
 	@echo "  DEFAULT_CONFIG_DIR=$(DEFAULT_CONFIG_DIR)"
+	@echo "  CODEX_MODEL=$(CODEX_MODEL)"
+	@echo "  RESEARCH_TOPIC=$(RESEARCH_TOPIC)"
 
 build:
 	$(UV) sync --locked --python 3.12 --no-python-downloads
@@ -79,6 +85,9 @@ check: check-python format lint typecheck test
 
 smoke:
 	$(PYTHON) scripts/nina_dev.py smoke --profile $(NINA_PROFILE)
+
+smoke-research:
+	$(PYTHON) scripts/nina_dev.py research-smoke --profile $(NINA_PROFILE) --topic "$(RESEARCH_TOPIC)" --model "$(CODEX_MODEL)" --timeout $(RESEARCH_TIMEOUT)
 
 dev-init:
 	$(NINA_DEV_ENV) uv run nina init --profile $(NINA_PROFILE)
