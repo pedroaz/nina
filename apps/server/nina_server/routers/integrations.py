@@ -17,6 +17,23 @@ from ..schemas import IntegrationCredentialsUpdate
 router = APIRouter()
 
 
+def _clean_credentials(payload: dict[str, object]) -> dict[str, object]:
+    cleaned: dict[str, object] = {}
+    for key, value in payload.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                continue
+        cleaned[str(key)] = value
+    return cleaned
+
+
+def _configured_fields(creds: dict[str, Any]) -> dict[str, bool]:
+    return {str(key): bool(value) for key, value in creds.items()}
+
+
 @router.get("/integrations")
 async def list_integrations_endpoint(request: Request) -> dict[str, Any]:
     return {"integrations": get_integration_service(request).list()}
@@ -56,10 +73,20 @@ async def put_integration_credentials(
 ) -> dict[str, Any]:
     if get_integration(name) is None:
         raise HTTPException(status_code=404, detail="Unknown integration")
-    if not isinstance(data.credentials, dict) or not data.credentials:
+    payload = _clean_credentials(data.credentials)
+    if not payload:
         raise HTTPException(status_code=400, detail="credentials must be a non-empty object")
-    path = save_credentials(name, data.credentials, config_dir=_request_config_dir(request))
-    return {"saved": True, "path": str(path)}
+    config_dir = _request_config_dir(request)
+    if data.merge:
+        merged = load_credentials(name, config_dir=config_dir) or {}
+        merged.update(payload)
+        payload = merged
+    path = save_credentials(name, payload, config_dir=config_dir)
+    return {
+        "saved": True,
+        "path": str(path),
+        "configured_fields": _configured_fields(payload),
+    }
 
 
 @router.delete("/integrations/{name}/credentials")
@@ -74,9 +101,11 @@ async def delete_integration_credentials(request: Request, name: str) -> dict[st
 async def get_integration_credentials(request: Request, name: str) -> dict[str, Any]:
     """Return the shape of stored credentials without exposing secrets."""
 
-    if get_integration(name) is None:
+    integration = get_integration(name)
+    if integration is None:
         raise HTTPException(status_code=404, detail="Unknown integration")
     creds = load_credentials(name, config_dir=_request_config_dir(request)) or {}
     return {
-        "configured_fields": {key: bool(value) for key, value in creds.items()},
+        "credential_fields": [field.to_dict() for field in integration.info.credential_fields],
+        "configured_fields": _configured_fields(creds),
     }

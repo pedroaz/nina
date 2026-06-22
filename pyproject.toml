@@ -14,7 +14,7 @@ dependencies = [
 
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]
-exclude = ["apps/tui"]
+exclude = ["apps/desktop"]
 
 [tool.uv.sources]
 nina-core = { workspace = true }

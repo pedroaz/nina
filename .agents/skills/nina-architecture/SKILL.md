@@ -10,7 +10,7 @@ Use this skill to keep Nina's system shape coherent while changing cross-cutting
 ## Rules
 
 - Treat the daemon as the owner of persistent writes.
-- Treat CLI and TUI as localhost API clients.
+- Treat CLI and desktop clients as localhost API clients.
 - Keep `packages/nina_core` independent from presentation layers.
 - Keep SQLite authoritative for operational state and Obsidian authoritative for human-readable notes.
 - Keep root documentation accurate when public behavior or architecture changes.
@@ -18,7 +18,7 @@ Use this skill to keep Nina's system shape coherent while changing cross-cutting
 ## Process
 
 1. Read the files relevant to the boundary being changed.
-2. Check whether the change crosses daemon, CLI, TUI, core, plugin, or storage ownership.
+2. Check whether the change crosses daemon, CLI, desktop, core, plugin, or storage ownership.
 3. Update the smallest set of code and documentation that keeps the public contract truthful.
 4. Use the reference only when architecture, state ownership, or docs structure is part of the task.
 

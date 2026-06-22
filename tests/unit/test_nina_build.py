@@ -26,13 +26,9 @@ def test_main_invokes_userland_setup_after_install(
     monkeypatch.setattr(nina_build, "require_command", lambda name: None)
     monkeypatch.setattr(nina_build, "require_python_312", lambda: "/usr/bin/python3.12")
     monkeypatch.setattr(nina_build, "build_python_wheels", lambda out_dir: None)
-    monkeypatch.setattr(nina_build, "build_tui_binary", lambda out_dir: tmp_path / "nina-tui")
     monkeypatch.setattr(nina_build, "install_python_app", lambda app_dir, wheel_dir: None)
     monkeypatch.setattr(
-        nina_build, "install_tui_binary", lambda bin_dir, binary_path: tmp_path / "nina-tui"
-    )
-    monkeypatch.setattr(
-        nina_build, "write_launcher", lambda app_dir, launcher_dir, tui_binary: tmp_path / "nina"
+        nina_build, "write_launcher", lambda app_dir, launcher_dir: tmp_path / "nina"
     )
     monkeypatch.setattr(nina_build, "run", lambda cmd, cwd=None: calls.append(list(cmd)))
     monkeypatch.setattr(

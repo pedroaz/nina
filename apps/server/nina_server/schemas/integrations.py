@@ -5,3 +5,4 @@ from pydantic import BaseModel
 
 class IntegrationCredentialsUpdate(BaseModel):
     credentials: dict[str, object]
+    merge: bool = False

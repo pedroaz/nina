@@ -11,8 +11,8 @@
 
 - `apps/server` runs the FastAPI daemon on localhost and owns persistent writes.
 - `apps/cli` is a Typer client. It may start, stop, and inspect the daemon, but feature commands should go through the API.
-- `apps/tui` is an OpenTUI client. It reads and writes through daemon API calls and subscribes to live updates where supported.
-- `packages/nina_core` contains shared domain services and should not depend on CLI, TUI, or server presentation code.
+- `apps/desktop` is a GPUI client. It reads and writes through daemon API calls.
+- `packages/nina_core` contains shared domain services and should not depend on CLI, desktop, or server presentation code.
 - `nina-codex-plugin` is an installable local Codex plugin bundle used by the Nina runner for lifecycle callbacks.
 
 ## State Ownership
@@ -34,6 +34,6 @@
 ## Design Checks
 
 - Does the daemon still own the write path?
-- Are CLI and TUI behavior backed by API contracts instead of duplicated persistence logic?
+- Are CLI and desktop behavior backed by API contracts instead of duplicated persistence logic?
 - Does the change keep local-first operation possible without a hosted service?
 - Is the README or nearest component doc updated if public behavior changed?

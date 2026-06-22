@@ -5,7 +5,6 @@ REPOSITORY="${NINA_REPOSITORY:-__NINA_REPOSITORY__}"
 CHANNEL="${NINA_CHANNEL:-latest}"
 INSTALL_ROOT="${NINA_INSTALL_ROOT:-$HOME/.nina}"
 APP_DIR="$INSTALL_ROOT/app"
-BIN_DIR="$INSTALL_ROOT/bin"
 LAUNCHER_DIR="${NINA_LAUNCHER_DIR:-$HOME/.local/bin}"
 DRY_RUN=0
 
@@ -73,17 +72,14 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 ensure_uv
-mkdir -p "$APP_DIR" "$BIN_DIR" "$LAUNCHER_DIR"
+mkdir -p "$APP_DIR" "$LAUNCHER_DIR"
 download "$url" "$tmp_dir/$asset"
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 uv venv "$APP_DIR"
 "$APP_DIR/bin/python" -m pip install --upgrade pip
 "$APP_DIR/bin/python" -m pip install "$tmp_dir"/wheels/*.whl
-cp "$tmp_dir/bin/nina-tui" "$BIN_DIR/nina-tui"
-chmod +x "$BIN_DIR/nina-tui"
 cat > "$LAUNCHER_DIR/nina" <<EOF
 #!/usr/bin/env sh
-export NINA_TUI_BIN="$BIN_DIR/nina-tui"
 exec "$APP_DIR/bin/nina" "\$@"
 EOF
 chmod +x "$LAUNCHER_DIR/nina"

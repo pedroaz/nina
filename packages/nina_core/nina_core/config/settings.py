@@ -70,7 +70,7 @@ class MeetingsConfig(BaseModel):
     default_source: str = "mic"
     default_device: str | None = None
     auto_summarize: bool = False
-    open_command: str = "xdg-open obsidian://open?path={path}"
+    open_command: str = "auto"
     play_command: str = "xdg-open {path}"
     sample_rate: int = 48000
     channels: int = 1

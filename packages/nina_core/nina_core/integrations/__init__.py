@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import (
+    CredentialField,
     IdentityResult,
     Integration,
     IntegrationInfo,
@@ -43,6 +44,7 @@ _register_builtins()
 __all__ = [
     "IdentityResult",
     "Integration",
+    "CredentialField",
     "IntegrationInfo",
     "IntegrationStatus",
     "TestResult",

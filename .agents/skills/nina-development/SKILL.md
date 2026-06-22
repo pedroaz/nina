@@ -10,7 +10,6 @@ Use this skill when a task is primarily about how Nina is built, checked, tested
 ## Rules
 
 - Use `uv` for Python workspace commands.
-- Use Bun for `apps/tui`.
 - Keep tests isolated from real user config, real vaults, live daemon processes, and network credentials by default.
 - Prefer the narrowest useful test first, then broaden when the change crosses module boundaries.
 - Report skipped checks and the reason.

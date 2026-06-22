@@ -3,7 +3,6 @@ import shutil
 import sys
 import subprocess
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -62,8 +61,7 @@ def _print_short_help() -> None:
         '  [cyan]nina r  "title"[/cyan]      record a meeting (alias for `meeting record`)\n'
         "  [cyan]nina mt list[/cyan]         list meetings (alias for `meeting list`)\n"
         "  [cyan]nina mt stop[/cyan]         stop the active recording\n"
-        "  [cyan]nina mt e <id>[/cyan]       transcribe + summarize a meeting (Ctrl+E in TUI)\n"
-        "  [cyan]nina t[/cyan]               launch the TUI\n"
+        "  [cyan]nina mt e <id>[/cyan]       transcribe + summarize a meeting\n"
         '  [cyan]nina ask "q?"[/cyan]        ask a question over the vault\n'
         '  [cyan]nina search "q"[/cyan]      full-text search the vault\n'
         "  [cyan]nina config show[/cyan]     inspect settings\n"
@@ -71,8 +69,8 @@ def _print_short_help() -> None:
         "[bold]Compact aliases[/bold]\n"
         "  r = meeting record       mt = meeting sub-app   h = compact help\n"
         "  help = compact help (alias for `h`)\n"
-        "  t = tui                  d = daemon              --h = -h = --help\n"
-        "  o = open                 n = note                tk = ticket\n"
+        "  d = daemon              o = open                 n = note\n"
+        "  tk = ticket             --h = -h = --help\n"
         "  j = job                  c = config\n"
         "  rch = research           s = search              ll = llm\n"
         "  int = integrations       wf = workflow\n"
@@ -177,24 +175,6 @@ app.add_typer(integrations_app, name="integrations")
 _add_alias(app, integrations_app, "int")
 app.add_typer(workflow_app, name="workflow")
 _add_alias(app, workflow_app, "wf")
-
-
-def _resolve_tui_binary() -> Path | None:
-    env_bin = os.environ.get("NINA_TUI_BIN")
-    candidates: list[Path] = []
-    if env_bin:
-        candidates.append(Path(env_bin).expanduser())
-    if os.name == "nt":
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if local_app_data:
-            candidates.append(Path(local_app_data) / "Programs" / "Nina" / "bin" / "nina-tui.exe")
-        candidates.append(Path.home() / ".nina" / "bin" / "nina-tui.exe")
-    else:
-        candidates.append(Path.home() / ".nina" / "bin" / "nina-tui")
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
 
 
 @app.command(
@@ -326,7 +306,7 @@ def _format_meeting_pipeline_status(config: NinaConfig) -> str:
     """Show whether the full transcribe + summarize pipeline is wired up.
 
     Combines the LLM and transcription checks into a single yes/no so the
-    user can tell at a glance whether `Ctrl+E` / `nina meeting pipeline` will
+    user can tell at a glance whether `nina meeting pipeline` will
     work end-to-end.
     """
     try:
@@ -335,7 +315,7 @@ def _format_meeting_pipeline_status(config: NinaConfig) -> str:
     except Exception as exc:  # noqa: BLE001
         return f"Meeting pipeline: error ({exc})"
     if tr.available and llm.reachable and (llm.model_present or not llm.model):
-        return "Meeting pipeline: ready (Ctrl+E / nina meeting pipeline <id>)"
+        return "Meeting pipeline: ready (nina meeting pipeline <id>)"
     issues: list[str] = []
     if not tr.available:
         issues.append(f"transcription ({tr.backend}) not ready")
@@ -471,23 +451,6 @@ def open_path(
         raise typer.Exit(1)
 
     _open_target(path, wait=wait)
-
-
-@app.command("t", help="Launch the OpenTUI terminal UI.", hidden=True)
-@app.command("tui", help="Launch the OpenTUI terminal UI.")
-def tui() -> None:
-    tui_bin = _resolve_tui_binary()
-    if tui_bin:
-        os.execv(str(tui_bin), [str(tui_bin)])
-
-    cli_dir = os.path.dirname(os.path.abspath(__file__))
-    tui_dir = os.path.join(cli_dir, "../../tui")
-    if os.path.exists(os.path.join(tui_dir, "src", "main.ts")):
-        os.chdir(tui_dir)
-        os.execvp("bun", ["bun", "run", "src/main.ts"])
-
-    console.print("Nina TUI is not installed. Re-run the installer or set NINA_TUI_BIN.")
-    raise typer.Exit(1)
 
 
 @app.command("r", help="Record a meeting. Alias for `nina meeting record`.", hidden=True)
@@ -675,7 +638,10 @@ def doctor(
         "daemon": {"state": daemon_state, "running": running},
         "config": {"profile": profile, "config_dir": str(config_dir)},
         "checks": checks,
-        "provider": {"auth": _format_provider_auth_status(config), "status": _format_llm_status(config)},
+        "provider": {
+            "auth": _format_provider_auth_status(config),
+            "status": _format_llm_status(config),
+        },
         "transcription": _format_transcription_status(config),
         "pipeline": _format_meeting_pipeline_status(config),
         "warnings": _format_config_warnings(config),

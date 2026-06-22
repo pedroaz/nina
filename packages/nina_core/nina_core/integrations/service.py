@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from nina_core.models.models import IntegrationTest  # type: ignore[reportMissingTypeStubs]
 
 from .base import IdentityResult, Integration, IntegrationStatus, TestResult
+from .credentials import load_credentials
 from .registry import list_integrations
 
 
@@ -23,18 +24,45 @@ def _test_id() -> str:
     return "it_" + uuid.uuid4().hex[:24]
 
 
-def _integration_to_dict(integration: Integration, last: TestResult | None) -> dict[str, Any]:
+def _configured_fields_for(integration: Integration, config_dir: Path | None) -> dict[str, bool]:
+    credentials_key = str(getattr(integration, "credentials_key", "") or "")
+    if not credentials_key:
+        return {}
+    creds = load_credentials(credentials_key, config_dir=config_dir) or {}
+    return {str(key): bool(value) for key, value in creds.items()}
+
+
+def _is_configured_for(integration: Integration, config_dir: Path | None) -> bool:
+    checker = getattr(integration, "is_configured_for", None)
+    if callable(checker):
+        return bool(checker(config_dir))
+    return integration.is_configured()
+
+
+async def _test_for(integration: Integration, config_dir: Path | None) -> TestResult:
+    tester = getattr(integration, "test_with_config_dir", None)
+    if callable(tester):
+        return await tester(config_dir)
+    return await integration.test()
+
+
+def _integration_to_dict(
+    integration: Integration, last: TestResult | None, config_dir: Path | None = None
+) -> dict[str, Any]:
     info = integration.info
+    configured = _is_configured_for(integration, config_dir)
     payload: dict[str, Any] = {
         "name": info.name,
         "display_name": info.display_name,
         "description": info.description,
         "docs_url": info.docs_url,
         "auth_style": info.auth_style,
-        "configured": integration.is_configured(),
+        "credential_fields": [field.to_dict() for field in info.credential_fields],
+        "configured_fields": _configured_fields_for(integration, config_dir),
+        "configured": configured,
         "status": (
             IntegrationStatus.NOT_CONFIGURED.value
-            if not integration.is_configured()
+            if not configured
             else (last.status.value if last else IntegrationStatus.NOT_CONFIGURED.value)
         ),
     }
@@ -66,13 +94,13 @@ class IntegrationService:
         result: list[dict[str, Any]] = []
         for integration in list_integrations():
             last = self._latest_test(integration.info.name)
-            result.append(_integration_to_dict(integration, last))
+            result.append(_integration_to_dict(integration, last, self.config_dir))
         return result
 
     def get(self, name: str) -> dict[str, Any] | None:
         for integration in list_integrations():
             if integration.info.name == name:
-                return _integration_to_dict(integration, self._latest_test(name))
+                return _integration_to_dict(integration, self._latest_test(name), self.config_dir)
         return None
 
     async def test(self, name: str) -> dict[str, Any]:
@@ -81,7 +109,7 @@ class IntegrationService:
         integration = get_integration(name)
         if integration is None:
             raise KeyError(name)
-        if not integration.is_configured():
+        if not _is_configured_for(integration, self.config_dir):
             result = TestResult(
                 status=IntegrationStatus.NOT_CONFIGURED,
                 latency_ms=0,
@@ -91,7 +119,7 @@ class IntegrationService:
             )
         else:
             try:
-                result = await integration.test()
+                result = await _test_for(integration, self.config_dir)
             except Exception as exc:  # noqa: BLE001 - we want any error captured here
                 result = TestResult(
                     status=IntegrationStatus.FAILED,

@@ -141,7 +141,7 @@ def meeting_stop(
         "Transcribe + summarize a meeting back-to-back. Writes the "
         "transcript to Meetings/<date> - <title> - Transcript.md, the summary "
         "to Meetings/<date> - <title> - Summary.md, and links both from the "
-        "hub note Meetings/<date> - <title>.md. Bound to Ctrl+E in the TUI."
+        "hub note Meetings/<date> - <title>.md."
     ),
 )
 def meeting_pipeline(meeting_id: str = typer.Argument(..., help="Meeting id")) -> None:
@@ -493,8 +493,7 @@ def httpx_post(path: str, **kwargs: Any) -> dict[str, Any]:
 
 # Register a handful of compact aliases for the most common meeting subcommands.
 # `nina r` (top-level) is the main shortcut; these short aliases make the
-# `nina mt ...` path less verbose for scripting. The `e` alias matches the
-# TUI's `Ctrl+E` keybind so the muscle memory is the same in both clients.
+# `nina mt ...` path less verbose for scripting.
 _ALIASES: dict[str, str] = {
     "r": "record",
     "ls": "list",

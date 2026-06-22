@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from ._http import NotConfiguredIntegration
-from .base import IdentityResult, IntegrationInfo
+from .base import CredentialField, IdentityResult, IntegrationInfo
 
 
 JIRA_INFO = IntegrationInfo(
@@ -15,6 +15,24 @@ JIRA_INFO = IntegrationInfo(
     description="Atlassian Jira (Cloud or Data Center). Read-only identity ping for now.",
     docs_url="https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/",
     auth_style="basic_email_token",
+    credential_fields=(
+        CredentialField(
+            name="base_url",
+            label="Base URL",
+            placeholder="https://example.atlassian.net",
+        ),
+        CredentialField(
+            name="email",
+            label="Email",
+            placeholder="name@example.com",
+        ),
+        CredentialField(
+            name="api_token",
+            label="API token",
+            secret=True,
+            placeholder="Atlassian API token",
+        ),
+    ),
 )
 
 

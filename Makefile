@@ -1,49 +1,61 @@
-.PHONY: help build b doctor uninstall format lint typecheck test test-unit test-integration check smoke smoke-research dev-init dev-reset dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs start stop status logs cli c chat tui codex-plugin-install promote
+.PHONY: help build b build-all doctor uninstall format lint typecheck test test-unit test-integration check check-build smoke smoke-research dev-init dev dev-start dev-stop dev-status dev-logs daemon-start daemon-stop daemon-status daemon-logs cli c desktop d desktop-build desktop-native-libs desktop-install-icon desktop-check desktop-fmt desktop-clippy desktop-test desktop-bacon package package-cli package-desktop codex-plugin-install
 
 PYTHON := uv run python
 UV := uv
 NINA_PROFILE ?= default
 DEFAULT_CONFIG_DIR ?= $(HOME)/.nina/$(NINA_PROFILE)
 NINA_DEV_ENV := NINA_PROFILE=$(NINA_PROFILE)
+NINA_DESKTOP_NATIVE_LIB_DIR := $(CURDIR)/apps/desktop/.native-libs
+NINA_DESKTOP_RUSTFLAGS := -L native=$(NINA_DESKTOP_NATIVE_LIB_DIR) $(RUSTFLAGS)
+NINA_DESKTOP_ENV := NINA_PROFILE=$(NINA_PROFILE) RUST_FONTCONFIG_DLOPEN=1 RUSTFLAGS="$(NINA_DESKTOP_RUSTFLAGS)"
 RESEARCH_TOPIC ?= modern mobile authentication patterns
 CODEX_MODEL ?= gpt-5.5
 RESEARCH_TIMEOUT ?= 600
+PACKAGE_NAME ?= local
+PACKAGE_COMPONENTS ?= all
+PACKAGE_DIR ?= $(CURDIR)/release
 
 help:
-	@echo "Available targets:"
-	@echo "  help              - List available commands"
-	@echo "  build, b          - Build and install Nina, then refresh the Codex plugin"
-	@echo "  doctor            - Check local Nina launcher and PATH setup"
-	@echo "  uninstall         - Remove Nina launcher, install root, and data"
-	@echo "  format            - Format all code"
-	@echo "  lint              - Static lint checks"
-	@echo "  typecheck         - Type checking"
-	@echo "  test              - Unit tests and fast integration tests"
-	@echo "  test-unit         - Pure unit tests"
-	@echo "  test-integration  - API, DB, Obsidian, CLI integration tests"
-	@echo "  check             - Format check, lint, typecheck, tests"
-	@echo "  smoke             - End-to-end smoke test against the default profile"
-	@echo "  smoke-research    - Live Codex research smoke via CLI and daemon"
-	@echo "  dev, dev-start    - Initialize default profile and start daemon"
-	@echo "  dev-stop          - Stop daemon for the default profile"
-	@echo "  dev-status        - Check daemon status and health"
-	@echo "  dev-logs          - Tail daemon logs"
-	@echo "  dev-init          - Initialize default profile config and vault"
-	@echo "  dev-reset         - Disabled; dev uses default profile data"
-	@echo "  promote           - No-op; dev uses default profile data"
-	@echo "  cli, c ARGS=...   - Run CLI against the default daemon"
-	@echo "  tui               - Run TUI against the default daemon"
-	@echo "  codex-plugin-install - Install or refresh the local Nina Codex plugin"
-	@echo ""
-	@echo "Config variables:"
-	@echo "  NINA_PROFILE=$(NINA_PROFILE)"
-	@echo "  DEFAULT_CONFIG_DIR=$(DEFAULT_CONFIG_DIR)"
-	@echo "  CODEX_MODEL=$(CODEX_MODEL)"
-	@echo "  RESEARCH_TOPIC=$(RESEARCH_TOPIC)"
+	@printf '%s\n' "Nina local build targets"
+	@printf '%s\n' ""
+	@printf '%s\n' "Build and install"
+	@printf '  %-20s %s\n' "build, b" "Install the CLI/server locally and refresh the Codex plugin"
+	@printf '  %-20s %s\n' "build-all" "Run build and build the desktop release binary"
+	@printf '  %-20s %s\n' "desktop-build" "Build the GPUI desktop release binary for this host"
+	@printf '  %-20s %s\n' "package" "Build local CLI and desktop archives under PACKAGE_DIR"
+	@printf '  %-20s %s\n' "package-cli" "Build local CLI wheel archives only"
+	@printf '  %-20s %s\n' "package-desktop" "Build the current-host desktop archive only"
+	@printf '  %-20s %s\n' "doctor" "Check local launcher and PATH setup"
+	@printf '  %-20s %s\n' "uninstall" "Remove local Nina runtime and data"
+	@printf '%s\n' ""
+	@printf '%s\n' "Run locally"
+	@printf '  %-20s %s\n' "dev, dev-start" "Initialize the selected profile and start the daemon"
+	@printf '  %-20s %s\n' "dev-stop" "Stop the selected profile daemon"
+	@printf '  %-20s %s\n' "dev-status" "Show daemon status and health"
+	@printf '  %-20s %s\n' "dev-logs" "Tail daemon logs"
+	@printf '  %-20s %s\n' "cli, c ARGS=..." "Run the CLI against the selected profile"
+	@printf '  %-20s %s\n' "desktop, d" "Run the GPUI desktop client"
+	@printf '%s\n' ""
+	@printf '%s\n' "Quality"
+	@printf '  %-20s %s\n' "format" "Format Python code with Ruff"
+	@printf '  %-20s %s\n' "lint" "Run Ruff checks"
+	@printf '  %-20s %s\n' "typecheck" "Run Pyright"
+	@printf '  %-20s %s\n' "test" "Run unit and fast integration tests"
+	@printf '  %-20s %s\n' "test-unit" "Run unit tests"
+	@printf '  %-20s %s\n' "test-integration" "Run integration tests"
+	@printf '  %-20s %s\n' "check" "Run format, lint, typecheck, and tests"
+	@printf '  %-20s %s\n' "desktop-check" "Format, lint, and test the desktop client"
+	@printf '  %-20s %s\n' "smoke" "Run local daemon smoke test"
+	@printf '  %-20s %s\n' "smoke-research" "Run live Codex research smoke test"
+	@printf '%s\n' ""
+	@printf '%s\n' "Variables"
+	@printf '  %-20s %s\n' "NINA_PROFILE" "$(NINA_PROFILE)"
+	@printf '  %-20s %s\n' "PACKAGE_DIR" "$(PACKAGE_DIR)"
+	@printf '  %-20s %s\n' "PACKAGE_NAME" "$(PACKAGE_NAME)"
+	@printf '  %-20s %s\n' "PACKAGE_COMPONENTS" "$(PACKAGE_COMPONENTS)"
 
 build:
 	$(UV) sync --locked --python 3.12 --no-python-downloads
-	cd apps/tui && bun install --frozen-lockfile
 	$(PYTHON) scripts/sync_version.py
 	$(PYTHON) scripts/nina_build.py
 	$(MAKE) codex-plugin-install
@@ -56,6 +68,8 @@ check-build: check-python
 	$(PYTHON) scripts/nina_build.py
 
 b: build
+
+build-all: build desktop-build
 
 doctor:
 	python3 scripts/nina_doctor.py
@@ -92,9 +106,6 @@ smoke-research:
 dev-init:
 	$(NINA_DEV_ENV) uv run nina init --profile $(NINA_PROFILE)
 
-dev-reset:
-	$(PYTHON) scripts/nina_dev.py reset --profile $(NINA_PROFILE)
-
 dev: dev-start
 
 dev-start: dev-init daemon-start
@@ -118,30 +129,48 @@ daemon-status:
 daemon-logs:
 	tail -f $(DEFAULT_CONFIG_DIR)/logs/daemon.log
 
-start: daemon-start
-
-stop: daemon-stop
-
-status: daemon-status
-
-logs: daemon-logs
-
 cli:
 	$(NINA_DEV_ENV) uv run nina $(ARGS)
 
 c: cli
 
-PROMPT ?= Reply with ok
+desktop-native-libs:
+	@sh scripts/desktop_native_libs.sh "$(NINA_DESKTOP_NATIVE_LIB_DIR)"
 
-chat:
-	$(UV) run python -m nina_cli.main chat test "$(PROMPT)"
+desktop-install-icon:
+	@sh scripts/desktop_install_icon.sh
 
-tui:
-	@cd apps/tui && NINA_PROFILE=$(NINA_PROFILE) bun run src/main.ts
+desktop: desktop-native-libs desktop-install-icon
+	@cd apps/desktop && $(NINA_DESKTOP_ENV) cargo run
+
+d: desktop
+
+desktop-build: desktop-native-libs
+	@cd apps/desktop && $(NINA_DESKTOP_ENV) cargo build --release --locked
+
+desktop-fmt:
+	@cd apps/desktop && cargo fmt
+
+desktop-clippy: desktop-native-libs
+	@cd apps/desktop && $(NINA_DESKTOP_ENV) cargo clippy --all-targets --all-features -- -D warnings
+
+desktop-test: desktop-native-libs
+	@cd apps/desktop && $(NINA_DESKTOP_ENV) cargo test
+
+desktop-check: desktop-fmt desktop-clippy desktop-test
+
+desktop-bacon: desktop-native-libs
+	@cd apps/desktop && $(NINA_DESKTOP_ENV) bacon
+
+package:
+	@NINA_PACKAGE_NAME="$(PACKAGE_NAME)" NINA_PACKAGE_COMPONENTS="$(PACKAGE_COMPONENTS)" NINA_PACKAGE_DIR="$(PACKAGE_DIR)" sh scripts/release_assets.sh
+
+package-cli:
+	@$(MAKE) --no-print-directory package PACKAGE_COMPONENTS=cli
+
+package-desktop:
+	@$(MAKE) --no-print-directory package PACKAGE_COMPONENTS=desktop
 
 codex-plugin-install:
 	bash nina-codex-plugin/install.sh
 	codex plugin add nina-codex@personal
-
-promote:
-	@echo "No temp dev config to promote; dev targets use $(DEFAULT_CONFIG_DIR)."

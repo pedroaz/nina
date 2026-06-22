@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from ._http import NotConfiguredIntegration
-from .base import IdentityResult, IntegrationInfo
+from .base import CredentialField, IdentityResult, IntegrationInfo
 
 
 TEAMS_INFO = IntegrationInfo(
@@ -14,6 +14,14 @@ TEAMS_INFO = IntegrationInfo(
     description="Microsoft Graph / Teams. Read-only identity ping for now.",
     docs_url="https://learn.microsoft.com/en-us/graph/api/user-get",
     auth_style="bearer_azure_ad",
+    credential_fields=(
+        CredentialField(
+            name="access_token",
+            label="Access token",
+            secret=True,
+            placeholder="Microsoft Graph access token",
+        ),
+    ),
 )
 
 

@@ -12,12 +12,31 @@ class IntegrationStatus(str, Enum):
 
 
 @dataclass
+class CredentialField:
+    name: str
+    label: str
+    secret: bool = False
+    required: bool = True
+    placeholder: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "label": self.label,
+            "secret": self.secret,
+            "required": self.required,
+            "placeholder": self.placeholder,
+        }
+
+
+@dataclass
 class IntegrationInfo:
     name: str
     display_name: str
     description: str
     docs_url: str
     auth_style: str
+    credential_fields: tuple[CredentialField, ...] = field(default_factory=tuple)
 
 
 @dataclass

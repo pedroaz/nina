@@ -246,25 +246,6 @@ def cmd_smoke(args: argparse.Namespace) -> int:
         else:
             print("CLI ticket round trip: ok")
 
-    if result_code == 0:
-        tui_env = env.copy()
-        tui_env["PATH"] = os.environ["PATH"]
-        tui_check = subprocess.run(
-            ["bun", "run", "check"],
-            cwd=REPO_ROOT / "apps" / "tui",
-            env=tui_env,
-            text=True,
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-        if tui_check.returncode != 0:
-            sys.stderr.write(tui_check.stdout)
-            sys.stderr.write(tui_check.stderr)
-            result_code = tui_check.returncode
-        else:
-            print("TUI typecheck: ok")
-
     if smoke_ticket_id:
         delete = run(["uv", "run", "nina", "ticket", "delete", smoke_ticket_id], env=env)
         if delete.returncode == 0:

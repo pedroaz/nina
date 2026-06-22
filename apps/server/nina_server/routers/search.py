@@ -4,6 +4,7 @@ import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -14,6 +15,9 @@ from ..schemas import AskQuery, SearchOpen, SearchQuery
 
 
 router = APIRouter()
+
+AUTO_OPEN_COMMAND = "auto"
+LEGACY_OBSIDIAN_PATH_COMMAND = "xdg-open obsidian://open?path={path}"
 
 
 @router.post("/search")
@@ -34,16 +38,16 @@ async def reindex_endpoint(request: Request) -> dict[str, bool]:
 
 @router.post("/search/open")
 async def open_endpoint(request: Request, data: SearchOpen) -> dict[str, bool]:
-    vault_path = _active_vault_path()
-    full_path = Path(vault_path) / data.path
+    vault_path = Path(_active_vault_path()).resolve()
+    full_path, rel_path = _resolve_note_path(vault_path, data.path)
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
 
     config = _request_config(request)
-    command_template = config.meetings.open_command or "xdg-open obsidian://open?path={path}"
+    command_template = config.meetings.open_command or AUTO_OPEN_COMMAND
     try:
-        command = [part.format(path=str(full_path)) for part in shlex.split(command_template)]
-    except ValueError as exc:
+        command = _build_open_command(command_template, vault_path, full_path, rel_path)
+    except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"Invalid open command: {exc}") from exc
 
     if not command:
@@ -61,6 +65,51 @@ async def open_endpoint(request: Request, data: SearchOpen) -> dict[str, bool]:
         raise HTTPException(status_code=500, detail=detail[:500])
 
     return {"opened": True}
+
+
+def _resolve_note_path(vault_path: Path, requested: str) -> tuple[Path, Path]:
+    requested_path = Path(requested)
+    full_path = (
+        requested_path.resolve()
+        if requested_path.is_absolute()
+        else (vault_path / requested_path).resolve()
+    )
+    try:
+        rel_path = full_path.relative_to(vault_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Note path must be inside the vault") from exc
+    return full_path, rel_path
+
+
+def _build_open_command(
+    command_template: str,
+    vault_path: Path,
+    full_path: Path,
+    rel_path: Path,
+) -> list[str]:
+    template = command_template.strip()
+    if template in {"", AUTO_OPEN_COMMAND, LEGACY_OBSIDIAN_PATH_COMMAND}:
+        if (vault_path / ".obsidian").exists():
+            return ["xdg-open", _obsidian_uri(vault_path, rel_path)]
+        return ["xdg-open", str(full_path)]
+
+    values = _open_command_values(vault_path, full_path, rel_path)
+    return [part.format(**values) for part in shlex.split(command_template)]
+
+
+def _open_command_values(vault_path: Path, full_path: Path, rel_path: Path) -> dict[str, str]:
+    return {
+        "path": str(full_path),
+        "relpath": rel_path.as_posix(),
+        "vault": str(vault_path),
+        "vault_name": vault_path.name,
+        "uri": _obsidian_uri(vault_path, rel_path),
+        "file_uri": full_path.as_uri(),
+    }
+
+
+def _obsidian_uri(vault_path: Path, rel_path: Path) -> str:
+    return f"obsidian://open?vault={quote(vault_path.name)}&file={quote(rel_path.as_posix())}"
 
 
 @router.post("/ask")

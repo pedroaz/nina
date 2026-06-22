@@ -55,7 +55,7 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "meeting-pipeline": (
         "Runs `transcribe-meeting` and `summarize-meeting` back-to-back on a "
         "single meeting inside one workflow run, streaming progress events to "
-        "the TUI's meeting page (the `Ctrl+E` hotkey in the TUI hits this)."
+        "daemon clients."
     ),
     "classify-task": (
         "Reads a freshly-created task (title + description), calls the LLM "
@@ -530,9 +530,9 @@ class WorkflowRunner:
     ) -> dict[str, Any]:
         """Run transcribe and summarize back-to-back in a single workflow run.
 
-        Each stage writes its own step on the same WorkflowRun, so the TUI can
-        see the progress via `/events/stream` and a single banner covers both
-        operations. The TUI's `Ctrl+E` hotkey hits this entry point.
+        Each stage writes its own step on the same WorkflowRun, so clients can
+        see the progress via `/events/stream` and a single status surface can
+        cover both operations.
         """
         # Reuse the existing per-meeting workflows but as steps on the same
         # run. We delegate by calling the runners directly; they manage their

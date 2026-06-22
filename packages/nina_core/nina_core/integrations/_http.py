@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -23,15 +24,18 @@ class NotConfiguredIntegration:
     info: IntegrationInfo
     credentials_key: str = ""
 
-    def _load_creds(self) -> dict[str, Any] | None:
+    def _load_creds(self, config_dir: Path | None = None) -> dict[str, Any] | None:
         from .credentials import load_credentials
 
         if not self.credentials_key:
             return None
-        return load_credentials(self.credentials_key)
+        return load_credentials(self.credentials_key, config_dir=config_dir)
 
     def is_configured(self) -> bool:
-        creds = self._load_creds()
+        return self.is_configured_for()
+
+    def is_configured_for(self, config_dir: Path | None = None) -> bool:
+        creds = self._load_creds(config_dir)
         if not creds:
             return False
         return all(bool(creds.get(field)) for field in self._required_fields())
@@ -40,8 +44,11 @@ class NotConfiguredIntegration:
         return ()
 
     async def test(self) -> TestResult:
-        creds = self._load_creds() or {}
-        if not self.is_configured():
+        return await self.test_with_config_dir()
+
+    async def test_with_config_dir(self, config_dir: Path | None = None) -> TestResult:
+        creds = self._load_creds(config_dir) or {}
+        if not self.is_configured_for(config_dir):
             return TestResult(
                 status=IntegrationStatus.NOT_CONFIGURED,
                 latency_ms=0,

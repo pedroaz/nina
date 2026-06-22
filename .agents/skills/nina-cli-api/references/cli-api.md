@@ -2,7 +2,7 @@
 
 ## Key Files
 
-- `apps/cli/nina_cli/main.py`: top-level Typer app, aliases, status, install/uninstall, `ask`, `open`, and TUI launch.
+- `apps/cli/nina_cli/main.py`: top-level Typer app, aliases, status, install/uninstall, `ask`, and `open`.
 - `apps/cli/nina_cli/*_commands.py`: feature command groups.
 - `apps/cli/nina_cli/api.py`: daemon base URL resolution and request helpers.
 - `apps/server/nina_server/app.py`: FastAPI application factory.
@@ -41,7 +41,7 @@
 
 - Use Pydantic defaults so old config files remain valid.
 - When adding settings, update config schemas, CLI config commands, daemon config behavior, status output where useful, and README/config docs.
-- Host, port, and some runtime settings may require daemon restart. Surface that clearly in CLI/TUI output.
+- Host, port, and some runtime settings may require daemon restart. Surface that clearly in CLI output.
 - Secrets should live in files or external credential stores, not in `config.yaml`.
 
 ## Test Targets

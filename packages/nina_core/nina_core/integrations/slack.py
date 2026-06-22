@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from ._http import NotConfiguredIntegration
-from .base import IdentityResult, IntegrationInfo
+from .base import CredentialField, IdentityResult, IntegrationInfo
 
 
 SLACK_INFO = IntegrationInfo(
@@ -14,6 +14,14 @@ SLACK_INFO = IntegrationInfo(
     description="Slack workspace using a bot token (xoxb-). Read-only identity ping for now.",
     docs_url="https://api.slack.com/methods/auth.test",
     auth_style="bearer_bot",
+    credential_fields=(
+        CredentialField(
+            name="bot_token",
+            label="Bot token",
+            secret=True,
+            placeholder="xoxb-...",
+        ),
+    ),
 )
 
 

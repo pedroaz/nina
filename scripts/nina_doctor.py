@@ -69,13 +69,10 @@ def main() -> int:
             if local_app_data
             else Path.home() / "AppData" / "Local" / "Programs" / "Nina" / "bin" / "nina.cmd"
         )
-        tui = Path.home() / ".nina" / "bin" / "nina-tui.exe"
     else:
         launcher = Path.home() / ".local" / "bin" / "nina"
-        tui = Path.home() / ".nina" / "bin" / "nina-tui"
 
     print_path_status(launcher, "Expected launcher")
-    print_path_status(tui, "Expected TUI binary")
 
     print()
     if len(commands) > 1:

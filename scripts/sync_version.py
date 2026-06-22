@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -21,10 +20,6 @@ PYTHON_FILES = [
         r'__version__\s*=\s*"[^"]+"',
         '__version__ = "{version}"',
     ),
-]
-
-JSON_FILES = [
-    REPO_ROOT / "apps" / "tui" / "package.json",
 ]
 
 
@@ -56,17 +51,6 @@ def sync_python(path: Path, pattern: str, template: str, version: str) -> bool:
     return False
 
 
-def sync_json(path: Path, version: str) -> bool:
-    content = path.read_text()
-    data = json.loads(content)
-    old_version = data.get("version")
-    if old_version != version:
-        data["version"] = version
-        path.write_text(json.dumps(data, indent=2) + "\n")
-        return True
-    return False
-
-
 def main() -> int:
     version = read_version()
     updated = False
@@ -78,11 +62,6 @@ def main() -> int:
 
     for path, pattern, template in PYTHON_FILES:
         if sync_python(path, pattern, template, version):
-            print(f"Updated {path.relative_to(REPO_ROOT)}")
-            updated = True
-
-    for path in JSON_FILES:
-        if sync_json(path, version):
             print(f"Updated {path.relative_to(REPO_ROOT)}")
             updated = True
 

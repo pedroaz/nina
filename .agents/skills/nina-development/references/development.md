@@ -4,14 +4,14 @@
 
 - Python workspace uses `uv`.
 - Python target is 3.12.
-- TUI uses Bun and TypeScript under `apps/tui`.
+- Desktop uses Rust/Cargo under `apps/desktop`.
 - Formatting and linting use Ruff.
 - Type checking uses Pyright.
 
 ## Make Targets
 
 - `make help`: list supported targets.
-- `make build` or `make b`: sync Python dependencies, install TUI dependencies, sync version, build Nina, and refresh the Codex plugin.
+- `make build` or `make b`: sync Python dependencies, sync version, build Nina, and refresh the Codex plugin.
 - `make doctor`: inspect local launcher and PATH setup.
 - `make format`: run Ruff formatter.
 - `make lint`: run Ruff checks.
@@ -22,7 +22,11 @@
 - `make check`: Python version check, format, lint, typecheck, and tests.
 - `make smoke`: end-to-end smoke against the selected/default profile.
 - `make dev`, `make dev-start`, `make dev-stop`, `make dev-status`, `make dev-logs`: local daemon lifecycle.
-- `make tui`: run the TUI.
+- `make desktop` or `make d`: run the GPUI desktop client.
+- `make desktop-build`: build the GPUI desktop release binary for the current host.
+- `make desktop-check`: format, lint, and test the GPUI desktop client.
+- `make package`: build local CLI archives and the current-host desktop archive under `release/assets`.
+- `make package-cli` or `make package-desktop`: build only one local artifact family.
 - `make codex-plugin-install`: install or refresh the local Nina Codex plugin.
 
 ## Test Strategy
@@ -31,7 +35,7 @@
 - Integration tests should use isolated SQLite/config/vault data where possible.
 - The default test command excludes `daemon_smoke`.
 - `daemon_smoke` binds `127.0.0.1:8765` and is opt-in.
-- TUI verification is currently TypeScript-level plus smoke visibility; add OpenTUI renderer tests when UI behavior becomes stateful enough to justify them.
+- Desktop verification runs through `make desktop-check`.
 
 ## Agent Workflow
 

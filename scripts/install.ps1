@@ -6,7 +6,6 @@ $Repository = if ($env:NINA_REPOSITORY) { $env:NINA_REPOSITORY } else { "__NINA_
 $Channel = if ($env:NINA_CHANNEL) { $env:NINA_CHANNEL } else { "latest" }
 $InstallRoot = if ($env:NINA_INSTALL_ROOT) { $env:NINA_INSTALL_ROOT } else { Join-Path $HOME ".nina" }
 $AppDir = Join-Path $InstallRoot "app"
-$BinDir = Join-Path $InstallRoot "bin"
 $LauncherDir = if ($env:NINA_LAUNCHER_DIR) { $env:NINA_LAUNCHER_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\Nina\bin" }
 
 function Get-Target {
@@ -41,7 +40,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("nina-install-" + [System.Guid]::NewGuid())
-New-Item -ItemType Directory -Force -Path $TempDir, $AppDir, $BinDir, $LauncherDir | Out-Null
+New-Item -ItemType Directory -Force -Path $TempDir, $AppDir, $LauncherDir | Out-Null
 
 try {
     $Archive = Join-Path $TempDir $Asset
@@ -54,12 +53,10 @@ try {
         throw "No wheel files found in release archive."
     }
     & (Join-Path $AppDir "Scripts\python.exe") -m pip install @WheelFiles
-    Copy-Item (Join-Path $TempDir "bin\nina-tui.exe") (Join-Path $BinDir "nina-tui.exe") -Force
 
     $Launcher = Join-Path $LauncherDir "nina.cmd"
     @"
 @echo off
-set NINA_TUI_BIN=$BinDir\nina-tui.exe
 "$AppDir\Scripts\nina.exe" %*
 "@ | Set-Content -Path $Launcher -Encoding ASCII
 

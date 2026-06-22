@@ -4,7 +4,7 @@
 
 - Nina is a local-first personal operations platform for one user.
 - Treat the daemon as the source of truth for writes to SQLite, Nina-managed Markdown, jobs, workflows, search indexing, and Codex lifecycle state.
-- Treat the CLI and TUI as clients of the local daemon API. Do not have client code mutate SQLite or the Obsidian vault directly.
+- Treat the CLI and desktop client as clients of the local daemon API. Do not have client code mutate SQLite or the Obsidian vault directly.
 - Keep the default AI path on the local Codex CLI unless a task explicitly changes provider behavior.
 
 ## Project Layout
@@ -12,7 +12,7 @@
 - `packages/nina_core`: shared domain services, models, config, database, Obsidian, search, LLM, Codex, workflow, meeting, and repository logic.
 - `apps/server`: FastAPI daemon and routers.
 - `apps/cli`: Typer CLI and command output formatting.
-- `apps/tui`: OpenTUI client written in TypeScript and run with Bun.
+- `apps/desktop`: GPUI desktop client written in Rust.
 - `nina-codex-plugin`: local Codex plugin bundle and lifecycle hook implementation.
 - `tests`: unit and integration tests. See `tests/README.md` for the test-layer contract.
 
@@ -29,8 +29,8 @@
 - For Python changes, run the narrowest relevant `uv run pytest ...` command first.
 - For shared behavior or API/CLI changes, run `make test` when practical.
 - For repo-wide handoff or pull-request-ready work, run `make check` when practical.
-- For TUI changes, run `cd apps/tui && bun run check`.
-- For daemon, CLI, profile, Codex, workflow, meeting, or TUI integration changes, consider `make smoke`; note that it exercises the default Nina profile.
+- For desktop changes, run `make desktop-check`.
+- For daemon, CLI, profile, Codex, workflow, meeting, or desktop integration changes, consider `make smoke`; note that it exercises the default Nina profile.
 - If a check is skipped, report why.
 
 ## Repo Skills
@@ -41,5 +41,4 @@ Use repo-scoped skills when they match the task:
 - `$nina-cli-api`: CLI commands, FastAPI routers, auth, config, daemon runtime state, and endpoint behavior.
 - `$nina-codex-integration`: Codex supervisor, plugin hooks, task lifecycle callbacks, and runner contract.
 - `$nina-development`: build, validation, tests, packaging, Makefile, and agent workflow.
-- `$nina-tui`: OpenTUI pages, keymap, client API calls, and terminal interaction.
 - `$nina-workflows-llm`: LLM providers, tool calls, workflows, jobs, search, research, and meeting pipelines.

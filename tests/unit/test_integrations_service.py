@@ -184,7 +184,7 @@ def test_service_get_unknown_returns_none(db_path: Path, isolated_registry: None
 
 
 def test_configured_field_reflects_saved_credentials(
-    tmp_path: Path, db_path: Path, isolated_registry: None, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, db_path: Path, isolated_registry: None
 ) -> None:
     save_credentials(
         "confluence",
@@ -195,18 +195,17 @@ def test_configured_field_reflects_saved_credentials(
         },
         config_dir=tmp_path,
     )
-    # The integration class calls `load_credentials` from inside `_load_creds`
-    # via a deferred import. Patch the canonical function in the credentials
-    # module so the call dispatches against the temporary config dir.
-    import nina_core.integrations.credentials as creds_mod
-
-    real_loader = creds_mod.load_credentials
-
-    def loader(name, config_dir=None):  # type: ignore[no-untyped-def]
-        return real_loader(name, config_dir=tmp_path)
-
-    monkeypatch.setattr(creds_mod, "load_credentials", loader)
-    service = IntegrationService(str(db_path))
+    service = IntegrationService(str(db_path), config_dir=tmp_path)
     item = service.get("confluence")
     assert item is not None
     assert item["configured"] is True
+    assert item["configured_fields"] == {
+        "base_url": True,
+        "email": True,
+        "api_token": True,
+    }
+    assert {field["name"] for field in item["credential_fields"]} == {
+        "base_url",
+        "email",
+        "api_token",
+    }

@@ -1,6 +1,6 @@
 # Nina
 
-Nina is a local-first personal operations platform. It runs a daemon on your machine, keeps operational state in SQLite, mirrors durable context into an Obsidian-compatible Markdown vault, and exposes the same data through a CLI and terminal UI.
+Nina is a local-first personal operations platform. It runs a daemon on your machine, keeps operational state in SQLite, mirrors durable context into an Obsidian-compatible Markdown vault, and exposes the same data through a CLI and GPUI desktop client.
 
 Nina is designed for one person's workflow, not a multi-user SaaS.
 
@@ -9,7 +9,7 @@ Nina is designed for one person's workflow, not a multi-user SaaS.
 - Manage tasks, tickets, projects, jobs, notes, repositories, and meetings from one local runtime.
 - Run a FastAPI daemon that owns SQLite, Obsidian writes, search indexing, workflows, meetings, and Codex lifecycle state.
 - Use a Typer CLI for fast commands and automation-friendly JSON output.
-- Use an OpenTUI terminal UI for interactive local workflows.
+- Use a GPUI desktop client for mouse-first access to the same daemon-backed workflows.
 - Search and ask questions over the local vault.
 - Record meetings, transcribe locally, summarize with the configured LLM provider, and write meeting notes.
 - Use the local Codex CLI as the default LLM and research path.
@@ -25,8 +25,8 @@ Nina is early local software. The repository is useful for development and perso
 .
 |-- apps/
 |   |-- cli/           # Typer CLI, installed as `nina`
-|   |-- server/        # FastAPI daemon
-|   `-- tui/           # OpenTUI client, run with Bun
+|   |-- desktop/       # GPUI desktop client, run with Cargo
+|   `-- server/        # FastAPI daemon
 |-- packages/
 |   `-- nina_core/     # Domain services, config, DB, LLM, search, workflows
 |-- nina-codex-plugin/ # Local Codex plugin bundle and lifecycle hooks
@@ -38,7 +38,7 @@ Nina is early local software. The repository is useful for development and perso
 
 ## Architecture
 
-Nina is a local client-server app. The daemon is the source of truth for state and writes. The CLI and TUI communicate with it over localhost.
+Nina is a local client-server app. The daemon is the source of truth for state and writes. The CLI and desktop client communicate with it over localhost.
 
 ```mermaid
 flowchart TB
@@ -46,7 +46,7 @@ flowchart TB
 
   subgraph Clients[Client surfaces]
     CLI["CLI<br/>nina ..."]
-    TUI["TUI<br/>nina tui"]
+    Desktop["Desktop<br/>make desktop"]
   end
 
   subgraph Runtime[Local runtime]
@@ -61,10 +61,9 @@ flowchart TB
   end
 
   User --> CLI
-  User --> TUI
+  User --> Desktop
   CLI -->|REST| Daemon
-  TUI -->|REST| Daemon
-  TUI -.->|live refresh where supported| Daemon
+  Desktop -->|REST| Daemon
 
   Daemon --> SQLite
   Daemon --> Vault
@@ -79,7 +78,7 @@ Package boundaries:
 
 - `apps/server`: FastAPI daemon and routers.
 - `apps/cli`: command-line client and output formatting.
-- `apps/tui`: OpenTUI client.
+- `apps/desktop`: GPUI desktop client.
 - `packages/nina_core`: shared application logic, models, services, and workflows.
 - `nina-codex-plugin`: installable local Codex plugin used by Nina's task runner.
 
@@ -87,9 +86,11 @@ Package boundaries:
 
 - Python 3.12
 - `uv`
-- Bun, for the TUI
+- Rust/Cargo, for the GPUI desktop client
 - Codex CLI, for the default LLM/research provider
 - An Obsidian-compatible vault path, created automatically by `nina init` if omitted
+
+On Linux, the GPUI desktop client links against native `xcb`, `xkbcommon`, and `xkbcommon-x11` runtime libraries.
 
 Optional meeting transcription support installs `faster-whisper` through the `nina-core[transcription]` extra or `nina setup transcription`.
 
@@ -102,7 +103,7 @@ make build
 nina init
 ```
 
-`make build` syncs Python dependencies, installs TUI dependencies, builds Nina, and refreshes the local Nina Codex plugin. The installed CLI entry point is `nina`.
+`make build` syncs Python dependencies, builds Nina, and refreshes the local Nina Codex plugin. The installed CLI entry point is `nina`.
 
 Check the local install:
 
@@ -155,11 +156,13 @@ nina ask "What is in my vault about Codex?"
 nina research run "modern mobile authentication patterns"
 ```
 
-Launch the terminal UI:
+Launch the desktop client from the repository:
 
 ```bash
-nina tui
+make desktop
 ```
+
+The desktop client connects only to the local daemon. Start the daemon first with `nina daemon start` or `make dev-start`. On Linux, `make desktop` also refreshes Nina's user desktop entry and taskbar icon metadata.
 
 Record a meeting:
 
@@ -170,7 +173,7 @@ nina mt e <meeting-id>
 nina mt o <meeting-id>
 ```
 
-Useful compact aliases include `nina t` for the TUI, `nina d` for daemon commands, `nina tk` for tickets, `nina mt` for meetings, `nina c` for config, `nina ll` for LLM, `nina rch` for research, and `nina s` for search.
+Useful compact aliases include `nina d` for daemon commands, `nina tk` for tickets, `nina mt` for meetings, `nina c` for config, `nina ll` for LLM, `nina rch` for research, and `nina s` for search.
 
 ## Configuration
 
@@ -208,10 +211,11 @@ make help
 make dev
 make dev-status
 make cli ARGS="status"
-make tui
+make desktop
 make smoke-research
 make test
 make check
+make package
 ```
 
 Python checks:
@@ -224,13 +228,22 @@ uv run ruff check .
 uv run pyright
 ```
 
-TUI checks:
+Desktop checks:
 
 ```bash
-cd apps/tui
-bun run check
-bun test src
+make desktop-check
+make desktop-bacon  # optional, requires bacon
 ```
+
+Local packaging:
+
+```bash
+make package
+make package-cli
+make package-desktop
+```
+
+`make package` writes local CLI wheel archives and the current-host desktop binary archive under `release/assets`. Set `PACKAGE_NAME=...` to change archive names, `PACKAGE_DIR=...` to change the output directory, or `PACKAGE_COMPONENTS=cli|desktop|all` to build a subset.
 
 End-to-end smoke:
 
@@ -256,7 +269,7 @@ NINA_LIVE_CODEX_RESEARCH=1 uv run pytest -m daemon_smoke tests/integration/test_
 - [tests/README.md](tests/README.md): test strategy and test layers.
 - [nina-codex-plugin/README.md](nina-codex-plugin/README.md): plugin replication and lifecycle hook contract.
 - [AGENTS.md](AGENTS.md): project instructions loaded by Codex agents.
-- `.agents/skills/`: repo-scoped Codex skills for architecture, CLI/API, Codex integration, development, TUI, and workflows/LLM work.
+- `.agents/skills/`: repo-scoped Codex skills for architecture, CLI/API, Codex integration, development, and workflows/LLM work.
 
 ## Contributing
 

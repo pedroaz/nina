@@ -317,7 +317,9 @@ def test_status_reports_running_daemon_and_configuration_paths(
 def test_doctor_treats_ok_daemon_health_as_ok(monkeypatch, isolated_config) -> None:  # type: ignore[no-untyped-def]
     (isolated_config / "daemon.pid").write_text("4321")
     monkeypatch.setattr(daemon_module, "_process_exists", lambda pid: True)
-    monkeypatch.setattr(main_module, "_daemon_status", lambda profile: ("Daemon running (pid 4321)", True))
+    monkeypatch.setattr(
+        main_module, "_daemon_status", lambda profile: ("Daemon running (pid 4321)", True)
+    )
     monkeypatch.setattr(
         main_module,
         "try_request_json",
@@ -682,14 +684,6 @@ def test_config_edit_exits_when_no_editor_available(
     assert "no editor found" in result.stdout.lower()
 
 
-def test_tui_binary_resolution_prefers_env(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
-    tui_bin = tmp_path / "nina-tui"
-    tui_bin.write_text("binary")
-    monkeypatch.setenv("NINA_TUI_BIN", str(tui_bin))
-
-    assert main_module._resolve_tui_binary() == tui_bin
-
-
 def test_version_command_prints_nina_version() -> None:
     from nina_core import __version__
 
@@ -697,25 +691,6 @@ def test_version_command_prints_nina_version() -> None:
         result = runner.invoke(app, argv)
         assert result.exit_code == 0, argv
         assert result.stdout.strip() == f"Nina {__version__}", argv
-
-
-def test_tui_alias_invokes_the_tui_command(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
-    tui_bin = tmp_path / "nina-tui"
-    tui_bin.write_text("binary")
-    monkeypatch.setattr(main_module, "_resolve_tui_binary", lambda: tui_bin)
-    captured: dict[str, Any] = {}
-
-    def fake_execv(path: str, args: list[str]) -> None:
-        captured["path"] = path
-        captured["args"] = args
-        raise SystemExit(0)
-
-    monkeypatch.setattr(main_module.os, "execv", fake_execv)
-
-    result = runner.invoke(app, ["t"])
-
-    assert result.exit_code == 0
-    assert captured == {"path": str(tui_bin), "args": [str(tui_bin)]}
 
 
 def test_daemon_restart_alias_invokes_restart_command(monkeypatch, isolated_config) -> None:  # type: ignore[no-untyped-def]

@@ -13,7 +13,9 @@ pytestmark = pytest.mark.integration
 
 def _register_repository(api_client: TestClient, auth_headers: dict[str, str], path: Path) -> str:
     path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", str(path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["git", "init", str(path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
     response = api_client.post(
         "/repositories",
         headers=auth_headers,
@@ -330,9 +332,7 @@ def test_search_reindex_backfills_note_metadata(
 ) -> None:
     note_path = isolated_config / "vault" / "Research" / "raw.md"
     note_path.parent.mkdir(parents=True, exist_ok=True)
-    note_path.write_text(
-        "---\ntitle: Raw Research\nnina_type: research_report\n---\n\nRaw body."
-    )
+    note_path.write_text("---\ntitle: Raw Research\nnina_type: research_report\n---\n\nRaw body.")
 
     missing = api_client.get("/notes/Research/raw.md", headers=auth_headers)
     assert missing.status_code == 404
@@ -384,6 +384,71 @@ def test_search_open_uses_configured_open_command(
             ["obsidian-open", str(note_path)],
             {"capture_output": True, "text": True, "timeout": 10},
         )
+    ]
+
+
+def test_search_open_auto_uses_file_path_for_plain_vault(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    note_path = isolated_config / "vault" / "Meetings" / "plain vault.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text("# Plain vault\n")
+
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("nina_server.routers.search.subprocess.run", fake_run)
+
+    opened = api_client.post(
+        "/search/open",
+        headers=auth_headers,
+        json={"path": "Meetings/plain vault.md"},
+    )
+
+    assert opened.status_code == 200
+    assert opened.json() == {"opened": True}
+    assert calls == [["xdg-open", str(note_path)]]
+
+
+def test_search_open_auto_uses_obsidian_uri_for_obsidian_vault(
+    api_client: TestClient,
+    auth_headers: dict[str, str],
+    isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vault_path = isolated_config / "vault"
+    (vault_path / ".obsidian").mkdir(parents=True, exist_ok=True)
+    note_path = vault_path / "Meetings" / "obsidian vault.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text("# Obsidian vault\n")
+
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("nina_server.routers.search.subprocess.run", fake_run)
+
+    opened = api_client.post(
+        "/search/open",
+        headers=auth_headers,
+        json={"path": "Meetings/obsidian vault.md"},
+    )
+
+    assert opened.status_code == 200
+    assert opened.json() == {"opened": True}
+    assert calls == [
+        [
+            "xdg-open",
+            "obsidian://open?vault=vault&file=Meetings/obsidian%20vault.md",
+        ]
     ]
 
 
@@ -550,7 +615,6 @@ def test_daemon_logs_endpoint_tails_and_filters_task_lines(
     payload = response.json()
     assert payload["path"] == str(log_path)
     assert payload["lines"] == ["2026 info nina.task task=task-1 event=queued"]
-
 
 
 def test_task_codex_logs_endpoint_tails_latest_run(

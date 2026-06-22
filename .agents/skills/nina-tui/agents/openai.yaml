@@ -1,4 +1,0 @@
-interface:
-  display_name: "Nina TUI"
-  short_description: "Nina OpenTUI screens and interactions"
-  default_prompt: "Use $nina-tui to work on Nina's OpenTUI client, pages, keyboard behavior, and daemon API interactions."
