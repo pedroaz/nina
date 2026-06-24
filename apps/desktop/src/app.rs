@@ -1,7 +1,8 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    ops::Range,
     process::Command,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use gpui::InteractiveElement as _;
@@ -31,6 +32,7 @@ use crate::{
 };
 
 const TASK_BOARD_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const SESSION_MESSAGE_LIMIT: usize = 300;
 
 const TASK_TYPE_ORDER: &[&str] = &[
     "unclassified",
@@ -451,6 +453,12 @@ impl ConfigEditor {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ConfigRow {
+    Group { group: &'static str },
+    Field { field: &'static ConfigField },
+}
+
 #[derive(Debug, Clone)]
 struct Banner {
     kind: BannerKind,
@@ -468,6 +476,83 @@ enum BannerKind {
 enum TaskModal {
     Create,
     Detail,
+}
+
+#[derive(Default)]
+struct MessageRenderCache {
+    session_id: Option<String>,
+    messages: Vec<RenderedMessage>,
+}
+
+impl MessageRenderCache {
+    fn sync(&mut self, session: &SessionRecord) {
+        let same_session = self.session_id.as_deref() == Some(session.id.as_str());
+        let same_window = self.messages.len() == session.messages.len()
+            && self.messages.first().map(|message| message.id.as_str())
+                == session.messages.first().map(|message| message.id.as_str())
+            && self.messages.last().map(|message| message.id.as_str())
+                == session.messages.last().map(|message| message.id.as_str());
+        if same_session && same_window {
+            return;
+        }
+
+        self.session_id = Some(session.id.clone());
+        self.messages = session
+            .messages
+            .iter()
+            .map(RenderedMessage::from_message)
+            .collect();
+    }
+
+    fn clear(&mut self) {
+        self.session_id = None;
+        self.messages.clear();
+    }
+
+    fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    fn get(&self, index: usize) -> Option<&RenderedMessage> {
+        self.messages.get(index)
+    }
+}
+
+struct RenderedMessage {
+    id: String,
+    role: String,
+    is_user: bool,
+    meta: String,
+    body: RenderedMessageBody,
+}
+
+enum RenderedMessageBody {
+    Wrapped(Vec<Vec<String>>),
+    ToolPreview(String),
+}
+
+impl RenderedMessage {
+    fn from_message(message: &SessionMessage) -> Self {
+        let is_user = message.role == "user";
+        let meta = format!(
+            "{} - {}",
+            message_label(&message.role),
+            short_timestamp(&message.created_at)
+        );
+        let body = if message.role == "tool" {
+            RenderedMessageBody::ToolPreview(tool_preview(&message.content))
+        } else {
+            let max_chars = if is_user { 58 } else { 88 };
+            RenderedMessageBody::Wrapped(wrapped_paragraphs(&message.content, max_chars))
+        };
+        Self {
+            id: message.id.clone(),
+            role: message.role.clone(),
+            is_user,
+            meta,
+            body,
+        }
+    }
 }
 
 pub struct NinaDesktop {
@@ -494,7 +579,20 @@ pub struct NinaDesktop {
     integrations: Vec<IntegrationRecord>,
     task_logs: Option<CodexTaskLogsResponse>,
     task_modal: Option<TaskModal>,
-    last_task_refresh: Option<Instant>,
+    task_poll_task: Option<Task<()>>,
+    task_lane_scroll_handles: HashMap<String, UniformListScrollHandle>,
+    chat_list_state: ListState,
+    agent_list_state: ListState,
+    repository_list_state: ListState,
+    meeting_list_state: ListState,
+    job_list_state: ListState,
+    job_run_list_state: ListState,
+    workflow_list_state: ListState,
+    integration_list_state: ListState,
+    config_list_state: ListState,
+    chat_message_cache: MessageRenderCache,
+    agent_message_cache: MessageRenderCache,
+    config_rows: Vec<ConfigRow>,
     config_modal_open: bool,
     selected_task_id: Option<String>,
     selected_repository_id: Option<String>,
@@ -529,6 +627,19 @@ impl NinaDesktop {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle, cx);
+        let chat_list_state = ListState::new(0, ListAlignment::Top, px(2048.));
+        chat_list_state.set_follow_mode(FollowMode::Tail);
+        let agent_list_state = ListState::new(0, ListAlignment::Top, px(2048.));
+        agent_list_state.set_follow_mode(FollowMode::Tail);
+        let repository_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
+        let meeting_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
+        let job_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
+        let job_run_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
+        let workflow_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
+        let integration_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
+        let config_rows = build_config_rows();
+        let config_list_state = ListState::new(config_rows.len(), ListAlignment::Top, px(4096.));
+
         let mut app = Self {
             client: ApiClient::discover(),
             focus_handle,
@@ -553,7 +664,20 @@ impl NinaDesktop {
             integrations: Vec::new(),
             task_logs: None,
             task_modal: None,
-            last_task_refresh: None,
+            task_poll_task: None,
+            task_lane_scroll_handles: HashMap::new(),
+            chat_list_state,
+            agent_list_state,
+            repository_list_state,
+            meeting_list_state,
+            job_list_state,
+            job_run_list_state,
+            workflow_list_state,
+            integration_list_state,
+            config_list_state,
+            chat_message_cache: MessageRenderCache::default(),
+            agent_message_cache: MessageRenderCache::default(),
+            config_rows,
             config_modal_open: false,
             selected_task_id: None,
             selected_repository_id: None,
@@ -630,6 +754,7 @@ impl NinaDesktop {
                 }
             },
         ));
+        app.start_task_polling(cx);
         app.refresh_bootstrap(cx);
         app
     }
@@ -643,8 +768,10 @@ impl NinaDesktop {
     fn switch_page(&mut self, page: Page, cx: &mut Context<Self>) {
         self.current_page = page;
         self.banner = None;
-        if self.current_page != Page::Tickets {
-            self.last_task_refresh = None;
+        if self.current_page == Page::Tickets {
+            self.start_task_polling(cx);
+        } else {
+            self.stop_task_polling();
         }
         self.task_modal = None;
         self.config_modal_open = false;
@@ -708,19 +835,34 @@ impl NinaDesktop {
         }
     }
 
-    fn maybe_refresh_tasks_board(&mut self, cx: &mut Context<Self>) {
-        if self.current_page != Page::Tickets {
+    fn start_task_polling(&mut self, cx: &mut Context<Self>) {
+        if self.task_poll_task.is_some() {
             return;
         }
 
-        let should_refresh = self
-            .last_task_refresh
-            .is_none_or(|last| last.elapsed() >= TASK_BOARD_REFRESH_INTERVAL)
-            && !self.loading.contains("tasks");
-        if should_refresh {
-            self.last_task_refresh = Some(Instant::now());
-            self.refresh_tasks(cx);
-        }
+        self.task_poll_task = Some(cx.spawn(async move |this, cx| loop {
+            cx.background_executor()
+                .timer(TASK_BOARD_REFRESH_INTERVAL)
+                .await;
+            let should_continue = this
+                .update(cx, |state, cx| {
+                    if state.current_page != Page::Tickets {
+                        return false;
+                    }
+                    if !state.loading.contains("tasks") {
+                        state.refresh_tasks(cx);
+                    }
+                    true
+                })
+                .unwrap_or(false);
+            if !should_continue {
+                break;
+            }
+        }));
+    }
+
+    fn stop_task_polling(&mut self) {
+        self.task_poll_task = None;
     }
 
     fn run_api<T, Request, Apply>(
@@ -812,7 +954,7 @@ impl NinaDesktop {
             |state, result, _| match result {
                 Ok(tasks) => {
                     state.tasks = tasks;
-                    state.last_task_refresh = Some(Instant::now());
+                    state.sync_task_lane_scroll_handles();
                     if state.selected_task().is_none() {
                         state.selected_task_id = state.first_task().map(|task| task.id.clone());
                     }
@@ -840,6 +982,7 @@ impl NinaDesktop {
                 Ok((repositories, worktrees)) => {
                     state.repositories = repositories;
                     state.worktrees = worktrees;
+                    state.repository_list_state.reset(state.repositories.len());
                     let selected_exists = state
                         .selected_repository_id
                         .as_deref()
@@ -869,14 +1012,13 @@ impl NinaDesktop {
             move |client| {
                 let sessions = client.sessions(mode)?;
                 if let Some(session) = sessions.first() {
-                    client.get_session(&session.id)
+                    client.get_session(&session.id, SESSION_MESSAGE_LIMIT)
                 } else {
                     client.create_session(mode, mode)
                 }
             },
             move |state, result, _| match (mode, result) {
-                ("chat", Ok(session)) => state.chat_session = Some(session),
-                ("agent", Ok(session)) => state.agent_session = Some(session),
+                ("chat" | "agent", Ok(session)) => state.apply_session(mode, session),
                 (_, Err(err)) => state.banner = Some(error_banner(err)),
                 _ => {}
             },
@@ -906,6 +1048,9 @@ impl NinaDesktop {
                         state.selected_job_name = selected;
                     }
                     state.job_runs = runs;
+                    state.job_list_state.reset(state.jobs.len());
+                    state.workflow_list_state.reset(state.workflows.len());
+                    state.job_run_list_state.reset(state.job_runs.len());
                 }
                 Err(err) => state.banner = Some(error_banner(err)),
             },
@@ -919,7 +1064,10 @@ impl NinaDesktop {
             cx,
             move |client| client.job_runs(&job_name),
             |state, result, _| match result {
-                Ok(runs) => state.job_runs = runs,
+                Ok(runs) => {
+                    state.job_runs = runs;
+                    state.job_run_list_state.reset(state.job_runs.len());
+                }
                 Err(err) => state.banner = Some(error_banner(err)),
             },
         );
@@ -933,6 +1081,7 @@ impl NinaDesktop {
             |state, result, _| match result {
                 Ok(meetings) => {
                     state.meetings = meetings;
+                    state.meeting_list_state.reset(state.meetings.len());
                     if state.selected_meeting().is_none() {
                         state.selected_meeting_id =
                             state.meetings.first().map(|meeting| meeting.id.clone());
@@ -951,6 +1100,7 @@ impl NinaDesktop {
             |state, result, _| match result {
                 Ok(IntegrationsResponse { integrations }) => {
                     state.integrations = integrations;
+                    state.integration_list_state.reset(state.integrations.len());
                     if state.selected_integration().is_none() {
                         state.selected_integration_name =
                             state.integrations.first().map(|item| item.name.clone());
@@ -1062,16 +1212,16 @@ impl NinaDesktop {
                     Some(session) => session,
                     None => client.create_session(mode, mode)?,
                 };
-                client.send_message(&session.id, prompt)
+                client.send_message(&session.id, prompt, SESSION_MESSAGE_LIMIT)
             },
             move |state, result, _| match (mode, result) {
-                ("chat", Ok(response)) => state.chat_session = Some(response.session),
+                ("chat", Ok(response)) => state.apply_session("chat", response.session),
                 ("agent", Ok(response)) => {
                     state.banner = Some(Banner {
                         kind: BannerKind::Success,
                         text: response.assistant.content.clone(),
                     });
-                    state.agent_session = Some(response.session);
+                    state.apply_session("agent", response.session);
                 }
                 (_, Err(err)) => state.banner = Some(error_banner(err)),
                 _ => {}
@@ -1249,11 +1399,7 @@ impl NinaDesktop {
             input.set_value("", window, cx);
         });
 
-        if mode == "chat" {
-            self.chat_session = None;
-        } else {
-            self.agent_session = None;
-        }
+        self.clear_session_state(mode);
         self.banner = Some(Banner {
             kind: BannerKind::Info,
             text: format!("Cleared {mode}. Starting a fresh session."),
@@ -1265,14 +1411,14 @@ impl NinaDesktop {
             move |client| client.create_session(mode, mode),
             move |state, result, _| match (mode, result) {
                 ("chat", Ok(session)) => {
-                    state.chat_session = Some(session);
+                    state.apply_session("chat", session);
                     state.banner = Some(Banner {
                         kind: BannerKind::Success,
                         text: "Chat cleared.".to_owned(),
                     });
                 }
                 ("agent", Ok(session)) => {
-                    state.agent_session = Some(session);
+                    state.apply_session("agent", session);
                     state.banner = Some(Banner {
                         kind: BannerKind::Success,
                         text: "Agent chat cleared.".to_owned(),
@@ -1282,6 +1428,66 @@ impl NinaDesktop {
                 _ => {}
             },
         );
+    }
+
+    fn sync_task_lane_scroll_handles(&mut self) {
+        let task_types: HashSet<String> = kanban_task_types(&self.tasks).into_iter().collect();
+        self.task_lane_scroll_handles
+            .retain(|task_type, _| task_types.contains(task_type));
+        for task_type in task_types {
+            self.task_lane_scroll_handles.entry(task_type).or_default();
+        }
+    }
+
+    fn apply_session(&mut self, mode: &'static str, session: SessionRecord) {
+        let message_count = session.messages.len();
+        match mode {
+            "chat" => {
+                self.chat_message_cache.sync(&session);
+                self.chat_list_state.reset(message_count);
+                self.chat_list_state.scroll_to_end();
+                self.chat_session = Some(session);
+            }
+            "agent" => {
+                self.agent_message_cache.sync(&session);
+                self.agent_list_state.reset(message_count);
+                self.agent_list_state.scroll_to_end();
+                self.agent_session = Some(session);
+            }
+            _ => {}
+        }
+    }
+
+    fn clear_session_state(&mut self, mode: &'static str) {
+        match mode {
+            "chat" => {
+                self.chat_session = None;
+                self.chat_message_cache.clear();
+                self.chat_list_state.reset(0);
+            }
+            "agent" => {
+                self.agent_session = None;
+                self.agent_message_cache.clear();
+                self.agent_list_state.reset(0);
+            }
+            _ => {}
+        }
+    }
+
+    fn message_cache(&self, mode: &'static str) -> &MessageRenderCache {
+        if mode == "chat" {
+            &self.chat_message_cache
+        } else {
+            &self.agent_message_cache
+        }
+    }
+
+    fn conversation_list_state(&self, mode: &'static str) -> ListState {
+        if mode == "chat" {
+            self.chat_list_state.clone()
+        } else {
+            self.agent_list_state.clone()
+        }
     }
 
     fn selected_task(&self) -> Option<&Ticket> {
@@ -1473,9 +1679,14 @@ impl Render for NinaDesktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = self.render_page(window, cx);
         let page_frame = match self.current_page {
-            Page::Tickets | Page::Chat | Page::Agent | Page::Meetings | Page::Config => {
-                ui::page_workspace_frame(page)
-            }
+            Page::Tickets
+            | Page::Repositories
+            | Page::Chat
+            | Page::Agent
+            | Page::Meetings
+            | Page::Jobs
+            | Page::Integrations
+            | Page::Config => ui::page_workspace_frame(page),
             _ => ui::page_scroll_frame(page),
         };
         ui::app_root()
@@ -1655,7 +1866,6 @@ impl NinaDesktop {
     }
 
     fn render_tickets_page(&mut self, cx: &mut Context<Self>) -> Div {
-        self.maybe_refresh_tasks_board(cx);
         let mut lanes = h_flex().h_full().min_h(px(0.)).items_stretch().gap_3();
         for task_type in kanban_task_types(&self.tasks) {
             let task_count = self.tasks.get(&task_type).map(Vec::len).unwrap_or(0);
@@ -1674,17 +1884,36 @@ impl NinaDesktop {
                     )
                     .into_any_element()
             } else {
-                let mut task_list = v_flex().w_full().gap_2().pr_1();
-                if let Some(tasks) = self.tasks.get(&task_type) {
-                    for task in tasks {
-                        task_list = task_list.child(self.render_task_card(task, accent, cx));
-                    }
-                }
+                let lane_key = task_type.clone();
+                let list_id = format!("task-list-{task_type}");
+                let scroll_handle = self
+                    .task_lane_scroll_handles
+                    .get(&task_type)
+                    .cloned()
+                    .unwrap_or_else(UniformListScrollHandle::new);
                 div()
                     .size_full()
                     .min_h(px(0.))
-                    .overflow_y_scrollbar()
-                    .child(task_list)
+                    .child(
+                        uniform_list(
+                            list_id,
+                            task_count,
+                            cx.processor(move |this, range: Range<usize>, _window, cx| {
+                                let mut items = Vec::with_capacity(range.end - range.start);
+                                if let Some(tasks) = this.tasks.get(&lane_key) {
+                                    for ix in range {
+                                        if let Some(task) = tasks.get(ix) {
+                                            items.push(this.render_task_card(task, accent, cx));
+                                        }
+                                    }
+                                }
+                                items
+                            }),
+                        )
+                        .track_scroll(&scroll_handle)
+                        .size_full()
+                        .pr_1(),
+                    )
                     .into_any_element()
             };
             lanes = lanes.child(ui::kanban_virtual_lane(
@@ -2292,6 +2521,144 @@ impl NinaDesktop {
         body
     }
 
+    fn render_repository_row(&self, repo: &Repository, cx: &mut Context<Self>) -> AnyElement {
+        let repo_id = repo.id.clone();
+        let select_id = repo.id.clone();
+        let delete_id = repo.id.clone();
+        let selected = self.selected_repository_id.as_deref() == Some(repo.id.as_str());
+        let task_default = self.task_repository_id.as_deref() == Some(repo.id.as_str());
+        let repo_worktrees = self.worktrees.get(&repo.id).cloned().unwrap_or_default();
+        let worktree_count = repo_worktrees.len();
+        let worktree_count_label = if worktree_count == 1 {
+            "1 worktree".to_owned()
+        } else {
+            format!("{worktree_count} worktrees")
+        };
+        let mut worktree_list = v_flex().gap_2();
+        for worktree in repo_worktrees {
+            let branch = worktree.branch.unwrap_or_else(|| "detached".to_owned());
+            worktree_list = worktree_list.child(
+                ui::compact_row(false, rgb(0x64748b))
+                    .cursor_default()
+                    .child(ui::icon_badge(IconName::Network, rgb(0x64748b)))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .gap_1()
+                            .child(ui::row_title(branch))
+                            .child(ui::row_meta(format!(
+                                "{}{}{}",
+                                worktree.path,
+                                if worktree.bare { " - bare" } else { "" },
+                                worktree
+                                    .locked
+                                    .map(|lock| format!(" - locked: {lock}"))
+                                    .unwrap_or_default()
+                            ))),
+                    ),
+            );
+        }
+        if worktree_count == 0 {
+            worktree_list = worktree_list.child(ui::row_meta("No worktrees reported."));
+        }
+        ui::surface_block()
+            .child(
+                ui::compact_row(selected, rgb(0x38bdf8))
+                    .id(format!("repo-row-{}", repo.id))
+                    .on_click({
+                        let app = cx.entity().downgrade();
+                        move |_, _, cx| {
+                            let _ = app.update(cx, |state, cx| {
+                                state.selected_repository_id = Some(select_id.clone());
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .child(ui::icon_badge(IconName::FolderOpen, rgb(0x38bdf8)))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .gap_1()
+                            .child(ui::row_title(repo.name.clone()))
+                            .child(ui::row_meta(repo.path.clone())),
+                    )
+                    .child(if task_default {
+                        status_pill("task default", color::primary())
+                    } else {
+                        div()
+                    })
+                    .child(status_pill(worktree_count_label, rgb(0x38bdf8))),
+            )
+            .child(
+                h_flex()
+                    .justify_between()
+                    .gap_2()
+                    .flex_wrap()
+                    .child(label("Worktrees"))
+                    .child(small_text(format!("Updated {}", repo.updated_at))),
+            )
+            .child(worktree_list)
+            .child(
+                h_flex()
+                    .gap_2()
+                    .flex_wrap()
+                    .child(
+                        Button::new(format!("select-repo-{}", repo.id))
+                            .small()
+                            .selected(task_default)
+                            .label(if task_default {
+                                "Default for new tasks"
+                            } else {
+                                "Use for new tasks"
+                            })
+                            .on_click({
+                                let app = cx.entity().downgrade();
+                                move |_, _, cx| {
+                                    let _ = app.update(cx, |state, cx| {
+                                        state.task_repository_id = Some(repo_id.clone());
+                                        state.banner = Some(Banner {
+                                            kind: BannerKind::Info,
+                                            text: "Repository selected for new tasks.".to_owned(),
+                                        });
+                                        cx.notify();
+                                    });
+                                }
+                            }),
+                    )
+                    .child(
+                        Button::new(format!("delete-repo-{}", repo.id))
+                            .small()
+                            .danger()
+                            .label("Delete")
+                            .on_click({
+                                let app = cx.entity().downgrade();
+                                move |_, _, cx| {
+                                    let _ = app.update(cx, |state, cx| {
+                                        let delete_id = delete_id.clone();
+                                        state.run_api(
+                                            "delete-repository",
+                                            cx,
+                                            move |client| client.delete_repository(&delete_id),
+                                            |state, result, cx| {
+                                                state.set_result_banner(
+                                                    &result,
+                                                    "Repository deleted.",
+                                                );
+                                                state.refresh_repositories(cx);
+                                            },
+                                        );
+                                    });
+                                }
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn render_repositories_page(&self, cx: &mut Context<Self>) -> Div {
         let app = cx.entity().downgrade();
         let create = card(
@@ -2314,158 +2681,8 @@ impl NinaDesktop {
                 ),
         );
 
-        let selected_repository_id = self.selected_repository().map(|repo| repo.id.as_str());
         let repository_count = self.repositories.len();
         let total_worktrees: usize = self.worktrees.values().map(Vec::len).sum();
-        let mut list = v_flex().gap_3();
-        for repo in &self.repositories {
-            let repo_id = repo.id.clone();
-            let select_id = repo.id.clone();
-            let delete_id = repo.id.clone();
-            let selected = selected_repository_id == Some(repo.id.as_str());
-            let task_default = self.task_repository_id.as_deref() == Some(repo.id.as_str());
-            let repo_worktrees = self.worktrees.get(&repo.id).cloned().unwrap_or_default();
-            let worktree_count = repo_worktrees.len();
-            let worktree_count_label = if worktree_count == 1 {
-                "1 worktree".to_owned()
-            } else {
-                format!("{worktree_count} worktrees")
-            };
-            let mut worktree_list = v_flex().gap_2();
-            for worktree in repo_worktrees {
-                let branch = worktree.branch.unwrap_or_else(|| "detached".to_owned());
-                worktree_list = worktree_list.child(
-                    ui::compact_row(false, rgb(0x64748b))
-                        .cursor_default()
-                        .child(ui::icon_badge(IconName::Network, rgb(0x64748b)))
-                        .child(
-                            v_flex()
-                                .flex_1()
-                                .min_w(px(0.))
-                                .overflow_hidden()
-                                .gap_1()
-                                .child(ui::row_title(branch))
-                                .child(ui::row_meta(format!(
-                                    "{}{}{}",
-                                    worktree.path,
-                                    if worktree.bare { " - bare" } else { "" },
-                                    worktree
-                                        .locked
-                                        .map(|lock| format!(" - locked: {lock}"))
-                                        .unwrap_or_default()
-                                ))),
-                        ),
-                );
-            }
-            if worktree_count == 0 {
-                worktree_list = worktree_list.child(ui::row_meta("No worktrees reported."));
-            }
-            list = list.child(
-                ui::surface_block()
-                    .child(
-                        ui::compact_row(selected, rgb(0x38bdf8))
-                            .id(format!("repo-row-{}", repo.id))
-                            .on_click({
-                                let app = cx.entity().downgrade();
-                                move |_, _, cx| {
-                                    let _ = app.update(cx, |state, cx| {
-                                        state.selected_repository_id = Some(select_id.clone());
-                                        cx.notify();
-                                    });
-                                }
-                            })
-                            .child(ui::icon_badge(IconName::FolderOpen, rgb(0x38bdf8)))
-                            .child(
-                                v_flex()
-                                    .flex_1()
-                                    .min_w(px(0.))
-                                    .overflow_hidden()
-                                    .gap_1()
-                                    .child(ui::row_title(repo.name.clone()))
-                                    .child(ui::row_meta(repo.path.clone())),
-                            )
-                            .child(if task_default {
-                                status_pill("task default", color::primary())
-                            } else {
-                                div()
-                            })
-                            .child(status_pill(worktree_count_label.clone(), rgb(0x38bdf8))),
-                    )
-                    .child(
-                        h_flex()
-                            .justify_between()
-                            .gap_2()
-                            .flex_wrap()
-                            .child(label("Worktrees"))
-                            .child(small_text(format!("Updated {}", repo.updated_at))),
-                    )
-                    .child(worktree_list)
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .flex_wrap()
-                            .child(
-                                Button::new(format!("select-repo-{}", repo.id))
-                                    .small()
-                                    .selected(task_default)
-                                    .label(if task_default {
-                                        "Default for new tasks"
-                                    } else {
-                                        "Use for new tasks"
-                                    })
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                state.task_repository_id = Some(repo_id.clone());
-                                                state.banner = Some(Banner {
-                                                    kind: BannerKind::Info,
-                                                    text: "Repository selected for new tasks."
-                                                        .to_owned(),
-                                                });
-                                                cx.notify();
-                                            });
-                                        }
-                                    }),
-                            )
-                            .child(
-                                Button::new(format!("delete-repo-{}", repo.id))
-                                    .small()
-                                    .danger()
-                                    .label("Delete")
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                let delete_id = delete_id.clone();
-                                                state.run_api(
-                                                    "delete-repository",
-                                                    cx,
-                                                    move |client| {
-                                                        client.delete_repository(&delete_id)
-                                                    },
-                                                    |state, result, cx| {
-                                                        state.set_result_banner(
-                                                            &result,
-                                                            "Repository deleted.",
-                                                        );
-                                                        state.refresh_repositories(cx);
-                                                    },
-                                                );
-                                            });
-                                        }
-                                    }),
-                            ),
-                    ),
-            );
-        }
-        if self.repositories.is_empty() {
-            list = list.child(ui::empty_state(
-                IconName::FolderOpen,
-                "No repositories",
-                "Register a local git repository before assigning coding or review tasks.",
-            ));
-        }
         let summary = h_flex()
             .justify_between()
             .gap_3()
@@ -2504,13 +2721,56 @@ impl NinaDesktop {
             } else {
                 div()
             });
-        let repositories = card("Repositories", v_flex().gap_3().child(summary).child(list));
+        let repository_body = if self.repositories.is_empty() {
+            ui::empty_state(
+                IconName::FolderOpen,
+                "No repositories",
+                "Register a local git repository before assigning coding or review tasks.",
+            )
+            .into_any_element()
+        } else {
+            list(
+                self.repository_list_state.clone(),
+                cx.processor(move |this, index: usize, _window, cx| {
+                    this.repositories
+                        .get(index)
+                        .map(|repo| {
+                            div()
+                                .w_full()
+                                .pb_3()
+                                .child(this.render_repository_row(repo, cx))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().into_any_element())
+                }),
+            )
+            .size_full()
+            .into_any_element()
+        };
+        let repositories = card(
+            "Repositories",
+            v_flex()
+                .flex_1()
+                .min_h(px(0.))
+                .gap_3()
+                .child(summary)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h(px(0.))
+                        .overflow_hidden()
+                        .child(repository_body),
+                ),
+        )
+        .w_full()
+        .h_full()
+        .min_h(px(0.));
 
-        let mut rail = ui::side_rail().child(create);
+        let mut rail_content = v_flex().gap_3().child(create);
         if let Some(repo) = self.selected_repository() {
             let worktree_count = self.worktrees.get(&repo.id).map(Vec::len).unwrap_or(0);
             let task_default = self.task_repository_id.as_deref() == Some(repo.id.as_str());
-            rail = rail.child(card(
+            rail_content = rail_content.child(card(
                 "Selected Repository",
                 v_flex()
                     .gap_2()
@@ -2526,9 +2786,31 @@ impl NinaDesktop {
                     .child(ui::kv_row("Updated", repo.updated_at.clone())),
             ));
         }
+        let rail = ui::side_rail()
+            .h_full()
+            .min_h(px(0.))
+            .overflow_hidden()
+            .child(
+                div()
+                    .id("repositories-rail-scroll-frame")
+                    .size_full()
+                    .overflow_y_scrollbar()
+                    .pr_1()
+                    .child(rail_content),
+            );
 
-        ui::page_columns()
-            .child(ui::content_region().child(repositories.w_full()))
+        h_flex()
+            .size_full()
+            .min_h(px(0.))
+            .items_stretch()
+            .gap_4()
+            .overflow_hidden()
+            .child(
+                ui::content_region()
+                    .h_full()
+                    .min_h(px(0.))
+                    .child(repositories),
+            )
             .child(rail)
     }
 
@@ -2567,7 +2849,8 @@ impl NinaDesktop {
                     "Agent session".to_owned()
                 }
             });
-        let message_count = session.map(|session| session.messages.len()).unwrap_or(0);
+        let message_count = self.message_cache(mode).len();
+        let list_state = self.conversation_list_state(mode);
         let header = h_flex()
             .justify_between()
             .items_start()
@@ -2587,8 +2870,8 @@ impl NinaDesktop {
                     })),
             )
             .child(status_pill(mode, accent));
-        let history_panel = if let Some(session) = session {
-            if session.messages.is_empty() {
+        let history_panel = if session.is_some() {
+            if message_count == 0 {
                 ui::chat_history().child(
                     v_flex()
                         .id(format!("{mode}-empty-history-scroll"))
@@ -2609,18 +2892,28 @@ impl NinaDesktop {
                         )),
                 )
             } else {
-                let mut messages = v_flex().w_full().gap_3().px_4().pb_4();
-                for message in &session.messages {
-                    messages = messages.child(render_chat_message(message, accent));
-                }
                 ui::chat_history()
                     .child(div().w_full().p_4().pb_3().flex_shrink_0().child(header))
                     .child(
-                        div()
-                            .flex_1()
-                            .min_h(px(0.))
-                            .overflow_y_scrollbar()
-                            .child(messages),
+                        div().flex_1().min_h(px(0.)).child(
+                            list(
+                                list_state.clone(),
+                                cx.processor(move |this, index: usize, _window, _cx| {
+                                    this.message_cache(mode)
+                                        .get(index)
+                                        .map(|message| {
+                                            div()
+                                                .w_full()
+                                                .px_4()
+                                                .pb_3()
+                                                .child(render_cached_chat_message(message, accent))
+                                                .into_any_element()
+                                        })
+                                        .unwrap_or_else(|| div().into_any_element())
+                                }),
+                            )
+                            .size_full(),
+                        ),
                     )
             }
         } else {
@@ -2867,6 +3160,66 @@ impl NinaDesktop {
             .child(ui::content_region().child(report))
     }
 
+    fn render_meeting_row(&self, meeting: &Meeting, cx: &mut Context<Self>) -> AnyElement {
+        let select_id = meeting.id.clone();
+        let selected = self.selected_meeting_id.as_deref() == Some(meeting.id.as_str());
+        let status_color = meeting_status_color(&meeting.status);
+        let artifact_color = rgb(0x64748b);
+        let artifact_pills = h_flex()
+            .gap_2()
+            .flex_wrap()
+            .child(status_pill(meeting.source.clone(), status_color))
+            .child(status_pill(meeting_duration_text(meeting), artifact_color))
+            .child(if meeting.note_path.is_some() {
+                status_pill("note", rgb(0x22c55e))
+            } else {
+                div()
+            })
+            .child(if meeting.transcript_note_path.is_some() {
+                status_pill("transcript", rgb(0x38bdf8))
+            } else {
+                div()
+            })
+            .child(if meeting.summary_note_path.is_some() {
+                status_pill("summary", color::primary())
+            } else {
+                div()
+            });
+        ui::surface_block()
+            .child(
+                ui::compact_row(selected, status_color)
+                    .min_h(px(60.))
+                    .id(format!("meeting-row-{}", meeting.id))
+                    .on_click({
+                        let app = cx.entity().downgrade();
+                        move |_, _, cx| {
+                            let _ = app.update(cx, |state, cx| {
+                                state.selected_meeting_id = Some(select_id.clone());
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .child(ui::icon_badge(IconName::Calendar, status_color))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .gap_1()
+                            .child(ui::row_title(meeting.title.clone()))
+                            .child(ui::row_meta(format!(
+                                "Started {} - ended {}",
+                                meeting.started_at,
+                                option_text(&meeting.ended_at)
+                            ))),
+                    )
+                    .child(status_pill(meeting.status.clone(), status_color)),
+            )
+            .child(artifact_pills)
+            .child(self.render_meeting_actions("row", meeting, cx))
+            .into_any_element()
+    }
+
     fn render_meetings_page(&self, cx: &mut Context<Self>) -> Div {
         let recording = self.loading.contains("record-meeting");
         let mut source_buttons = h_flex().gap_2().flex_wrap();
@@ -2956,74 +3309,32 @@ impl NinaDesktop {
                 div()
             });
 
-        let mut list = v_flex().gap_2();
-        for meeting in &self.meetings {
-            let select_id = meeting.id.clone();
-            let selected = self.selected_meeting_id.as_deref() == Some(meeting.id.as_str());
-            let status_color = meeting_status_color(&meeting.status);
-            let artifact_color = rgb(0x64748b);
-            let artifact_pills = h_flex()
-                .gap_2()
-                .flex_wrap()
-                .child(status_pill(meeting.source.clone(), status_color))
-                .child(status_pill(meeting_duration_text(meeting), artifact_color))
-                .child(if meeting.note_path.is_some() {
-                    status_pill("note", rgb(0x22c55e))
-                } else {
-                    div()
-                })
-                .child(if meeting.transcript_note_path.is_some() {
-                    status_pill("transcript", rgb(0x38bdf8))
-                } else {
-                    div()
-                })
-                .child(if meeting.summary_note_path.is_some() {
-                    status_pill("summary", color::primary())
-                } else {
-                    div()
-                });
-            list = list.child(
-                ui::surface_block()
-                    .child(
-                        ui::compact_row(selected, status_color)
-                            .min_h(px(60.))
-                            .id(format!("meeting-row-{}", meeting.id))
-                            .on_click({
-                                let app = cx.entity().downgrade();
-                                move |_, _, cx| {
-                                    let _ = app.update(cx, |state, cx| {
-                                        state.selected_meeting_id = Some(select_id.clone());
-                                        cx.notify();
-                                    });
-                                }
-                            })
-                            .child(ui::icon_badge(IconName::Calendar, status_color))
-                            .child(
-                                v_flex()
-                                    .flex_1()
-                                    .min_w(px(0.))
-                                    .overflow_hidden()
-                                    .gap_1()
-                                    .child(ui::row_title(meeting.title.clone()))
-                                    .child(ui::row_meta(format!(
-                                        "Started {} - ended {}",
-                                        meeting.started_at,
-                                        option_text(&meeting.ended_at)
-                                    ))),
-                            )
-                            .child(status_pill(meeting.status.clone(), status_color)),
-                    )
-                    .child(artifact_pills)
-                    .child(self.render_meeting_actions("row", meeting, cx)),
-            );
-        }
-        if self.meetings.is_empty() {
-            list = list.child(ui::empty_state(
+        let list = if self.meetings.is_empty() {
+            ui::empty_state(
                 IconName::Calendar,
                 "No meetings recorded",
                 "Start a recording to capture audio, transcripts, summaries, and meeting notes.",
-            ));
-        }
+            )
+            .into_any_element()
+        } else {
+            list(
+                self.meeting_list_state.clone(),
+                cx.processor(move |this, index: usize, _window, cx| {
+                    this.meetings
+                        .get(index)
+                        .map(|meeting| {
+                            div()
+                                .w_full()
+                                .pb_2()
+                                .child(this.render_meeting_row(meeting, cx))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().into_any_element())
+                }),
+            )
+            .size_full()
+            .into_any_element()
+        };
 
         let main = v_flex()
             .flex_1()
@@ -3039,14 +3350,12 @@ impl NinaDesktop {
                         .gap_3()
                         .child(summary)
                         .child(
-                            div().flex_1().min_h(px(0.)).overflow_hidden().child(
-                                div()
-                                    .id("meetings-list-scroll-frame")
-                                    .size_full()
-                                    .overflow_y_scrollbar()
-                                    .pr_1()
-                                    .child(list),
-                            ),
+                            div()
+                                .flex_1()
+                                .min_h(px(0.))
+                                .overflow_hidden()
+                                .pr_1()
+                                .child(list),
                         ),
                 )
                 .w_full()
@@ -3314,228 +3623,344 @@ impl NinaDesktop {
         }
     }
 
-    fn render_jobs_page(&self, cx: &mut Context<Self>) -> Div {
-        let mut jobs = v_flex().gap_2();
-        for job in &self.jobs {
-            let name = job.name.clone();
-            let run_name = job.name.clone();
-            let selected = self.selected_job_name.as_deref() == Some(job.name.as_str());
-            let status_color = if job.enabled {
-                rgb(0x22c55e)
-            } else {
-                rgb(0x64748b)
-            };
-            jobs = jobs.child(
-                ui::surface_block()
-                    .child(
-                        ui::compact_row(selected, status_color)
-                            .id(format!("job-row-{}", job.name))
-                            .on_click({
-                                let app = cx.entity().downgrade();
-                                let name = name.clone();
-                                move |_, _, cx| {
-                                    let _ = app.update(cx, |state, cx| {
-                                        state.refresh_job_runs(name.clone(), cx)
-                                    });
-                                }
-                            })
-                            .child(ui::icon_badge(IconName::Cpu, status_color))
-                            .child(
-                                v_flex()
-                                    .flex_1()
-                                    .overflow_hidden()
-                                    .gap_1()
-                                    .child(ui::row_title(format!(
-                                        "{} ({})",
-                                        job.name, job.workflow_name
-                                    )))
-                                    .child(ui::row_meta(format!(
-                                        "last: {} - next: {}",
-                                        option_text(&job.last_run_at),
-                                        option_text(&job.next_run_at)
-                                    ))),
-                            )
-                            .child(status_pill(
-                                if job.enabled { "enabled" } else { "disabled" },
-                                status_color,
-                            )),
-                    )
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                Button::new(format!("select-job-{}", job.name))
-                                    .small()
-                                    .label("Runs")
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                state.refresh_job_runs(name.clone(), cx)
-                                            });
-                                        }
-                                    }),
-                            )
-                            .child(
-                                Button::new(format!("run-job-{}", job.name))
-                                    .small()
-                                    .label("Run now")
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                let run_name = run_name.clone();
-                                                state.run_api(
-                                                    "run-job",
-                                                    cx,
-                                                    move |client| client.run_job(&run_name),
-                                                    |state, result, cx| {
-                                                        state.set_result_banner(
-                                                            &result,
-                                                            "Job run started.",
-                                                        );
-                                                        state.refresh_jobs(cx);
-                                                    },
-                                                );
-                                            });
-                                        }
-                                    }),
-                            ),
-                    ),
-            );
-        }
-        if self.jobs.is_empty() {
-            jobs = jobs.child(ui::empty_state(
-                IconName::Cpu,
-                "No scheduled jobs",
-                "Configured scheduler jobs will appear here with run history and manual triggers.",
-            ));
-        }
-        let mut runs = v_flex().gap_2();
-        for run in &self.job_runs {
-            let color = if run.status == "completed" {
-                rgb(0x22c55e)
-            } else if run.status == "failed" {
-                rgb(0xef4444)
-            } else {
-                rgb(0x38bdf8)
-            };
-            runs = runs.child(
-                ui::compact_row(false, color)
-                    .cursor_default()
-                    .child(ui::icon_badge(IconName::Redo, color))
+    fn render_job_row(&self, job: &Job, cx: &mut Context<Self>) -> AnyElement {
+        let select_name = job.name.clone();
+        let button_name = job.name.clone();
+        let run_name = job.name.clone();
+        let selected = self.selected_job_name.as_deref() == Some(job.name.as_str());
+        let status_color = if job.enabled {
+            rgb(0x22c55e)
+        } else {
+            rgb(0x64748b)
+        };
+        ui::surface_block()
+            .child(
+                ui::compact_row(selected, status_color)
+                    .id(format!("job-row-{}", job.name))
+                    .on_click({
+                        let app = cx.entity().downgrade();
+                        move |_, _, cx| {
+                            let _ = app.update(cx, |state, cx| {
+                                state.refresh_job_runs(select_name.clone(), cx)
+                            });
+                        }
+                    })
+                    .child(ui::icon_badge(IconName::Cpu, status_color))
                     .child(
                         v_flex()
                             .flex_1()
                             .overflow_hidden()
                             .gap_1()
                             .child(ui::row_title(format!(
-                                "{} - {}",
-                                short_id(&run.id),
-                                run.status
+                                "{} ({})",
+                                job.name, job.workflow_name
                             )))
                             .child(ui::row_meta(format!(
-                                "Started: {} - Completed: {}",
-                                option_text(&run.started_at),
-                                option_text(&run.completed_at)
-                            )))
-                            .child(ui::row_meta(run.error.clone().unwrap_or_default())),
+                                "last: {} - next: {}",
+                                option_text(&job.last_run_at),
+                                option_text(&job.next_run_at)
+                            ))),
+                    )
+                    .child(status_pill(
+                        if job.enabled { "enabled" } else { "disabled" },
+                        status_color,
+                    )),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        Button::new(format!("select-job-{}", job.name))
+                            .small()
+                            .label("Runs")
+                            .on_click({
+                                let app = cx.entity().downgrade();
+                                move |_, _, cx| {
+                                    let _ = app.update(cx, |state, cx| {
+                                        state.refresh_job_runs(button_name.clone(), cx)
+                                    });
+                                }
+                            }),
+                    )
+                    .child(
+                        Button::new(format!("run-job-{}", job.name))
+                            .small()
+                            .label("Run now")
+                            .on_click({
+                                let app = cx.entity().downgrade();
+                                move |_, _, cx| {
+                                    let _ = app.update(cx, |state, cx| {
+                                        let run_name = run_name.clone();
+                                        state.run_api(
+                                            "run-job",
+                                            cx,
+                                            move |client| client.run_job(&run_name),
+                                            |state, result, cx| {
+                                                state
+                                                    .set_result_banner(&result, "Job run started.");
+                                                state.refresh_jobs(cx);
+                                            },
+                                        );
+                                    });
+                                }
+                            }),
                     ),
-            );
-        }
-        if self.job_runs.is_empty() {
-            runs = runs.child(ui::empty_state(
+            )
+            .into_any_element()
+    }
+
+    fn render_job_run_row(&self, run: &JobRun) -> AnyElement {
+        let color = if run.status == "completed" {
+            rgb(0x22c55e)
+        } else if run.status == "failed" {
+            rgb(0xef4444)
+        } else {
+            rgb(0x38bdf8)
+        };
+        ui::compact_row(false, color)
+            .cursor_default()
+            .child(ui::icon_badge(IconName::Redo, color))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .overflow_hidden()
+                    .gap_1()
+                    .child(ui::row_title(format!(
+                        "{} - {}",
+                        short_id(&run.id),
+                        run.status
+                    )))
+                    .child(ui::row_meta(format!(
+                        "Started: {} - Completed: {}",
+                        option_text(&run.started_at),
+                        option_text(&run.completed_at)
+                    )))
+                    .child(ui::row_meta(run.error.clone().unwrap_or_default())),
+            )
+            .into_any_element()
+    }
+
+    fn render_workflow_row(&self, workflow: &WorkflowInfo) -> AnyElement {
+        ui::compact_row(false, rgb(0x38bdf8))
+            .cursor_default()
+            .child(ui::icon_badge(IconName::Network, rgb(0x38bdf8)))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .overflow_hidden()
+                    .gap_1()
+                    .child(ui::row_title(workflow.name.clone()))
+                    .child(ui::row_meta(workflow.description.clone())),
+            )
+            .into_any_element()
+    }
+
+    fn render_jobs_page(&self, cx: &mut Context<Self>) -> Div {
+        let jobs_body = if self.jobs.is_empty() {
+            ui::empty_state(
+                IconName::Cpu,
+                "No scheduled jobs",
+                "Configured scheduler jobs will appear here with run history and manual triggers.",
+            )
+            .into_any_element()
+        } else {
+            list(
+                self.job_list_state.clone(),
+                cx.processor(move |this, index: usize, _window, cx| {
+                    this.jobs
+                        .get(index)
+                        .map(|job| {
+                            div()
+                                .w_full()
+                                .pb_2()
+                                .child(this.render_job_row(job, cx))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().into_any_element())
+                }),
+            )
+            .size_full()
+            .into_any_element()
+        };
+        let runs_body = if self.job_runs.is_empty() {
+            ui::empty_state(
                 IconName::Redo,
                 "No runs selected",
                 "Choose a job to inspect recent runs, status, and errors.",
-            ));
-        }
-        ui::page_columns()
-            .child(ui::content_region().child(card("Jobs", jobs).w_full()))
+            )
+            .into_any_element()
+        } else {
+            list(
+                self.job_run_list_state.clone(),
+                cx.processor(move |this, index: usize, _window, _cx| {
+                    this.job_runs
+                        .get(index)
+                        .map(|run| {
+                            div()
+                                .w_full()
+                                .pb_2()
+                                .child(this.render_job_run_row(run))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().into_any_element())
+                }),
+            )
+            .size_full()
+            .into_any_element()
+        };
+        let workflows_body = if self.workflows.is_empty() {
+            ui::empty_state(
+                IconName::Network,
+                "No workflows",
+                "Workflow metadata has not loaded yet.",
+            )
+            .into_any_element()
+        } else {
+            list(
+                self.workflow_list_state.clone(),
+                cx.processor(move |this, index: usize, _window, _cx| {
+                    this.workflows
+                        .get(index)
+                        .map(|workflow| {
+                            div()
+                                .w_full()
+                                .pb_2()
+                                .child(this.render_workflow_row(workflow))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().into_any_element())
+                }),
+            )
+            .size_full()
+            .into_any_element()
+        };
+
+        let jobs = card(
+            "Jobs",
+            div()
+                .flex_1()
+                .min_h(px(0.))
+                .overflow_hidden()
+                .child(jobs_body),
+        )
+        .w_full()
+        .h_full()
+        .min_h(px(0.));
+        let runs = card(
+            self.selected_job()
+                .map(|job| format!("Runs - {}", job.name))
+                .unwrap_or_else(|| "Runs".to_owned()),
+            div()
+                .flex_1()
+                .min_h(px(0.))
+                .overflow_hidden()
+                .child(runs_body),
+        )
+        .w_full()
+        .h_full()
+        .min_h(px(0.));
+        let workflows = card(
+            "Workflows",
+            div()
+                .flex_1()
+                .min_h(px(0.))
+                .overflow_hidden()
+                .child(workflows_body),
+        )
+        .w_full()
+        .h_full()
+        .min_h(px(0.));
+
+        h_flex()
+            .size_full()
+            .min_h(px(0.))
+            .items_stretch()
+            .gap_4()
+            .overflow_hidden()
+            .child(ui::content_region().h_full().min_h(px(0.)).child(jobs))
             .child(
-                v_flex().w(px(360.)).gap_3().child(card(
-                    self.selected_job()
-                        .map(|job| format!("Runs - {}", job.name))
-                        .unwrap_or_else(|| "Runs".to_owned()),
-                    runs,
-                )),
+                v_flex()
+                    .w(px(360.))
+                    .min_w(px(320.))
+                    .h_full()
+                    .min_h(px(0.))
+                    .flex_shrink_0()
+                    .child(runs),
             )
             .child(
                 v_flex()
                     .w(px(360.))
-                    .gap_3()
-                    .child(card("Workflows", self.render_workflow_list())),
+                    .min_w(px(300.))
+                    .h_full()
+                    .min_h(px(0.))
+                    .flex_shrink_0()
+                    .child(workflows),
             )
     }
 
-    fn render_workflow_list(&self) -> Div {
-        let mut list = v_flex().gap_2();
-        for workflow in &self.workflows {
-            list = list.child(
-                ui::compact_row(false, rgb(0x38bdf8))
-                    .cursor_default()
-                    .child(ui::icon_badge(IconName::Network, rgb(0x38bdf8)))
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .overflow_hidden()
-                            .gap_1()
-                            .child(ui::row_title(workflow.name.clone()))
-                            .child(ui::row_meta(workflow.description.clone())),
-                    ),
-            );
-        }
-        if self.workflows.is_empty() {
-            list = list.child(ui::empty_state(
-                IconName::Network,
-                "No workflows",
-                "Workflow metadata has not loaded yet.",
-            ));
-        }
-        list
-    }
-
-    fn render_integrations_page(&self, cx: &mut Context<Self>) -> Div {
+    fn render_integration_row(
+        &self,
+        integration: &IntegrationRecord,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let selected_name = self
             .selected_integration_name
             .as_deref()
             .or_else(|| self.integrations.first().map(|item| item.name.as_str()));
-        let mut list = v_flex().gap_2();
-        for integration in &self.integrations {
-            let name = integration.name.clone();
-            let color = integration_status_color(&integration.status);
-            let selected = selected_name == Some(integration.name.as_str());
-            let app = cx.entity().downgrade();
-            list = list.child(
-                ui::compact_row(selected, color)
-                    .id(format!("integration-select-{}", integration.name))
-                    .min_h(px(76.))
-                    .on_click(move |_, window, cx| {
-                        let _ = app.update(cx, |state, cx| {
-                            state.select_integration(name.clone(), window, cx);
-                        });
-                    })
-                    .child(ui::icon_badge(IconName::Network, color))
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .overflow_hidden()
-                            .gap_1()
-                            .child(ui::row_title(integration.display_name.clone()))
-                            .child(ui::row_meta(integration.description.clone()))
-                            .child(ui::row_meta(integration_last_text(integration))),
-                    )
-                    .child(status_pill(&integration.status, color)),
-            );
-        }
-        if self.integrations.is_empty() {
-            list = list.child(ui::empty_state(
+        let name = integration.name.clone();
+        let color = integration_status_color(&integration.status);
+        let selected = selected_name == Some(integration.name.as_str());
+        let app = cx.entity().downgrade();
+        ui::compact_row(selected, color)
+            .id(format!("integration-select-{}", integration.name))
+            .min_h(px(76.))
+            .on_click(move |_, window, cx| {
+                let _ = app.update(cx, |state, cx| {
+                    state.select_integration(name.clone(), window, cx);
+                });
+            })
+            .child(ui::icon_badge(IconName::Network, color))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .gap_1()
+                    .child(ui::row_title(integration.display_name.clone()))
+                    .child(ui::row_meta(integration.description.clone()))
+                    .child(ui::row_meta(integration_last_text(integration))),
+            )
+            .child(status_pill(&integration.status, color))
+            .into_any_element()
+    }
+
+    fn render_integrations_page(&self, cx: &mut Context<Self>) -> Div {
+        let list = if self.integrations.is_empty() {
+            ui::empty_state(
                 IconName::Network,
                 "No integrations",
                 "External integration health will appear here when the daemon reports it.",
-            ));
-        }
+            )
+            .into_any_element()
+        } else {
+            list(
+                self.integration_list_state.clone(),
+                cx.processor(move |this, index: usize, _window, cx| {
+                    this.integrations
+                        .get(index)
+                        .map(|integration| {
+                            div()
+                                .w_full()
+                                .pb_2()
+                                .child(this.render_integration_row(integration, cx))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().into_any_element())
+                }),
+            )
+            .size_full()
+            .into_any_element()
+        };
 
         let details = if let Some(integration) = self
             .selected_integration()
@@ -3703,80 +4128,124 @@ impl NinaDesktop {
             ))
         };
 
-        ui::page_columns()
-            .child(ui::content_region().child(card("Integration Health", list).w_full()))
-            .child(ui::side_rail().child(details))
+        let health = card(
+            "Integration Health",
+            div().flex_1().min_h(px(0.)).overflow_hidden().child(list),
+        )
+        .w_full()
+        .h_full()
+        .min_h(px(0.));
+        let rail = ui::side_rail()
+            .h_full()
+            .min_h(px(0.))
+            .overflow_hidden()
+            .child(
+                div()
+                    .id("integrations-details-scroll-frame")
+                    .size_full()
+                    .overflow_y_scrollbar()
+                    .pr_1()
+                    .child(details),
+            );
+
+        h_flex()
+            .size_full()
+            .min_h(px(0.))
+            .items_stretch()
+            .gap_4()
+            .overflow_hidden()
+            .child(ui::content_region().h_full().min_h(px(0.)).child(health))
+            .child(rail)
+    }
+
+    fn render_config_settings_row(&self, row: ConfigRow, cx: &mut Context<Self>) -> AnyElement {
+        let Some(config) = &self.config else {
+            return div().into_any_element();
+        };
+        match row {
+            ConfigRow::Group { group } => div()
+                .id(format!("config-group-{group}"))
+                .w_full()
+                .min_h(px(32.))
+                .pt_2()
+                .pb_1()
+                .child(ui::section_title(group, config_group_color(group)))
+                .into_any_element(),
+            ConfigRow::Field { field } => div()
+                .w_full()
+                .pb_2()
+                .child(self.render_config_field_row(field, config, cx))
+                .into_any_element(),
+        }
+    }
+
+    fn render_config_field_row(
+        &self,
+        field: &'static ConfigField,
+        config: &ConfigSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let selected = self.selected_config_key == field.key;
+        let app = cx.entity().downgrade();
+        let key = field.key;
+        let current_preview = compact_text(&config_value(config, key), 110);
+        let editor_color = config_editor_color(field.editor);
+        ui::compact_row(selected, editor_color)
+            .id(format!("config-field-{}", field.key))
+            .min_h(px(68.))
+            .on_click(move |_, window, cx| {
+                let _ = app.update(cx, |state, cx| {
+                    state.open_config_field(key, window, cx);
+                });
+            })
+            .child(ui::icon_badge(config_group_icon(field.group), editor_color))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .gap_1()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .flex_wrap()
+                            .child(ui::row_title(field.label))
+                            .child(status_pill(field.editor.label(), editor_color))
+                            .child(if field.restart_required {
+                                status_pill("restart", rgb(0xf97316))
+                            } else {
+                                div()
+                            }),
+                    )
+                    .child(ui::row_meta(field.description))
+                    .child(ui::row_meta(current_preview)),
+            )
+            .into_any_element()
     }
 
     fn render_config_page(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
         let Some(config) = &self.config else {
             return card("Config", small_text("Config has not loaded yet."));
         };
-        let mut fields = v_flex().gap_4();
-        for group in CONFIG_GROUPS {
-            let mut group_fields = v_flex().gap_2();
-            let mut has_fields = false;
-            for field in CONFIG_FIELDS.iter().filter(|field| field.group == *group) {
-                has_fields = true;
-                let selected = self.selected_config_key == field.key;
-                let app = cx.entity().downgrade();
-                let key = field.key;
-                let current = config_value(config, key);
-                let current_preview = compact_text(&current, 110);
-                let editor_color = config_editor_color(field.editor);
-                group_fields = group_fields.child(
-                    ui::compact_row(selected, editor_color)
-                        .id(format!("config-field-{}", field.key))
-                        .min_h(px(68.))
-                        .on_click(move |_, window, cx| {
-                            let _ = app.update(cx, |state, cx| {
-                                state.open_config_field(key, window, cx);
-                            });
-                        })
-                        .child(ui::icon_badge(config_group_icon(field.group), editor_color))
-                        .child(
-                            v_flex()
-                                .flex_1()
-                                .min_w(px(0.))
-                                .overflow_hidden()
-                                .gap_1()
-                                .child(
-                                    h_flex()
-                                        .gap_2()
-                                        .flex_wrap()
-                                        .child(ui::row_title(field.label))
-                                        .child(status_pill(field.editor.label(), editor_color))
-                                        .child(if field.restart_required {
-                                            status_pill("restart", rgb(0xf97316))
-                                        } else {
-                                            div()
-                                        }),
-                                )
-                                .child(ui::row_meta(field.description))
-                                .child(ui::row_meta(current_preview)),
-                        ),
-                );
-            }
-            if has_fields {
-                fields = fields.child(
-                    v_flex()
-                        .gap_2()
-                        .child(ui::section_title(*group, config_group_color(group)))
-                        .child(group_fields),
-                );
-            }
-        }
+        let list_state = self.config_list_state.clone();
+        let settings_list = list(
+            list_state.clone(),
+            cx.processor(move |this, index: usize, _window, cx| {
+                let row = this.config_rows.get(index).copied();
+                row.map(|row| this.render_config_settings_row(row, cx))
+                    .unwrap_or_else(|| div().into_any_element())
+            }),
+        )
+        .size_full();
 
         let settings = card(
             "Settings",
-            div().flex_1().min_h(px(0.)).overflow_hidden().child(
-                div()
-                    .id("config-settings-scroll-frame")
-                    .size_full()
-                    .overflow_y_scrollbar()
-                    .pr_1()
-                    .child(fields),
-            ),
+            div()
+                .flex_1()
+                .min_h(px(0.))
+                .overflow_hidden()
+                .pr_1()
+                .child(settings_list),
         )
         .w_full()
         .h_full()
@@ -3827,6 +4296,21 @@ impl NinaDesktop {
             .child(ui::content_region().h_full().min_h(px(0.)).child(settings))
             .child(ui::side_rail().h_full().min_h(px(0.)).child(runtime))
     }
+}
+
+fn build_config_rows() -> Vec<ConfigRow> {
+    let mut rows = Vec::with_capacity(CONFIG_FIELDS.len() + CONFIG_GROUPS.len());
+    for group in CONFIG_GROUPS {
+        let mut has_group = false;
+        for field in CONFIG_FIELDS.iter().filter(|field| field.group == *group) {
+            if !has_group {
+                rows.push(ConfigRow::Group { group });
+                has_group = true;
+            }
+            rows.push(ConfigRow::Field { field });
+        }
+    }
+    rows
 }
 
 fn ordered_task_types(group: &TaskGroup) -> Vec<String> {
@@ -3982,34 +4466,28 @@ fn role_color(role: &str, fallback: Rgba) -> Rgba {
     }
 }
 
-fn render_chat_message(message: &SessionMessage, accent: Rgba) -> Div {
-    let is_user = message.role == "user";
+fn render_cached_chat_message(message: &RenderedMessage, accent: Rgba) -> Div {
     let role_color = role_color(&message.role, accent);
-    let bubble = ui::chat_bubble(is_user, role_color)
-        .child(ui::row_meta(format!(
-            "{} - {}",
-            message_label(&message.role),
-            short_timestamp(&message.created_at)
-        )))
-        .child(if message.role == "tool" {
-            render_tool_message(&message.content)
-        } else {
-            render_wrapped_message(message)
+    let bubble = ui::chat_bubble(message.is_user, role_color)
+        .id(format!("message-{}", message.id))
+        .child(ui::row_meta(message.meta.clone()))
+        .child(match &message.body {
+            RenderedMessageBody::Wrapped(paragraphs) => render_cached_wrapped_message(paragraphs),
+            RenderedMessageBody::ToolPreview(preview) => render_cached_tool_message(preview),
         });
 
     let mut row = h_flex().w_full().items_start();
-    if is_user {
+    if message.is_user {
         row = row.justify_end();
     }
     row.child(bubble)
 }
 
-fn render_wrapped_message(message: &SessionMessage) -> Div {
-    if message.content.trim().is_empty() {
+fn render_cached_wrapped_message(paragraphs: &[Vec<String>]) -> Div {
+    if paragraphs.len() == 1 && paragraphs[0].is_empty() {
         return div().child(ui::small_text("No content."));
     }
 
-    let max_chars = if message.role == "user" { 58 } else { 88 };
     let mut body = v_flex()
         .w_full()
         .min_w(px(0.))
@@ -4019,7 +4497,7 @@ fn render_wrapped_message(message: &SessionMessage) -> Div {
         .text_color(color::text())
         .gap_2();
 
-    for paragraph in wrapped_paragraphs(&message.content, max_chars) {
+    for paragraph in paragraphs {
         if paragraph.is_empty() {
             body = body.child(div().h(px(4.)));
             continue;
@@ -4033,7 +4511,7 @@ fn render_wrapped_message(message: &SessionMessage) -> Div {
                     .min_w(px(0.))
                     .overflow_hidden()
                     .line_height(relative(1.45))
-                    .child(line),
+                    .child(line.clone()),
             );
         }
         body = body.child(block);
@@ -4042,7 +4520,7 @@ fn render_wrapped_message(message: &SessionMessage) -> Div {
     body
 }
 
-fn render_tool_message(content: &str) -> Div {
+fn render_cached_tool_message(preview: &str) -> Div {
     v_flex()
         .w_full()
         .min_w(px(0.))
@@ -4057,7 +4535,7 @@ fn render_tool_message(content: &str) -> Div {
                 .text_size(px(12.))
                 .line_height(relative(1.35))
                 .text_color(color::text_muted())
-                .child(tool_preview(content)),
+                .child(preview.to_owned()),
         )
 }
 

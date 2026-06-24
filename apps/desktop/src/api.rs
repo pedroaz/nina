@@ -147,17 +147,26 @@ impl ApiClient {
         )
     }
 
-    pub fn get_session(&self, session_id: &str) -> ApiResult<SessionRecord> {
-        self.get(&format!("/sessions/{}", encode(session_id)))
+    pub fn get_session(&self, session_id: &str, messages_limit: usize) -> ApiResult<SessionRecord> {
+        self.get(&format!(
+            "/sessions/{}?messages_limit={}",
+            encode(session_id),
+            messages_limit
+        ))
     }
 
     pub fn send_message(
         &self,
         session_id: &str,
         content: String,
+        messages_limit: usize,
     ) -> ApiResult<SessionSendResponse> {
         self.post_json(
-            &format!("/sessions/{}/messages", encode(session_id)),
+            &format!(
+                "/sessions/{}/messages?messages_limit={}",
+                encode(session_id),
+                messages_limit
+            ),
             &SessionMessageCreateRequest { content },
         )
     }

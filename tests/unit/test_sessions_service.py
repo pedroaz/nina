@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import count
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from nina_core.cli.runner import CommandResult
 from nina_core.config import get_database_path, get_vault_path
 from nina_core.llm import provider as provider_module
 from nina_core.llm.provider import LLMRequest, LLMService, ToolCall
+from nina_core.sessions import service as sessions_service_module
 from nina_core.sessions.service import SessionService
 
 NOW = "2026-06-13T00:00:00+00:00"
@@ -125,6 +127,53 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch):
     fake = provider_module.FakeProvider()
     monkeypatch.setattr(LLMService, "_build_provider", lambda self: fake)
     return fake
+
+
+def test_get_session_can_limit_latest_messages(
+    isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
+) -> None:
+    ticks = count()
+    monkeypatch.setattr(
+        sessions_service_module,
+        "_now",
+        lambda: f"2026-06-13T00:00:{next(ticks):02d}+00:00",
+    )
+    service = SessionService(
+        str(get_database_path(isolated_config)), str(get_vault_path(isolated_config))
+    )
+    session = service.create_session("chat", "Chat")
+    for index in range(5):
+        service.add_message(session["id"], "assistant", f"message-{index}")
+
+    full = service.get_session(session["id"])
+    assert full is not None
+    assert [message["content"] for message in full["messages"]] == [
+        "message-0",
+        "message-1",
+        "message-2",
+        "message-3",
+        "message-4",
+    ]
+
+    latest_two = service.get_session(session["id"], messages_limit=2)
+    assert latest_two is not None
+    assert [message["content"] for message in latest_two["messages"]] == [
+        "message-3",
+        "message-4",
+    ]
+
+    previous_two = service.get_session(
+        session["id"],
+        messages_limit=2,
+        messages_offset=2,
+    )
+    assert previous_two is not None
+    assert [message["content"] for message in previous_two["messages"]] == [
+        "message-1",
+        "message-2",
+    ]
 
 
 async def test_chat_session_uses_obsidian_search_tool_call(

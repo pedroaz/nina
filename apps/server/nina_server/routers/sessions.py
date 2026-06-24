@@ -20,8 +20,17 @@ async def create_session(request: Request, data: SessionCreate) -> dict[str, obj
 
 
 @router.get("/sessions/{session_id}")
-async def get_session(request: Request, session_id: str) -> dict[str, object]:
-    session = get_session_service(request).get_session(session_id)
+async def get_session(
+    request: Request,
+    session_id: str,
+    messages_limit: int | None = None,
+    messages_offset: int = 0,
+) -> dict[str, object]:
+    session = get_session_service(request).get_session(
+        session_id,
+        messages_limit=messages_limit,
+        messages_offset=messages_offset,
+    )
     if not session:
         raise HTTPException(status_code=404, detail="Not found")
     return session
@@ -32,10 +41,17 @@ async def send_session_message(
     request: Request,
     session_id: str,
     data: SessionMessageCreate,
+    messages_limit: int | None = None,
+    messages_offset: int = 0,
 ) -> dict[str, object]:
     service = get_session_service(request)
     try:
-        return await service.send_message(session_id, data.content)
+        return await service.send_message(
+            session_id,
+            data.content,
+            messages_limit=messages_limit,
+            messages_offset=messages_offset,
+        )
     except RuntimeError as exc:
         message = str(exc)
         status = 404 if message.startswith("Unknown session") else 400

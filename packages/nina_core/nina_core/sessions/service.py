@@ -188,7 +188,9 @@ class SessionService:
         self.db_path = db_path
         self.vault_path = Path(vault_path)
         self.command_runner = command_runner or NinaCommandRunner()
-        self.llm = llm or LLMService(db_path, config=llm_config, codex_binary_path=codex_binary_path)
+        self.llm = llm or LLMService(
+            db_path, config=llm_config, codex_binary_path=codex_binary_path
+        )
         self.obsidian = obsidian or ObsidianService(self.vault_path)
         self.tools = tools or default_tool_registry()
         self.history_limit = history_limit
@@ -234,18 +236,30 @@ class SessionService:
         db.close()
         return result
 
-    def get_session(self, session_id: str) -> dict[str, Any] | None:
+    def get_session(
+        self,
+        session_id: str,
+        messages_limit: int | None = None,
+        messages_offset: int = 0,
+    ) -> dict[str, Any] | None:
         db = self._session()
         session = db.query(ConversationSession).filter(ConversationSession.id == session_id).first()
         if not session:
             db.close()
             return None
-        messages = (
-            db.query(ConversationMessage)
-            .filter(ConversationMessage.session_id == session_id)
-            .order_by(ConversationMessage.created_at.asc())
-            .all()
-        )
+        query = db.query(ConversationMessage).filter(ConversationMessage.session_id == session_id)
+        if messages_limit is None:
+            messages = query.order_by(ConversationMessage.created_at.asc()).all()
+        else:
+            limit = max(0, messages_limit)
+            offset = max(0, messages_offset)
+            messages = (
+                query.order_by(ConversationMessage.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+            messages = list(reversed(messages))
         result = self._serialize_session(session, messages)
         db.close()
         return result
@@ -307,7 +321,13 @@ class SessionService:
         finally:
             db.close()
 
-    async def send_message(self, session_id: str, content: str) -> dict[str, Any]:
+    async def send_message(
+        self,
+        session_id: str,
+        content: str,
+        messages_limit: int | None = None,
+        messages_offset: int = 0,
+    ) -> dict[str, Any]:
         # Note: cancel flag is intentionally NOT cleared here so that a
         # request_cancel issued mid-run propagates. Callers that want a
         # fresh session should clear_cancel explicitly or POST /sessions.
@@ -324,9 +344,9 @@ class SessionService:
 
         self.add_message(session_id, "user", content)
         if mode == "chat":
-            return await self._send_chat(session_id, content)
+            return await self._send_chat(session_id, content, messages_limit, messages_offset)
         if mode == "agent":
-            return await self._send_agent(session_id, content)
+            return await self._send_agent(session_id, content, messages_limit, messages_offset)
         raise RuntimeError(f"Unsupported session mode: {mode}")
 
     def _load_history(self, session_id: str, limit: int) -> list[ConversationMessage]:
@@ -505,7 +525,13 @@ class SessionService:
             "arguments": args,
         }
 
-    async def _send_chat(self, session_id: str, content: str) -> dict[str, Any]:
+    async def _send_chat(
+        self,
+        session_id: str,
+        content: str,
+        messages_limit: int | None,
+        messages_offset: int,
+    ) -> dict[str, Any]:
         result = await self._run_tool_loop(
             session_id,
             content,
@@ -560,13 +586,19 @@ class SessionService:
             metadata,
         )
         return {
-            "session": self.get_session(session_id),
+            "session": self.get_session(session_id, messages_limit, messages_offset),
             "assistant": self._serialize_message(assistant),
             "sources": sources,
             "tools_used": result.tools_used,
         }
 
-    async def _send_agent(self, session_id: str, content: str) -> dict[str, Any]:
+    async def _send_agent(
+        self,
+        session_id: str,
+        content: str,
+        messages_limit: int | None,
+        messages_offset: int,
+    ) -> dict[str, Any]:
         # First try the tool loop with the full tool set (including write tools
         # if registered). If the LLM doesn't emit any tool calls, fall back to
         # the legacy text-based command parser for backward compatibility.
@@ -594,7 +626,7 @@ class SessionService:
                         },
                     )
                     return {
-                        "session": self.get_session(session_id),
+                        "session": self.get_session(session_id, messages_limit, messages_offset),
                         "assistant": self._serialize_message(assistant),
                         "tools_used": result.tools_used,
                     }
@@ -659,7 +691,7 @@ class SessionService:
             },
         )
         return {
-            "session": self.get_session(session_id),
+            "session": self.get_session(session_id, messages_limit, messages_offset),
             "assistant": self._serialize_message(assistant),
             "commands": results,
         }
