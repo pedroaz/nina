@@ -20,19 +20,20 @@ use serde_json::{json, Value};
 use crate::{
     actions::{ClearConversation, CloseModal, ToggleSidebar, DESKTOP_CONTEXT},
     api::{ApiClient, ApiError, ApiResult},
-    dictation::GlobalDictationController,
+    dictation::{copy_text_to_clipboard, GlobalDictationController},
     models::{
         CodexTaskLogsResponse, ConfigSnapshot, ConfigUpdateResponse, HealthResponse,
         IntegrationCredentialField, IntegrationCredentialsUpdate, IntegrationRecord,
         IntegrationsResponse, Job, JobRun, Meeting, Repository, RepositoryCreateRequest,
         RepositoryWorktree, ResearchRunResult, SessionMessage, SessionRecord, TaskCreateRequest,
-        TaskGroup, TaskUpdateRequest, Ticket, WorkflowInfo,
+        TaskGroup, TaskUpdateRequest, Ticket, VoiceTranscription, WorkflowInfo,
     },
     ui::{self, color},
 };
 
 const TASK_BOARD_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SESSION_MESSAGE_LIMIT: usize = 300;
+const VOICE_TRANSCRIPTION_LIMIT: usize = 50;
 
 const TASK_TYPE_ORDER: &[&str] = &[
     "unclassified",
@@ -286,7 +287,7 @@ const CONFIG_FIELDS: &[ConfigField] = &[
         "Voice",
         "voice.global_hotkey",
         "Hotkey",
-        "Shortcut shown to the desktop portal",
+        "Global shortcut registered through the desktop portal",
         false,
         ConfigEditor::Text,
     ),
@@ -332,19 +333,21 @@ enum Page {
     Agent,
     Research,
     Meetings,
+    Transcriptions,
     Jobs,
     Integrations,
     Config,
 }
 
 impl Page {
-    const ALL: [Page; 9] = [
+    const ALL: [Page; 10] = [
         Page::Tickets,
         Page::Repositories,
         Page::Chat,
         Page::Agent,
         Page::Research,
         Page::Meetings,
+        Page::Transcriptions,
         Page::Jobs,
         Page::Integrations,
         Page::Config,
@@ -358,6 +361,7 @@ impl Page {
             Page::Agent => "Agent",
             Page::Research => "Research",
             Page::Meetings => "Meetings",
+            Page::Transcriptions => "Transcriptions",
             Page::Jobs => "Jobs",
             Page::Integrations => "Integrations",
             Page::Config => "Config",
@@ -372,6 +376,7 @@ impl Page {
             Page::Agent => "Run safe Nina operations from natural language",
             Page::Research => "Research a topic and write an Obsidian note",
             Page::Meetings => "Record, transcribe, summarize, and open meeting notes",
+            Page::Transcriptions => "Review recent voice dictation transcripts",
             Page::Jobs => "Inspect scheduled jobs and trigger runs",
             Page::Integrations => "Read external integration health and identity pings",
             Page::Config => "Inspect and edit daemon configuration",
@@ -386,6 +391,7 @@ impl Page {
             Page::Agent => IconName::Bot,
             Page::Research => IconName::Globe,
             Page::Meetings => IconName::Calendar,
+            Page::Transcriptions => IconName::BookOpen,
             Page::Jobs => IconName::Cpu,
             Page::Integrations => IconName::Network,
             Page::Config => IconName::Settings2,
@@ -436,15 +442,6 @@ enum ConfigEditor {
 }
 
 impl ConfigEditor {
-    fn label(self) -> &'static str {
-        match self {
-            ConfigEditor::Text => "text",
-            ConfigEditor::Path => "path",
-            ConfigEditor::Number => "number",
-            ConfigEditor::Choice(_) => "select",
-        }
-    }
-
     fn options(self) -> Option<&'static [&'static str]> {
         match self {
             ConfigEditor::Choice(options) => Some(options),
@@ -573,6 +570,7 @@ pub struct NinaDesktop {
     agent_session: Option<SessionRecord>,
     research_report: Option<ResearchRunResult>,
     meetings: Vec<Meeting>,
+    voice_transcriptions: Vec<VoiceTranscription>,
     jobs: Vec<Job>,
     workflows: Vec<WorkflowInfo>,
     job_runs: Vec<JobRun>,
@@ -585,6 +583,7 @@ pub struct NinaDesktop {
     agent_list_state: ListState,
     repository_list_state: ListState,
     meeting_list_state: ListState,
+    voice_transcription_list_state: ListState,
     job_list_state: ListState,
     job_run_list_state: ListState,
     workflow_list_state: ListState,
@@ -594,10 +593,12 @@ pub struct NinaDesktop {
     agent_message_cache: MessageRenderCache,
     config_rows: Vec<ConfigRow>,
     config_modal_open: bool,
+    hotkey_capture_active: bool,
     selected_task_id: Option<String>,
     selected_repository_id: Option<String>,
     selected_job_name: Option<String>,
     selected_meeting_id: Option<String>,
+    selected_voice_transcription_id: Option<String>,
     selected_integration_name: Option<String>,
     selected_config_key: &'static str,
     config_value_source: Option<(&'static str, String)>,
@@ -605,6 +606,7 @@ pub struct NinaDesktop {
     task_repository_id: Option<String>,
     task_auto_run: bool,
     meeting_source: String,
+    voice_transcription_filter: Option<String>,
     research_search_mode: Option<String>,
     task_title: Entity<InputState>,
     task_description: Entity<InputState>,
@@ -633,6 +635,7 @@ impl NinaDesktop {
         agent_list_state.set_follow_mode(FollowMode::Tail);
         let repository_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
         let meeting_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
+        let voice_transcription_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
         let job_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
         let job_run_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
         let workflow_list_state = ListState::new(0, ListAlignment::Top, px(4096.));
@@ -658,6 +661,7 @@ impl NinaDesktop {
             agent_session: None,
             research_report: None,
             meetings: Vec::new(),
+            voice_transcriptions: Vec::new(),
             jobs: Vec::new(),
             workflows: Vec::new(),
             job_runs: Vec::new(),
@@ -670,6 +674,7 @@ impl NinaDesktop {
             agent_list_state,
             repository_list_state,
             meeting_list_state,
+            voice_transcription_list_state,
             job_list_state,
             job_run_list_state,
             workflow_list_state,
@@ -679,10 +684,12 @@ impl NinaDesktop {
             agent_message_cache: MessageRenderCache::default(),
             config_rows,
             config_modal_open: false,
+            hotkey_capture_active: false,
             selected_task_id: None,
             selected_repository_id: None,
             selected_job_name: None,
             selected_meeting_id: None,
+            selected_voice_transcription_id: None,
             selected_integration_name: None,
             selected_config_key: CONFIG_FIELDS[0].key,
             config_value_source: None,
@@ -690,6 +697,7 @@ impl NinaDesktop {
             task_repository_id: None,
             task_auto_run: true,
             meeting_source: "mic".to_owned(),
+            voice_transcription_filter: None,
             research_search_mode: None,
             task_title: cx.new(|cx| InputState::new(window, cx).placeholder("Task title")),
             task_description: cx.new(|cx| InputState::new(window, cx).placeholder("Description")),
@@ -774,7 +782,11 @@ impl NinaDesktop {
             self.stop_task_polling();
         }
         self.task_modal = None;
+        if self.config_modal_open && self.selected_config_key == "voice.global_hotkey" {
+            self.resume_dictation_listener();
+        }
         self.config_modal_open = false;
+        self.hotkey_capture_active = false;
         self.refresh_current_page(cx);
         cx.notify();
     }
@@ -797,8 +809,7 @@ impl NinaDesktop {
         if self.task_modal.take().is_some() {
             cx.notify();
         } else if self.config_modal_open {
-            self.config_modal_open = false;
-            cx.notify();
+            self.close_config_modal(cx);
         }
     }
 
@@ -828,6 +839,10 @@ impl NinaDesktop {
             Page::Meetings => {
                 self.refresh_config(cx);
                 self.refresh_meetings(cx);
+            }
+            Page::Transcriptions => {
+                self.refresh_config(cx);
+                self.refresh_voice_transcriptions(cx);
             }
             Page::Jobs => self.refresh_jobs(cx),
             Page::Integrations => self.refresh_integrations(cx),
@@ -909,19 +924,58 @@ impl NinaDesktop {
         }
     }
 
+    fn dictation_unavailable_reason(&self) -> Option<String> {
+        let health = self.health.as_ref()?;
+        if health.status != "ok" {
+            return Some("Daemon is offline".to_owned());
+        }
+        let transcription = health.transcription.as_ref()?;
+        if transcription.available {
+            return None;
+        }
+        let detail = transcription
+            .detail
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("transcription backend is not ready");
+        Some(format!("Transcription not ready: {detail}"))
+    }
+
+    fn sync_dictation_listener(&mut self) {
+        if let Some(reason) = self.dictation_unavailable_reason() {
+            let next_status = self.dictation.unavailable(reason.clone());
+            if self.dictation_status != next_status {
+                eprintln!("[nina] dictation unavailable: {reason}");
+            }
+            self.dictation_status = next_status;
+            return;
+        }
+        if let Some(config) = self.config.as_ref() {
+            let voice = config.voice.clone();
+            self.dictation_status = self.dictation.sync(&voice, self.client.clone());
+        } else {
+            self.dictation_status = self.dictation.status_text();
+        }
+    }
+
     fn refresh_health(&mut self, cx: &mut Context<Self>) {
         self.run_api(
             "health",
             cx,
             |client| client.health(),
             |state, result, _| match result {
-                Ok(health) => state.health = Some(health),
+                Ok(health) => {
+                    state.health = Some(health);
+                    state.sync_dictation_listener();
+                }
                 Err(err) => {
                     state.health = Some(HealthResponse {
                         status: "offline".to_owned(),
                         profile: None,
                         vault_path: None,
+                        transcription: None,
                     });
+                    state.sync_dictation_listener();
                     state.banner = Some(Banner {
                         kind: BannerKind::Error,
                         text: format!("Daemon offline: {err}"),
@@ -938,9 +992,8 @@ impl NinaDesktop {
             |client| client.config(),
             |state, result, _| {
                 if let Ok(config) = result {
-                    state.dictation_status =
-                        state.dictation.sync(&config.voice, state.client.clone());
                     state.config = Some(config);
+                    state.sync_dictation_listener();
                 }
             },
         );
@@ -1085,6 +1138,30 @@ impl NinaDesktop {
                     if state.selected_meeting().is_none() {
                         state.selected_meeting_id =
                             state.meetings.first().map(|meeting| meeting.id.clone());
+                    }
+                }
+                Err(err) => state.banner = Some(error_banner(err)),
+            },
+        );
+    }
+
+    fn refresh_voice_transcriptions(&mut self, cx: &mut Context<Self>) {
+        let status = self.voice_transcription_filter.clone();
+        self.run_api(
+            "voice-transcriptions",
+            cx,
+            move |client| client.voice_transcriptions(status.as_deref(), VOICE_TRANSCRIPTION_LIMIT),
+            |state, result, _| match result {
+                Ok(transcriptions) => {
+                    state.voice_transcriptions = transcriptions;
+                    state
+                        .voice_transcription_list_state
+                        .reset(state.voice_transcriptions.len());
+                    if state.selected_voice_transcription().is_none() {
+                        state.selected_voice_transcription_id = state
+                            .voice_transcriptions
+                            .first()
+                            .map(|item| item.capture.id.clone());
                     }
                 }
                 Err(err) => state.banner = Some(error_banner(err)),
@@ -1349,8 +1426,10 @@ impl NinaDesktop {
                     ..
                 }) => {
                     state.config = Some(config);
+                    state.sync_dictation_listener();
                     if close_modal {
                         state.config_modal_open = false;
+                        state.hotkey_capture_active = false;
                     }
                     state.banner = Some(Banner {
                         kind: if restart_required {
@@ -1366,6 +1445,115 @@ impl NinaDesktop {
                     });
                 }
                 Err(err) => state.banner = Some(error_banner(err)),
+            },
+        );
+    }
+
+    fn copy_voice_transcript(&mut self, capture_id: String, cx: &mut Context<Self>) {
+        let transcript = self
+            .voice_transcriptions
+            .iter()
+            .find(|item| item.capture.id == capture_id)
+            .and_then(|item| item.transcript.clone());
+        let Some(transcript) = transcript.filter(|text| !text.trim().is_empty()) else {
+            self.banner = Some(error_text("No transcript text to copy."));
+            cx.notify();
+            return;
+        };
+        match copy_text_to_clipboard(&transcript) {
+            Ok(()) => {
+                self.banner = Some(Banner {
+                    kind: BannerKind::Success,
+                    text: "Transcript copied.".to_owned(),
+                });
+            }
+            Err(err) => self.banner = Some(error_text(format!("Copy failed: {err}"))),
+        }
+        cx.notify();
+    }
+
+    fn finish_voice_transcription(
+        &mut self,
+        capture_id: String,
+        stop_first: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let label = if stop_first {
+            format!("finish-voice-{capture_id}")
+        } else {
+            format!("transcribe-voice-{capture_id}")
+        };
+        let success = if stop_first {
+            "Stopped and transcribed voice capture."
+        } else {
+            "Voice capture transcribed."
+        };
+        self.run_api(
+            label,
+            cx,
+            move |client| {
+                if stop_first {
+                    let stopped = client.stop_voice(&capture_id)?;
+                    if let Some(error) = stopped.error {
+                        return Err(ApiError::Http(error));
+                    }
+                }
+                client.transcribe_voice(&capture_id, false).map(|_| ())
+            },
+            move |state, result, cx| {
+                state.set_result_banner(&result, success);
+                state.refresh_voice_transcriptions(cx);
+            },
+        );
+    }
+
+    fn delete_voice_transcriptions(
+        &mut self,
+        status: Option<String>,
+        limit: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let label = if status.is_none() {
+            "delete-voice-transcriptions-all".to_owned()
+        } else {
+            format!("delete-voice-transcriptions-{status:?}")
+        };
+        self.run_api(
+            label,
+            cx,
+            {
+                let status = status.clone();
+                move |client| match status.as_deref() {
+                    Some("recording") => Ok(0),
+                    Some(status) => client.delete_voice_transcriptions(Some(status), limit),
+                    None => {
+                        let mut deleted = 0;
+                        for status in ["transcribed", "stopped", "failed", "error"] {
+                            deleted += client.delete_voice_transcriptions(Some(status), limit)?;
+                        }
+                        Ok(deleted)
+                    }
+                }
+            },
+            move |state, result, cx| match result {
+                Ok(deleted) => {
+                    let message = if deleted == 0 {
+                        "No matching non-recording voice captures to delete.".to_owned()
+                    } else if deleted == 1 {
+                        "Deleted one voice capture.".to_owned()
+                    } else {
+                        format!("Deleted {deleted} voice captures.")
+                    };
+                    state.banner = Some(Banner {
+                        kind: BannerKind::Success,
+                        text: message,
+                    });
+                    state.selected_voice_transcription_id = None;
+                    state.refresh_voice_transcriptions(cx);
+                }
+                Err(err) => {
+                    state.banner = Some(error_banner(err));
+                }
             },
         );
     }
@@ -1520,10 +1708,62 @@ impl NinaDesktop {
             .and_then(|id| self.meetings.iter().find(|meeting| meeting.id == id))
     }
 
+    fn selected_voice_transcription(&self) -> Option<&VoiceTranscription> {
+        self.selected_voice_transcription_id
+            .as_deref()
+            .and_then(|id| {
+                self.voice_transcriptions
+                    .iter()
+                    .find(|item| item.capture.id == id)
+            })
+    }
+
+    fn latest_global_dictation_capture(&self) -> Option<&VoiceTranscription> {
+        self.voice_transcriptions.iter().find(|item| {
+            item.capture.title == "Global dictation" && item.capture.status == "recording"
+        })
+    }
+
+    fn latest_global_dictation_id(&self) -> Option<String> {
+        self.latest_global_dictation_capture()
+            .map(|item| item.capture.id.clone())
+    }
+
     fn selected_integration(&self) -> Option<&IntegrationRecord> {
         self.selected_integration_name
             .as_deref()
             .and_then(|name| self.integrations.iter().find(|item| item.name == name))
+    }
+
+    fn stop_latest_global_dictation(&mut self, cx: &mut Context<Self>) {
+        if let Some(capture_id) = self.latest_global_dictation_id() {
+            self.finish_voice_transcription(capture_id, true, cx);
+            return;
+        }
+
+        self.run_api(
+            "stop-latest-global-dictation",
+            cx,
+            move |client| {
+                let capture_id = client
+                    .voice_transcriptions(Some("recording"), 20)?
+                    .into_iter()
+                    .find(|item| item.capture.title == "Global dictation")
+                    .map(|item| item.capture.id)
+                    .ok_or_else(|| {
+                        ApiError::Http("No active dictation capture found.".to_owned())
+                    })?;
+                let stopped = client.stop_voice(&capture_id)?;
+                if let Some(error) = stopped.error {
+                    return Err(ApiError::Http(error));
+                }
+                client.transcribe_voice(&capture_id, false).map(|_| ())
+            },
+            |state, result, cx| {
+                state.set_result_banner(&result, "Stopped and transcribed latest dictation.");
+                state.refresh_voice_transcriptions(cx);
+            },
+        );
     }
 
     fn select_integration(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -1647,7 +1887,69 @@ impl NinaDesktop {
     ) {
         self.selected_config_key = key;
         self.sync_config_input(window, cx);
+        self.hotkey_capture_active = key == "voice.global_hotkey";
+        if self.hotkey_capture_active {
+            window.focus(&self.focus_handle, cx);
+            self.pause_dictation_listener_for_hotkey_capture();
+        }
         self.config_modal_open = true;
+        cx.notify();
+    }
+
+    fn close_config_modal(&mut self, cx: &mut Context<Self>) {
+        let resume_dictation = self.selected_config_key == "voice.global_hotkey";
+        self.config_modal_open = false;
+        self.hotkey_capture_active = false;
+        if resume_dictation {
+            self.resume_dictation_listener();
+        }
+        cx.notify();
+    }
+
+    fn pause_dictation_listener_for_hotkey_capture(&mut self) {
+        self.dictation_status = self.dictation.pause("Editing global hotkey".to_owned());
+    }
+
+    fn resume_dictation_listener(&mut self) {
+        self.sync_dictation_listener();
+    }
+
+    fn capture_config_hotkey(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.current_page != Page::Config
+            || !self.config_modal_open
+            || self.selected_config_key != "voice.global_hotkey"
+            || !self.hotkey_capture_active
+        {
+            return;
+        }
+
+        window.prevent_default();
+        cx.stop_propagation();
+
+        if event.is_held {
+            return;
+        }
+
+        if event.keystroke.key == "escape" && !event.keystroke.modifiers.modified() {
+            self.hotkey_capture_active = false;
+            cx.notify();
+            return;
+        }
+
+        let Some(hotkey) = hotkey_from_keystroke(&event.keystroke) else {
+            return;
+        };
+        self.config_value.update(cx, |input, cx| {
+            input.set_value(hotkey.clone(), window, cx);
+        });
+        self.config_value_source = None;
+        self.hotkey_capture_active = false;
+        self.save_config_value("voice.global_hotkey", hotkey, false, cx);
         cx.notify();
     }
 
@@ -1677,6 +1979,8 @@ impl NinaDesktop {
 
 impl Render for NinaDesktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.dictation_status = self.dictation.status_text();
+        window.set_window_title(dictation_window_title(&self.dictation_status));
         let page = self.render_page(window, cx);
         let page_frame = match self.current_page {
             Page::Tickets
@@ -1684,6 +1988,7 @@ impl Render for NinaDesktop {
             | Page::Chat
             | Page::Agent
             | Page::Meetings
+            | Page::Transcriptions
             | Page::Jobs
             | Page::Integrations
             | Page::Config => ui::page_workspace_frame(page),
@@ -1693,6 +1998,7 @@ impl Render for NinaDesktop {
             .id("nina-desktop-root")
             .track_focus(&self.focus_handle)
             .key_context(DESKTOP_CONTEXT)
+            .capture_key_down(cx.listener(Self::capture_config_hotkey))
             .on_action(cx.listener(Self::on_action_toggle_sidebar))
             .on_action(cx.listener(Self::on_action_close_modal))
             .on_action(cx.listener(Self::on_action_clear_conversation))
@@ -1707,6 +2013,7 @@ impl Render for NinaDesktop {
                         .child(page_frame),
                 ),
             )
+            .child(self.render_dictation_floating_status(cx))
             .child(self.render_task_modal(cx))
             .child(self.render_config_modal(cx))
     }
@@ -1803,7 +2110,116 @@ impl NinaDesktop {
                     )
                     .child(small_text(self.current_page.description())),
             )
-            .child(self.render_health_chip())
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(self.render_health_chip())
+                    .child(self.render_dictation_status_chip()),
+            )
+    }
+
+    fn render_dictation_status_chip(&self) -> Div {
+        let lower = self.dictation_status.to_ascii_lowercase();
+        let (status, color) = if lower.contains("recording") {
+            ("Dictation: Recording", color::danger())
+        } else if lower.contains("transcribing")
+            || lower.contains("pasting")
+            || lower.contains("stopping")
+            || lower.contains("registering")
+        {
+            ("Dictation: Working", color::warning())
+        } else if lower.contains("listening") || lower.contains("activated") {
+            ("Dictation: Ready", color::success())
+        } else if lower.contains("unavailable")
+            || lower.contains("failed")
+            || lower.contains("warning")
+            || lower.contains("paste failed")
+        {
+            ("Dictation: Warning", color::warning())
+        } else if lower.contains("disabled") {
+            ("Dictation: Off", color::neutral())
+        } else {
+            ("Dictation: Ready", color::neutral())
+        };
+        h_flex()
+            .gap_1()
+            .px_3()
+            .py_2()
+            .rounded(px(8.))
+            .border_1()
+            .border_color(color)
+            .bg(color::surface())
+            .child(div().size_2().rounded_full().bg(color))
+            .child(compact_text(status, 28))
+    }
+
+    fn render_dictation_floating_status(&self, cx: &mut Context<Self>) -> Div {
+        let lower = self.dictation_status.to_ascii_lowercase();
+        let active = lower.contains("recording")
+            || lower.contains("stopping")
+            || lower.contains("transcribing")
+            || lower.contains("pasting")
+            || lower.contains("unavailable")
+            || lower.contains("failed")
+            || lower.contains("warning")
+            || lower.contains("paste failed")
+            || lower.contains("activation failed");
+        if !active {
+            return div();
+        }
+
+        let (label, color, can_stop) = if lower.contains("recording") {
+            ("Recording", color::danger(), true)
+        } else if lower.contains("transcribing")
+            || lower.contains("pasting")
+            || lower.contains("stopping")
+        {
+            ("Working", color::warning(), false)
+        } else {
+            ("Needs attention", color::warning(), false)
+        };
+        let stop_app = cx.entity().downgrade();
+        let mut content = h_flex()
+            .gap_2()
+            .child(div().size_2().rounded_full().bg(color).flex_shrink_0())
+            .child(
+                v_flex()
+                    .min_w(px(0.))
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(color)
+                            .child(format!("Dictation {label}")),
+                    )
+                    .child(ui::row_meta(compact_text(&self.dictation_status, 96))),
+            );
+        if can_stop {
+            content = content.child(
+                Button::new("floating-stop-global-dictation")
+                    .xsmall()
+                    .label("Stop")
+                    .on_click(move |_, _, cx| {
+                        let _ = stop_app.update(cx, |state, cx| {
+                            state.stop_latest_global_dictation(cx);
+                        });
+                    }),
+            );
+        }
+
+        div()
+            .absolute()
+            .right(px(16.))
+            .bottom(px(16.))
+            .max_w(px(420.))
+            .px_3()
+            .py_2()
+            .rounded(px(8.))
+            .border_1()
+            .border_color(color)
+            .bg(color::surface_raised())
+            .child(content)
     }
 
     fn render_status_bar(&self) -> Div {
@@ -1811,9 +2227,9 @@ impl NinaDesktop {
             return div().h(px(0.));
         };
         let color = match banner.kind {
-            BannerKind::Info => rgb(0x38bdf8),
-            BannerKind::Success => rgb(0x22c55e),
-            BannerKind::Error => rgb(0xef4444),
+            BannerKind::Info => color::info(),
+            BannerKind::Success => color::success(),
+            BannerKind::Error => color::danger(),
         };
         div()
             .mx_4()
@@ -1834,13 +2250,13 @@ impl NinaDesktop {
                     .profile
                     .clone()
                     .unwrap_or_else(|| "default".to_owned()),
-                rgb(0x22c55e),
+                color::success(),
             ),
-            Some(health) => (health.status.clone(), "daemon".to_owned(), rgb(0xf97316)),
-            None => ("Checking".to_owned(), "daemon".to_owned(), rgb(0x94a3b8)),
+            Some(health) => (health.status.clone(), "daemon".to_owned(), color::warning()),
+            None => ("Checking".to_owned(), "daemon".to_owned(), color::neutral()),
         };
         h_flex()
-            .gap_2()
+            .gap_1()
             .px_3()
             .py_2()
             .rounded(px(8.))
@@ -1859,6 +2275,7 @@ impl NinaDesktop {
             Page::Agent => self.render_conversation_page("agent", cx),
             Page::Research => self.render_research_page(cx),
             Page::Meetings => self.render_meetings_page(cx),
+            Page::Transcriptions => self.render_transcriptions_page(cx),
             Page::Jobs => self.render_jobs_page(cx),
             Page::Integrations => self.render_integrations_page(cx),
             Page::Config => self.render_config_page(window, cx),
@@ -2092,8 +2509,7 @@ impl NinaDesktop {
             .label("Close")
             .on_click(move |_, _, cx| {
                 let _ = close_app.update(cx, |state, cx| {
-                    state.config_modal_open = false;
-                    cx.notify();
+                    state.close_config_modal(cx);
                 });
             });
 
@@ -2103,14 +2519,14 @@ impl NinaDesktop {
                 .child(ui::modal_header(format!("Edit {}", selected.label), close))
                 .child(ui::modal_body(self.render_config_editor_body(config, cx))),
         )
+        .capture_key_down(cx.listener(Self::capture_config_hotkey))
         .on_mouse_down(MouseButton::Left, |_, _, cx| {
             cx.stop_propagation();
         });
 
         ui::modal_overlay(modal_window).on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = backdrop_app.update(cx, |state, cx| {
-                state.config_modal_open = false;
-                cx.notify();
+                state.close_config_modal(cx);
             });
         })
     }
@@ -2118,7 +2534,11 @@ impl NinaDesktop {
     fn render_config_editor_body(&self, config: &ConfigSnapshot, cx: &mut Context<Self>) -> Div {
         let selected = self.selected_config_field();
         let current = config_value(config, selected.key);
-        let editor_color = config_editor_color(selected.editor);
+        let current_label = if current.is_empty() {
+            "(empty)".to_owned()
+        } else {
+            current.clone()
+        };
         let mut editor = v_flex()
             .gap_4()
             .child(
@@ -2126,11 +2546,19 @@ impl NinaDesktop {
                     .gap_2()
                     .child(
                         h_flex()
-                            .gap_2()
-                            .flex_wrap()
-                            .child(status_pill(selected.editor.label(), editor_color))
+                            .items_start()
+                            .justify_between()
+                            .gap_3()
+                            .child(
+                                v_flex()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .gap_1()
+                                    .child(ui::row_title(selected.label))
+                                    .child(ui::row_meta(selected.key)),
+                            )
                             .child(if selected.restart_required {
-                                status_pill("restart", rgb(0xf97316))
+                                status_pill("restart required", color::warning())
                             } else {
                                 div()
                             }),
@@ -2140,8 +2568,8 @@ impl NinaDesktop {
             .child(
                 v_flex()
                     .gap_2()
-                    .child(ui::kv_row("Key", selected.key))
-                    .child(ui::kv_row("Current", current.clone())),
+                    .child(label("Current value"))
+                    .child(ui::mono_block(current_label)),
             );
 
         if let Some(options) = selected.editor.options() {
@@ -2150,12 +2578,10 @@ impl NinaDesktop {
                 let app = cx.entity().downgrade();
                 let option_value = (*option).to_owned();
                 let button_id = format!("config-option-{}-{}", selected.key, option);
-                let mut button = Button::new(button_id).small().label(*option);
-                if config_option_matches(&current, option) {
-                    button = button.primary();
-                } else {
-                    button = button.ghost();
-                }
+                let button = Button::new(button_id)
+                    .small()
+                    .label(*option)
+                    .selected(config_option_matches(&current, option));
                 let key = selected.key;
                 choices = choices.child(button.on_click(move |_, _, cx| {
                     let _ = app.update(cx, |state, cx| {
@@ -2165,10 +2591,12 @@ impl NinaDesktop {
                 }));
             }
             editor = editor.child(label("Options")).child(choices);
+        } else if selected.key == "voice.global_hotkey" {
+            editor = editor.child(self.render_hotkey_editor(cx));
         } else {
             let app = cx.entity().downgrade();
             editor = editor
-                .child(label("Value"))
+                .child(label("New value"))
                 .child(Input::new(&self.config_value).cleanable(true))
                 .child(
                     Button::new("save-config")
@@ -2182,6 +2610,78 @@ impl NinaDesktop {
         }
 
         editor
+    }
+
+    fn render_hotkey_editor(&self, cx: &mut Context<Self>) -> Div {
+        let value = self.config_value.read(cx).value().trim().to_owned();
+        let display_value = if value.is_empty() {
+            "Waiting for shortcut".to_owned()
+        } else {
+            value
+        };
+        let accent = if self.hotkey_capture_active {
+            color::warning()
+        } else {
+            color::accent()
+        };
+        let listen_app = cx.entity().downgrade();
+        let save_app = cx.entity().downgrade();
+
+        v_flex()
+            .gap_3()
+            .child(label("New hotkey"))
+            .child(
+                div()
+                    .id("voice-hotkey-recorder")
+                    .w_full()
+                    .px_4()
+                    .py_3()
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_color(accent)
+                    .bg(color::surface_raised())
+                    .on_click(move |_, window, cx| {
+                        let _ = listen_app.update(cx, |state, cx| {
+                            window.focus(&state.focus_handle, cx);
+                            state.hotkey_capture_active = true;
+                            state.pause_dictation_listener_for_hotkey_capture();
+                            cx.notify();
+                        });
+                    })
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(color::text())
+                                    .child(display_value),
+                            )
+                            .child(status_pill(
+                                if self.hotkey_capture_active {
+                                    "listening"
+                                } else {
+                                    "ready"
+                                },
+                                accent,
+                            )),
+                    ),
+            )
+            .child(small_text(if self.hotkey_capture_active {
+                "Press the shortcut to capture it."
+            } else {
+                "Click the recorder to capture another shortcut."
+            }))
+            .child(
+                Button::new("save-hotkey-config")
+                    .primary()
+                    .small()
+                    .label("Save + register")
+                    .on_click(move |_, _, cx| {
+                        let _ = save_app.update(cx, |state, cx| state.save_config(cx));
+                    }),
+            )
     }
 
     fn render_task_create_body(&self, cx: &mut Context<Self>) -> Div {
@@ -3160,6 +3660,461 @@ impl NinaDesktop {
             .child(ui::content_region().child(report))
     }
 
+    fn render_voice_transcription_row(
+        &self,
+        item: &VoiceTranscription,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let select_id = item.capture.id.clone();
+        let selected =
+            self.selected_voice_transcription_id.as_deref() == Some(item.capture.id.as_str());
+        let status_color = voice_status_color(&item.capture.status);
+        let preview = voice_transcript_preview(item, 120);
+        let meta = format!(
+            "{} - {} - {} - {}",
+            short_timestamp(&item.capture.started_at),
+            voice_duration_text(item),
+            item.capture.source,
+            preview
+        );
+        ui::compact_row(selected, status_color)
+            .min_h(px(36.))
+            .gap_2()
+            .py_1()
+            .id(format!("voice-transcription-row-{}", item.capture.id))
+            .on_click({
+                let app = cx.entity().downgrade();
+                move |_, _, cx| {
+                    let _ = app.update(cx, |state, cx| {
+                        state.selected_voice_transcription_id = Some(select_id.clone());
+                        cx.notify();
+                    });
+                }
+            })
+            .child(
+                div()
+                    .size_2()
+                    .rounded_full()
+                    .bg(status_color)
+                    .flex_shrink_0(),
+            )
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .gap_1()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .overflow_hidden()
+                                    .child(ui::row_title(item.capture.title.clone())),
+                            )
+                            .child(status_pill(item.capture.status.clone(), status_color)),
+                    )
+                    .child(ui::row_meta(meta)),
+            )
+            .into_any_element()
+    }
+
+    fn render_transcriptions_page(&self, cx: &mut Context<Self>) -> Div {
+        let loading = self.loading.contains("voice-transcriptions");
+        let dictation_status_lower = self.dictation_status.to_ascii_lowercase();
+        let has_recording = self.latest_global_dictation_capture().is_some()
+            || dictation_status_lower.contains("recording");
+        let cleanable_count = self
+            .voice_transcriptions
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.capture.status.as_str(),
+                    "transcribed" | "stopped" | "failed" | "error"
+                )
+            })
+            .count();
+        let mut filter_buttons = h_flex().gap_1().flex_wrap();
+        for (label_text, status) in [
+            ("All", None),
+            ("Transcribed", Some("transcribed")),
+            ("Recording", Some("recording")),
+            ("Failed", Some("failed")),
+        ] {
+            let next = status.map(str::to_owned);
+            let selected = self.voice_transcription_filter.as_deref() == status;
+            let app = cx.entity().downgrade();
+            filter_buttons = filter_buttons.child(
+                Button::new(format!("voice-filter-{label_text}"))
+                    .xsmall()
+                    .selected(selected)
+                    .disabled(loading)
+                    .label(label_text)
+                    .on_click(move |_, _, cx| {
+                        let _ = app.update(cx, |state, cx| {
+                            state.voice_transcription_filter = next.clone();
+                            state.refresh_voice_transcriptions(cx);
+                            cx.notify();
+                        });
+                    }),
+            );
+        }
+
+        let refresh_app = cx.entity().downgrade();
+        let clear_app = cx.entity().downgrade();
+        let stop_app = cx.entity().downgrade();
+        let current_filter = self.voice_transcription_filter.clone();
+        let controls = card(
+            "Voice",
+            v_flex()
+                .gap_1()
+                .child(if let Some(config) = &self.config {
+                    h_flex()
+                        .gap_1()
+                        .flex_wrap()
+                        .child(status_pill(
+                            if config.voice.global_hotkey_enabled {
+                                "hotkey on"
+                            } else {
+                                "hotkey off"
+                            },
+                            if config.voice.global_hotkey_enabled {
+                                color::success()
+                            } else {
+                                color::neutral()
+                            },
+                        ))
+                        .child(status_pill(
+                            config.voice.global_hotkey.clone(),
+                            rgb(0x38bdf8),
+                        ))
+                        .child(status_pill(
+                            compact_text(&self.dictation_status, 58),
+                            color::primary(),
+                        ))
+                        .into_any_element()
+                } else {
+                    small_text("Config not loaded.").into_any_element()
+                })
+                .child(filter_buttons)
+                .child(
+                    h_flex()
+                        .gap_1()
+                        .flex_wrap()
+                        .child(
+                            Button::new("refresh-voice-transcriptions")
+                                .xsmall()
+                                .loading(loading)
+                                .label(if loading { "Refreshing..." } else { "Refresh" })
+                                .on_click(move |_, _, cx| {
+                                    let _ = refresh_app.update(cx, |state, cx| {
+                                        state.refresh_config(cx);
+                                        state.refresh_voice_transcriptions(cx);
+                                    });
+                                }),
+                        )
+                        .child(
+                            Button::new("stop-global-dictation")
+                                .xsmall()
+                                .disabled(!has_recording || loading)
+                                .label("Stop latest dictation")
+                                .on_click(move |_, _, cx| {
+                                    let _ = stop_app.update(cx, |state, cx| {
+                                        state.stop_latest_global_dictation(cx);
+                                    });
+                                }),
+                        )
+                        .child(
+                            Button::new(format!(
+                                "clean-voice-transcriptions-{}",
+                                current_filter.clone().unwrap_or_else(|| "all".to_owned())
+                            ))
+                            .xsmall()
+                            .disabled(loading || cleanable_count == 0)
+                            .label("Clean recent")
+                            .on_click(move |_, _, cx| {
+                                let _ = clear_app.update(cx, |state, cx| {
+                                    state.delete_voice_transcriptions(
+                                        current_filter.clone(),
+                                        VOICE_TRANSCRIPTION_LIMIT,
+                                        cx,
+                                    );
+                                });
+                            }),
+                        ),
+                ),
+        );
+
+        let total_count = self.voice_transcriptions.len();
+        let transcribed_count = self
+            .voice_transcriptions
+            .iter()
+            .filter(|item| item.capture.status == "transcribed")
+            .count();
+        let recording_count = self
+            .voice_transcriptions
+            .iter()
+            .filter(|item| item.capture.status == "recording")
+            .count();
+        let failed_count = self
+            .voice_transcriptions
+            .iter()
+            .filter(|item| item.capture.status == "failed")
+            .count();
+        let summary = h_flex()
+            .gap_1()
+            .flex_wrap()
+            .child(status_pill(
+                format!("{total_count} latest"),
+                color::primary(),
+            ))
+            .child(status_pill(
+                format!("{transcribed_count} transcribed"),
+                rgb(0x22c55e),
+            ))
+            .child(if recording_count > 0 {
+                status_pill(format!("{recording_count} recording"), rgb(0xef4444))
+            } else {
+                div()
+            })
+            .child(if failed_count > 0 {
+                status_pill(format!("{failed_count} failed"), color::danger())
+            } else {
+                div()
+            })
+            .child(if loading {
+                status_pill("Loading...", rgb(0x94a3b8))
+            } else {
+                div()
+            });
+
+        let list = if self.voice_transcriptions.is_empty() {
+            ui::empty_state(
+                IconName::BookOpen,
+                "No transcriptions recorded",
+                "Recent voice captures from the CLI and desktop hotkey will appear here.",
+            )
+            .into_any_element()
+        } else {
+            list(
+                self.voice_transcription_list_state.clone(),
+                cx.processor(move |this, index: usize, _window, cx| {
+                    this.voice_transcriptions
+                        .get(index)
+                        .map(|item| {
+                            div()
+                                .w_full()
+                                .pb_1()
+                                .child(this.render_voice_transcription_row(item, cx))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().into_any_element())
+                }),
+            )
+            .size_full()
+            .into_any_element()
+        };
+
+        let main = v_flex()
+            .flex_1()
+            .min_w(px(420.))
+            .h_full()
+            .min_h(px(0.))
+            .child(
+                card(
+                    "Latest Transcriptions",
+                    v_flex()
+                        .flex_1()
+                        .min_h(px(0.))
+                        .gap_1()
+                        .child(summary)
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_h(px(0.))
+                                .overflow_hidden()
+                                .pr_1()
+                                .child(list),
+                        ),
+                )
+                .w_full()
+                .h_full()
+                .min_h(px(0.)),
+            );
+
+        let mut rail_content = v_flex().gap_2().child(controls);
+        if let Some(item) = self.selected_voice_transcription() {
+            let transcript_text = item
+                .transcript
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+                .map(|text| compact_text(text, 500))
+                .unwrap_or_else(|| "No transcript text yet.".to_owned());
+            rail_content = rail_content.child(card(
+                "Selected",
+                v_flex()
+                    .gap_2()
+                    .child(ui::row_title(item.capture.title.clone()))
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .flex_wrap()
+                            .child(status_pill(
+                                item.capture.status.clone(),
+                                voice_status_color(&item.capture.status),
+                            ))
+                            .child(status_pill(item.capture.source.clone(), rgb(0x38bdf8)))
+                            .child(status_pill(voice_duration_text(item), rgb(0x64748b))),
+                    )
+                    .child(self.render_voice_transcription_actions("selected", item, cx))
+                    .child(ui::kv_row(
+                        "Started",
+                        short_timestamp(&item.capture.started_at),
+                    ))
+                    .child(ui::kv_row(
+                        "Audio",
+                        compact_text(&item.capture.audio_path, 52),
+                    ))
+                    .child(ui::kv_row(
+                        "Note",
+                        option_text(&item.capture.transcript_note_path),
+                    ))
+                    .child(
+                        if let Some(error) = item
+                            .capture
+                            .error
+                            .clone()
+                            .or_else(|| item.transcript_error.clone())
+                        {
+                            ui::kv_row("Error", compact_text(&error, 96)).into_any_element()
+                        } else {
+                            div().into_any_element()
+                        },
+                    )
+                    .child(label("Transcript"))
+                    .child(
+                        div()
+                            .max_h(px(240.))
+                            .overflow_y_scrollbar()
+                            .child(ui::mono_block(transcript_text)),
+                    ),
+            ));
+        }
+
+        let rail = v_flex()
+            .w(px(285.))
+            .min_w(px(240.))
+            .h_full()
+            .min_h(px(0.))
+            .flex_shrink_0()
+            .overflow_hidden()
+            .child(
+                div()
+                    .id("transcriptions-rail-scroll-frame")
+                    .size_full()
+                    .overflow_y_scrollbar()
+                    .pr_1()
+                    .child(rail_content),
+            );
+
+        h_flex()
+            .size_full()
+            .min_h(px(0.))
+            .items_stretch()
+            .gap_2()
+            .overflow_hidden()
+            .child(main)
+            .child(rail)
+    }
+
+    fn render_voice_transcription_actions(
+        &self,
+        id_scope: &'static str,
+        item: &VoiceTranscription,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let copy_id = item.capture.id.clone();
+        let finish_id = item.capture.id.clone();
+        let transcribe_id = item.capture.id.clone();
+        let has_transcript = item
+            .transcript
+            .as_ref()
+            .is_some_and(|text| !text.trim().is_empty());
+        h_flex()
+            .gap_1()
+            .flex_wrap()
+            .child(if item.capture.status == "recording" {
+                Button::new(format!(
+                    "{id_scope}-finish-voice-transcription-{}",
+                    item.capture.id
+                ))
+                .xsmall()
+                .primary()
+                .label("Stop + transcribe")
+                .on_click({
+                    let app = cx.entity().downgrade();
+                    move |_, _, cx| {
+                        let _ = app.update(cx, |state, cx| {
+                            state.finish_voice_transcription(finish_id.clone(), true, cx);
+                        });
+                    }
+                })
+                .into_any_element()
+            } else {
+                div().into_any_element()
+            })
+            .child(if item.capture.status == "stopped" {
+                Button::new(format!(
+                    "{id_scope}-transcribe-voice-transcription-{}",
+                    item.capture.id
+                ))
+                .xsmall()
+                .primary()
+                .label("Transcribe")
+                .on_click({
+                    let app = cx.entity().downgrade();
+                    move |_, _, cx| {
+                        let _ = app.update(cx, |state, cx| {
+                            state.finish_voice_transcription(transcribe_id.clone(), false, cx);
+                        });
+                    }
+                })
+                .into_any_element()
+            } else {
+                div().into_any_element()
+            })
+            .child(
+                Button::new(format!(
+                    "{id_scope}-copy-voice-transcription-{}",
+                    item.capture.id
+                ))
+                .xsmall()
+                .disabled(!has_transcript)
+                .label("Copy")
+                .on_click({
+                    let app = cx.entity().downgrade();
+                    move |_, _, cx| {
+                        let _ = app.update(cx, |state, cx| {
+                            state.copy_voice_transcript(copy_id.clone(), cx);
+                        });
+                    }
+                }),
+            )
+            .child(
+                self.render_open_note_button(
+                    format!("{id_scope}-open-voice-transcription-{}", item.capture.id),
+                    "Open Note",
+                    item.capture.transcript_note_path.clone(),
+                    "Voice capture has no transcript note yet.",
+                    "Opened the voice transcript note.",
+                    cx,
+                )
+                .xsmall(),
+            )
+    }
+
     fn render_meeting_row(&self, meeting: &Meeting, cx: &mut Context<Self>) -> AnyElement {
         let select_id = meeting.id.clone();
         let selected = self.selected_meeting_id.as_deref() == Some(meeting.id.as_str());
@@ -3338,7 +4293,7 @@ impl NinaDesktop {
 
         let main = v_flex()
             .flex_1()
-            .min_w(px(520.))
+            .min_w(px(440.))
             .h_full()
             .min_h(px(0.))
             .child(
@@ -4166,14 +5121,20 @@ impl NinaDesktop {
             ConfigRow::Group { group } => div()
                 .id(format!("config-group-{group}"))
                 .w_full()
-                .min_h(px(32.))
+                .min_h(px(28.))
                 .pt_2()
                 .pb_1()
-                .child(ui::section_title(group, config_group_color(group)))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(color::text_faint())
+                        .child(group),
+                )
                 .into_any_element(),
             ConfigRow::Field { field } => div()
                 .w_full()
-                .pb_2()
+                .pb_1()
                 .child(self.render_config_field_row(field, config, cx))
                 .into_any_element(),
         }
@@ -4188,37 +5149,49 @@ impl NinaDesktop {
         let selected = self.selected_config_key == field.key;
         let app = cx.entity().downgrade();
         let key = field.key;
-        let current_preview = compact_text(&config_value(config, key), 110);
-        let editor_color = config_editor_color(field.editor);
-        ui::compact_row(selected, editor_color)
+        let current_preview = compact_text(&config_value(config, key), 96);
+        ui::compact_row(selected, color::neutral())
             .id(format!("config-field-{}", field.key))
-            .min_h(px(68.))
+            .min_h(px(48.))
             .on_click(move |_, window, cx| {
                 let _ = app.update(cx, |state, cx| {
                     state.open_config_field(key, window, cx);
                 });
             })
-            .child(ui::icon_badge(config_group_icon(field.group), editor_color))
             .child(
                 v_flex()
                     .flex_1()
                     .min_w(px(0.))
                     .overflow_hidden()
                     .gap_1()
+                    .child(ui::row_title(field.label))
                     .child(
-                        h_flex()
-                            .gap_2()
-                            .flex_wrap()
-                            .child(ui::row_title(field.label))
-                            .child(status_pill(field.editor.label(), editor_color))
-                            .child(if field.restart_required {
-                                status_pill("restart", rgb(0xf97316))
-                            } else {
-                                div()
-                            }),
+                        div()
+                            .font_family("monospace")
+                            .text_size(px(12.))
+                            .text_color(color::text_faint())
+                            .child(field.key),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .max_w(relative(0.48))
+                    .child(
+                        div()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .truncate()
+                            .text_align(TextAlign::Right)
+                            .text_size(px(12.))
+                            .text_color(color::text_muted())
+                            .child(current_preview),
                     )
-                    .child(ui::row_meta(field.description))
-                    .child(ui::row_meta(current_preview)),
+                    .child(if field.restart_required {
+                        status_pill("restart", color::warning())
+                    } else {
+                        div()
+                    }),
             )
             .into_any_element()
     }
@@ -4238,63 +5211,67 @@ impl NinaDesktop {
         )
         .size_full();
 
+        let summary = v_flex()
+            .gap_2()
+            .pb_3()
+            .border_b_1()
+            .border_color(color::border())
+            .child(
+                h_flex()
+                    .gap_2()
+                    .flex_wrap()
+                    .child(status_pill(
+                        format!("profile {}", config.profile),
+                        color::text_muted(),
+                    ))
+                    .child(status_pill(
+                        format!("daemon {}:{}", config.daemon_host, config.daemon_port),
+                        color::text_muted(),
+                    ))
+                    .child(status_pill(
+                        format!("llm {} / {}", config.llm.provider, config.llm.model),
+                        color::text_muted(),
+                    ))
+                    .child(status_pill(
+                        format!("voice {}", compact_text(&self.dictation_status, 48)),
+                        if config.voice.global_hotkey_enabled {
+                            color::primary()
+                        } else {
+                            color::neutral()
+                        },
+                    ))
+                    .child(if self.loading.contains("config") {
+                        status_pill("loading", color::neutral())
+                    } else {
+                        div()
+                    }),
+            )
+            .child(ui::row_meta(format!(
+                "Config {}",
+                compact_text(&config.config_path, 120)
+            )));
+
         let settings = card(
             "Settings",
-            div()
+            v_flex()
                 .flex_1()
                 .min_h(px(0.))
-                .overflow_hidden()
-                .pr_1()
-                .child(settings_list),
+                .gap_3()
+                .child(summary)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h(px(0.))
+                        .overflow_hidden()
+                        .pr_1()
+                        .child(settings_list),
+                ),
         )
         .w_full()
         .h_full()
         .min_h(px(0.));
 
-        let runtime = card(
-            "Runtime",
-            v_flex()
-                .gap_2()
-                .child(ui::kv_row("Profile", config.profile.clone()))
-                .child(ui::kv_row("Config", config.config_path.clone()))
-                .child(ui::kv_row("Vault", config.vault_path.clone()))
-                .child(ui::kv_row("Database", config.database_path.clone()))
-                .child(ui::kv_row(
-                    "Daemon",
-                    format!("{}:{}", config.daemon_host, config.daemon_port),
-                ))
-                .child(ui::kv_row(
-                    "LLM",
-                    format!("{} / {}", config.llm.provider, config.llm.model),
-                ))
-                .child(ui::kv_row(
-                    "Research",
-                    format!(
-                        "{} / {}",
-                        config.research.provider, config.research.search_mode
-                    ),
-                ))
-                .child(ui::kv_row(
-                    "Voice",
-                    if config.voice.global_hotkey_enabled {
-                        format!(
-                            "{} ({})",
-                            state_text(&self.dictation_status),
-                            config.voice.global_hotkey
-                        )
-                    } else {
-                        "Disabled".to_owned()
-                    },
-                )),
-        )
-        .w_full();
-
-        ui::page_columns()
-            .h_full()
-            .min_h(px(0.))
-            .items_stretch()
-            .child(ui::content_region().h_full().min_h(px(0.)).child(settings))
-            .child(ui::side_rail().h_full().min_h(px(0.)).child(runtime))
+        v_flex().size_full().min_h(px(0.)).child(settings)
     }
 }
 
@@ -4383,9 +5360,9 @@ fn status_pill(text: impl Into<String>, color: Rgba) -> Div {
 
 fn meeting_status_color(status: &str) -> Rgba {
     match status {
-        "recording" | "failed" | "error" => rgb(0xef4444),
-        "completed" | "summarized" | "transcribed" => rgb(0x22c55e),
-        _ => rgb(0x38bdf8),
+        "recording" | "failed" | "error" => color::danger(),
+        "completed" | "summarized" | "transcribed" => color::success(),
+        _ => color::info(),
     }
 }
 
@@ -4396,11 +5373,74 @@ fn meeting_duration_text(meeting: &Meeting) -> String {
         .unwrap_or_else(|| "running".to_owned())
 }
 
+fn voice_status_color(status: &str) -> Rgba {
+    match status {
+        "recording" | "failed" | "error" => color::danger(),
+        "transcribed" => color::success(),
+        "transcribing" => color::warning(),
+        _ => color::info(),
+    }
+}
+
+fn dictation_window_title(status: &str) -> &'static str {
+    let lower = status.to_ascii_lowercase();
+    if lower.contains("recording") {
+        "Nina - Recording"
+    } else if lower.contains("stopping")
+        || lower.contains("transcribing")
+        || lower.contains("pasting")
+        || lower.contains("activated")
+    {
+        "Nina - Dictation"
+    } else {
+        "Nina"
+    }
+}
+
+fn voice_duration_text(item: &VoiceTranscription) -> String {
+    item.capture
+        .duration_seconds
+        .map(|duration| format!("{duration:.1}s"))
+        .unwrap_or_else(|| {
+            if item.capture.status == "recording" {
+                "recording".to_owned()
+            } else {
+                "unknown duration".to_owned()
+            }
+        })
+}
+
+fn voice_transcript_preview(item: &VoiceTranscription, max_chars: usize) -> String {
+    if let Some(text) = item
+        .transcript
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+    {
+        return compact_text(text, max_chars);
+    }
+    if item.transcript_missing {
+        return "Transcript file is missing.".to_owned();
+    }
+    if let Some(error) = item
+        .capture
+        .error
+        .as_deref()
+        .or(item.transcript_error.as_deref())
+    {
+        return compact_text(error, max_chars);
+    }
+    match item.capture.status.as_str() {
+        "recording" => "Recording is still active.".to_owned(),
+        "transcribing" => "Transcription is still running.".to_owned(),
+        _ => "No transcript text yet.".to_owned(),
+    }
+}
+
 fn integration_status_color(status: &str) -> Rgba {
     match status {
-        "ok" => rgb(0x22c55e),
-        "failed" => rgb(0xef4444),
-        _ => rgb(0xf97316),
+        "ok" => color::success(),
+        "failed" => color::danger(),
+        _ => color::warning(),
     }
 }
 
@@ -4424,10 +5464,6 @@ fn integration_last_text(integration: &IntegrationRecord) -> String {
 
 fn loading_panel(text: &str) -> Div {
     ui::loading_panel(text)
-}
-
-fn state_text(text: &str) -> String {
-    text.to_owned()
 }
 
 fn error_banner(error: ApiError) -> Banner {
@@ -4678,47 +5714,98 @@ fn option_text(value: &Option<String>) -> String {
     value.clone().unwrap_or_else(|| "never".to_owned())
 }
 
+fn hotkey_from_keystroke(keystroke: &Keystroke) -> Option<String> {
+    let key = hotkey_key_label(&keystroke.key)?;
+    if is_modifier_key(&keystroke.key) {
+        return None;
+    }
+    if !keystroke.modifiers.modified() && !is_standalone_hotkey_key(&key) {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    if keystroke.modifiers.control {
+        parts.push("Ctrl".to_owned());
+    }
+    if keystroke.modifiers.alt {
+        parts.push("Alt".to_owned());
+    }
+    if keystroke.modifiers.shift {
+        parts.push("Shift".to_owned());
+    }
+    if keystroke.modifiers.platform {
+        parts.push("Super".to_owned());
+    }
+    if keystroke.modifiers.function {
+        parts.push("Fn".to_owned());
+    }
+    parts.push(key);
+    Some(parts.join("+"))
+}
+
+fn hotkey_key_label(key: &str) -> Option<String> {
+    let normalized = key.trim();
+    let label = if normalized.is_empty() {
+        if key.len() == 1 && key.chars().all(|ch| ch.is_whitespace()) {
+            Some("Space".to_owned())
+        } else {
+            None
+        }
+    } else {
+        let lower = normalized.to_ascii_lowercase();
+        Some(match lower.as_str() {
+            "space" => "Space".to_owned(),
+            "enter" | "return" => "Enter".to_owned(),
+            "escape" | "esc" => "Esc".to_owned(),
+            "backspace" => "Backspace".to_owned(),
+            "delete" => "Delete".to_owned(),
+            "tab" => "Tab".to_owned(),
+            "left" => "Left".to_owned(),
+            "right" => "Right".to_owned(),
+            "up" => "Up".to_owned(),
+            "down" => "Down".to_owned(),
+            "home" => "Home".to_owned(),
+            "end" => "End".to_owned(),
+            "insert" => "Insert".to_owned(),
+            "pageup" => "PageUp".to_owned(),
+            "pagedown" => "PageDown".to_owned(),
+            other if other.len() == 1 => other.to_ascii_uppercase(),
+            other if is_function_key(other) => other.to_ascii_uppercase(),
+            other => other.to_owned(),
+        })
+    };
+    label
+}
+
+fn is_modifier_key(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "control"
+            | "ctrl"
+            | "alt"
+            | "shift"
+            | "platform"
+            | "super"
+            | "cmd"
+            | "win"
+            | "function"
+            | "fn"
+    )
+}
+
+fn is_standalone_hotkey_key(key: &str) -> bool {
+    is_function_key(&key.to_ascii_lowercase())
+}
+
+fn is_function_key(key: &str) -> bool {
+    let Some(number) = key.strip_prefix('f') else {
+        return false;
+    };
+    !number.is_empty() && number.chars().all(|ch| ch.is_ascii_digit())
+}
+
 fn config_field(key: &str) -> Option<&'static ConfigField> {
     CONFIG_FIELDS.iter().find(|field| field.key == key)
-}
-
-fn config_group_icon(group: &str) -> IconName {
-    match group {
-        "Storage" => IconName::FolderOpen,
-        "Daemon" => IconName::Cpu,
-        "LLM" => IconName::Bot,
-        "Research" => IconName::Globe,
-        "Schedule" => IconName::Calendar,
-        "Transcription" => IconName::BookOpen,
-        "Meetings" => IconName::Calendar,
-        "Voice" => IconName::BookOpen,
-        "Codex" => IconName::Cpu,
-        _ => IconName::Settings2,
-    }
-}
-
-fn config_group_color(group: &str) -> Rgba {
-    match group {
-        "Storage" => rgb(0x38bdf8),
-        "Daemon" => rgb(0xf97316),
-        "LLM" => rgb(0x22c55e),
-        "Research" => rgb(0xeab308),
-        "Schedule" => rgb(0x60a5fa),
-        "Transcription" => rgb(0xa855f7),
-        "Meetings" => rgb(0x22d3ee),
-        "Voice" => rgb(0xf43f5e),
-        "Codex" => color::primary(),
-        _ => color::text_muted(),
-    }
-}
-
-fn config_editor_color(editor: ConfigEditor) -> Rgba {
-    match editor {
-        ConfigEditor::Path => rgb(0x38bdf8),
-        ConfigEditor::Number => rgb(0x22c55e),
-        ConfigEditor::Choice(_) => color::primary(),
-        ConfigEditor::Text => color::text_muted(),
-    }
 }
 
 fn config_option_matches(current: &str, option: &str) -> bool {
@@ -4815,7 +5902,9 @@ fn build_config_patch(key: &str, raw: &str) -> Result<Value, String> {
         "voice.global_hotkey_enabled" => {
             json!({ "voice": { "global_hotkey_enabled": bool_value()? } })
         }
-        "voice.global_hotkey" => json!({ "voice": { "global_hotkey": raw } }),
+        "voice.global_hotkey" => {
+            json!({ "voice": { "global_hotkey": raw, "global_hotkey_enabled": true } })
+        }
         "voice.insert_mode" => json!({ "voice": { "insert_mode": raw } }),
         "voice.preserve_clipboard" => json!({ "voice": { "preserve_clipboard": bool_value()? } }),
         "codex.enabled" => json!({ "codex": { "enabled": bool_value()? } }),

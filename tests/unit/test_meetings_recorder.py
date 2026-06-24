@@ -147,6 +147,28 @@ def test_make_audio_source_mixed_uses_aligned_mixer(monkeypatch: pytest.MonkeyPa
     assert source._right is fake_system
 
 
+def test_soundcard_close_wait_uses_short_block_based_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = SoundcardBackend()
+    source._recorder_cm = object()
+    source._reader_thread = threading.Thread()
+    source._sample_rate = 16000
+    source._chunk_frames = 1600
+    waits: list[float | None] = []
+
+    def _wait(timeout: float | None = None) -> bool:
+        waits.append(timeout)
+        return False
+
+    monkeypatch.setattr(source._stream_finished, "wait", _wait)
+
+    source.close()
+
+    assert source._stop.is_set()
+    assert waits == [pytest.approx(0.35)]
+
+
 def test_make_audio_source_parec_raises() -> None:
     """`parec` is no longer a public source — users use `--device` to target a specific soundcard."""
     with pytest.raises(RecorderError, match="Unknown audio source"):

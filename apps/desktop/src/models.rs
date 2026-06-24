@@ -10,6 +10,18 @@ pub struct HealthResponse {
     pub status: String,
     pub profile: Option<String>,
     pub vault_path: Option<String>,
+    pub transcription: Option<TranscriptionHealth>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TranscriptionHealth {
+    pub backend: String,
+    pub model: String,
+    pub device: String,
+    pub compute_type: String,
+    pub available: bool,
+    pub detail: Option<String>,
+    pub provider_class: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -290,6 +302,34 @@ pub struct VoiceCapture {
     pub error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoiceTranscription {
+    #[serde(flatten)]
+    pub capture: VoiceCapture,
+    #[serde(default)]
+    pub transcript: Option<String>,
+    #[serde(default)]
+    pub transcript_missing: bool,
+    pub transcript_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoiceTranscriptionsResponse {
+    #[serde(default)]
+    pub transcriptions: Vec<VoiceTranscription>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoiceActiveResponse {
+    #[serde(default)]
+    pub capture: Option<VoiceCapture>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoiceTranscriptionsDeleteResponse {
+    pub deleted: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

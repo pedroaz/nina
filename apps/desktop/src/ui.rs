@@ -20,11 +20,11 @@ pub mod color {
     }
 
     pub fn sidebar_item_hover() -> Rgba {
-        rgb(0x1a2633)
+        rgb(0x18202a)
     }
 
     pub fn sidebar_item_active() -> Rgba {
-        rgb(0x2d210f)
+        rgb(0x161d25)
     }
 
     pub fn surface() -> Rgba {
@@ -60,7 +60,7 @@ pub mod color {
     }
 
     pub fn accent_soft() -> Rgba {
-        primary_soft()
+        surface_hover()
     }
 
     pub fn brand_orange() -> Rgba {
@@ -84,15 +84,35 @@ pub mod color {
     }
 
     pub fn primary_soft() -> Rgba {
-        rgb(0x32210d)
+        rgb(0x1a2028)
     }
 
     pub fn primary_soft_hover() -> Rgba {
-        rgb(0x3d2a12)
+        rgb(0x202936)
     }
 
     pub fn primary_soft_active() -> Rgba {
-        rgb(0x493216)
+        rgb(0x25303c)
+    }
+
+    pub fn success() -> Rgba {
+        rgb(0x22c55e)
+    }
+
+    pub fn warning() -> Rgba {
+        rgb(0xf59e0b)
+    }
+
+    pub fn danger() -> Rgba {
+        rgb(0xef4444)
+    }
+
+    pub fn info() -> Rgba {
+        rgb(0x38bdf8)
+    }
+
+    pub fn neutral() -> Rgba {
+        text_faint()
     }
 }
 
@@ -117,7 +137,7 @@ pub fn apply_nina_theme(cx: &mut App) {
     theme.button_active = primary_soft_active;
     theme.button_hover = primary_soft_hover;
     theme.ring = primary;
-    theme.selection = Hsla::from(rgba(0xf5a62366));
+    theme.selection = Hsla::from(rgba(0xf5a62333));
     theme.sidebar_primary = primary_soft;
     theme.sidebar_primary_foreground = primary;
     theme.link = primary;
@@ -205,15 +225,16 @@ pub fn small_text(text: impl Into<String>) -> Div {
         .child(text.into())
 }
 
-pub fn status_pill(text: impl Into<String>, color: Rgba) -> Div {
+pub fn status_pill(text: impl Into<String>, accent: Rgba) -> Div {
     div()
         .px_2()
         .py_1()
         .rounded(px(999.))
         .border_1()
-        .border_color(color)
+        .border_color(color::border())
+        .bg(color::surface_raised())
         .text_size(px(12.))
-        .text_color(color)
+        .text_color(accent)
         .child(text.into())
 }
 
@@ -384,7 +405,7 @@ pub fn sidebar_brand(collapsed: bool, toggle_icon: IconName) -> Div {
     let mark = div()
         .size(px(36.))
         .rounded(px(8.))
-        .bg(rgb(0x211607))
+        .bg(color::primary_soft())
         .border_1()
         .border_color(color::brand_orange())
         .flex()
@@ -738,16 +759,16 @@ pub fn mono_block(text: impl Into<String>) -> Div {
         .child(text.into())
 }
 
-pub fn icon_badge(icon: IconName, color: Rgba) -> Div {
+pub fn icon_badge(icon: IconName, accent: Rgba) -> Div {
     div()
         .size(px(32.))
         .rounded(px(8.))
         .bg(color::surface_raised())
         .border_1()
-        .border_color(color)
+        .border_color(color::border())
         .flex()
         .items_center()
         .justify_center()
         .flex_shrink_0()
-        .child(Icon::new(icon).small().text_color(color))
+        .child(Icon::new(icon).small().text_color(accent))
 }

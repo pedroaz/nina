@@ -19,6 +19,12 @@ from nina_core.meetings.recorder import (
 
 from .service import VoiceCaptureService
 
+VOICE_DEFAULT_SAMPLE_RATE = 16000
+VOICE_DEFAULT_CHANNELS = 1
+VOICE_DEFAULT_GAIN = 1.0
+VOICE_DEFAULT_AUTO_NORMALIZE = False
+VOICE_DEFAULT_NOISE_REDUCTION = "off"
+
 
 @dataclass(slots=True)
 class VoiceRecordingRequest:
@@ -77,22 +83,20 @@ class VoiceRecordingManager:
         request: VoiceRecordingRequest,
     ) -> dict[str, Any]:
         source_name = (request.source or config.meetings.default_source or "mic").strip() or "mic"
-        sample_rate = request.sample_rate or config.meetings.sample_rate
-        channels = request.channels or config.meetings.channels
-        gain = request.gain if request.gain is not None else config.meetings.default_gain
+        sample_rate = request.sample_rate or VOICE_DEFAULT_SAMPLE_RATE
+        channels = request.channels or VOICE_DEFAULT_CHANNELS
+        gain = request.gain if request.gain is not None else VOICE_DEFAULT_GAIN
         auto_normalize = (
             request.auto_normalize
             if request.auto_normalize is not None
-            else config.meetings.auto_normalize
+            else VOICE_DEFAULT_AUTO_NORMALIZE
         )
         normalize_target_dbfs = (
             request.normalize_target_dbfs
             if request.normalize_target_dbfs is not None
             else config.meetings.normalize_target_dbfs
         )
-        noise_reduction = (
-            (request.noise_reduction or config.meetings.noise_reduction or "off").strip().lower()
-        )
+        noise_reduction = (request.noise_reduction or VOICE_DEFAULT_NOISE_REDUCTION).strip().lower()
         device = request.device
         mic_device = request.mic_device
         system_device = request.system_device

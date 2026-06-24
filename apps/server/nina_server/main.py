@@ -52,6 +52,7 @@ def main() -> None:
             port=config.daemon_port,
             log_config=log_config,
             log_level=resolve_log_level(config.log_level),
+            access_log=False,
         )
     finally:
         runtime.shutdown_services()

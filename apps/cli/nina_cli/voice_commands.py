@@ -14,6 +14,42 @@ from .output import console, print_json
 voice_app = typer.Typer(help="Voice capture and local transcription.")
 
 
+def _run_clipboard_command(command: list[str], binary: str, text: str) -> tuple[bool, str | None]:
+    argv = [binary, *command[1:]]
+    if command[0] in {"xclip", "xsel"}:
+        try:
+            proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            proc.communicate(text, timeout=5)
+        except subprocess.TimeoutExpired:
+            return False, f"{command[0]} timed out after 5s"
+        except Exception as exc:
+            return False, str(exc)
+        if proc.returncode == 0:
+            return True, None
+        return False, f"{command[0]} exited with {proc.returncode}"
+
+    try:
+        proc = subprocess.run(
+            argv,
+            input=text,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except Exception as exc:
+        return False, str(exc)
+    if proc.returncode == 0:
+        return True, None
+    return False, proc.stderr.strip() or f"{command[0]} exited with {proc.returncode}"
+
+
 def _copy_to_clipboard(text: str) -> tuple[bool, str | None]:
     candidates: list[list[str]] = []
     if sys.platform == "darwin":
@@ -29,22 +65,10 @@ def _copy_to_clipboard(text: str) -> tuple[bool, str | None]:
         binary = shutil.which(command[0])
         if binary is None:
             continue
-        try:
-            proc = subprocess.run(
-                [binary, *command[1:]],
-                input=text,
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=5,
-            )
-        except Exception as exc:
-            last_error = str(exc)
-            continue
-        if proc.returncode == 0:
+        copied, error = _run_clipboard_command(command, binary, text)
+        if copied:
             return True, None
-        detail = proc.stderr.strip() or f"{command[0]} exited with {proc.returncode}"
-        last_error = detail
+        last_error = error
     return False, last_error or "no clipboard command found"
 
 

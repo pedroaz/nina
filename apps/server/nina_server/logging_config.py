@@ -5,7 +5,6 @@ from logging.config import dictConfig
 from typing import Any
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
-ACCESS_LOG_FORMAT = '%(asctime)s %(levelname)s %(name)s %(client_addr)s - "%(request_line)s" %(status_code)s'
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -24,12 +23,6 @@ def build_log_config(level: str) -> dict[str, Any]:
                 "format": LOG_FORMAT,
                 "datefmt": DATE_FORMAT,
             },
-            "access": {
-                "()": "uvicorn.logging.AccessFormatter",
-                "fmt": ACCESS_LOG_FORMAT,
-                "datefmt": DATE_FORMAT,
-                "use_colors": False,
-            },
         },
         "handlers": {
             "default": {
@@ -37,10 +30,8 @@ def build_log_config(level: str) -> dict[str, Any]:
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stderr",
             },
-            "access": {
-                "formatter": "access",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
+            "null": {
+                "class": "logging.NullHandler",
             },
         },
         "root": {
@@ -57,8 +48,8 @@ def build_log_config(level: str) -> dict[str, Any]:
                 "level": resolved_level,
             },
             "uvicorn.access": {
-                "handlers": ["access"],
-                "level": resolved_level,
+                "handlers": ["null"],
+                "level": logging.WARNING,
                 "propagate": False,
             },
         },

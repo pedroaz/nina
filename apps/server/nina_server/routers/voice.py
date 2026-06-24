@@ -62,6 +62,37 @@ async def list_voice(
     return {"captures": service.list(status=status, limit=limit)}
 
 
+@router.get("/voice/transcriptions")
+async def list_voice_transcriptions(
+    request: Request,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    service = get_voice_service(request)
+    return {"transcriptions": service.list_transcriptions(status=status, limit=limit)}
+
+
+@router.delete("/voice/transcriptions")
+async def delete_voice_transcriptions(
+    request: Request,
+    status: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    service = get_voice_service(request)
+    deleted = service.delete_transcriptions(status=status, limit=limit)
+    return {"deleted": deleted}
+
+
+@router.get("/voice/active")
+async def active_voice(request: Request) -> dict[str, Any]:
+    service = get_voice_service(request)
+    recorder = get_voice_recorder(request)
+    capture_id = recorder.active_capture_id()
+    if capture_id is None:
+        return {"capture": None}
+    return {"capture": service.get(capture_id)}
+
+
 @router.get("/voice/{capture_id}")
 async def get_voice(request: Request, capture_id: str) -> dict[str, Any]:
     service = get_voice_service(request)
@@ -122,5 +153,6 @@ async def transcribe_voice(
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             return await loop.run_in_executor(executor, _run)
     except RuntimeError as exc:
-        status_code = 404 if "not found" in str(exc).lower() else 400
-        raise HTTPException(status_code=status_code, detail=str(exc))
+        message = str(exc)
+        status_code = 404 if message.lower().startswith("voice capture not found:") else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc

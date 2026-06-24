@@ -591,7 +591,16 @@ def test_config_endpoint_updates_runtime_and_reports_restart_requirement(
 
     health = api_client.get("/health", headers=auth_headers)
     assert health.status_code == 200
-    assert health.json()["vault_path"] == str(custom_vault)
+    health_payload = health.json()
+    assert health_payload["vault_path"] == str(custom_vault)
+    assert health_payload["transcription"]["backend"]
+    assert isinstance(health_payload["transcription"]["available"], bool)
+
+    status = api_client.get("/status", headers=auth_headers)
+    assert status.status_code == 200
+    status_payload = status.json()
+    assert status_payload["python_executable"]
+    assert status_payload["transcription"]["backend"] == health_payload["transcription"]["backend"]
 
 
 def test_daemon_logs_endpoint_tails_and_filters_task_lines(

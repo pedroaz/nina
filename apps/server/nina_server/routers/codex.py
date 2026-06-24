@@ -137,6 +137,7 @@ def _event_actions(payload: CodexEventRequest, task: Any) -> tuple[dict[str, Any
     task_type = payload.task_type or getattr(task, "task_type", None)
     current_stage = getattr(task, "pipeline_stage", None) or "created"
     explicit_stage_action = payload.set_pipeline_stage is not None
+    explicit_error_action = "set_pipeline_error" in payload.model_fields_set
 
     if payload.set_status is not None and payload.set_status not in TASK_AGENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid setStatus: {payload.set_status}")
@@ -163,7 +164,7 @@ def _event_actions(payload: CodexEventRequest, task: Any) -> tuple[dict[str, Any
     if payload.set_task_type is not None:
         update_kwargs["task_type"] = payload.set_task_type
 
-    if payload.set_pipeline_error is not None:
+    if payload.set_pipeline_error is not None or explicit_error_action:
         update_kwargs["pipeline_error"] = payload.set_pipeline_error
 
     if payload.set_pipeline_stage is not None:
@@ -172,8 +173,11 @@ def _event_actions(payload: CodexEventRequest, task: Any) -> tuple[dict[str, Any
             update_kwargs["pipeline_rework_count"] = (task.pipeline_rework_count or 0) + 1
         if payload.set_pipeline_stage != "blocked" and "set_pipeline_error" not in payload.model_fields_set:
             update_kwargs["pipeline_error"] = None
-
-    if not explicit_stage_action and task_type in {"coding", "reviewing"}:
+    elif task_type in {"coding", "reviewing"} and current_stage == "blocked":
+        update_kwargs["pipeline_stage"] = "exploration"
+        if "set_pipeline_error" not in payload.model_fields_set:
+            update_kwargs["pipeline_error"] = None
+    elif not explicit_stage_action and task_type in {"coding", "reviewing"}:
         raise HTTPException(status_code=400, detail=f"done callback for {task_type} requires setPipelineStage")
 
     return update_kwargs, payload.create_next_task_type

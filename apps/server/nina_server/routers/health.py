@@ -1,15 +1,34 @@
 from __future__ import annotations
 
+import sys
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Request
 
 from nina_core.config import get_log_path
+from nina_core.llm.transcription import check_transcription_status
 
 from ..dependencies import _request_config, _request_config_dir
 
 
 router = APIRouter()
+
+
+def _transcription_status_payload(config: Any) -> dict[str, Any]:
+    try:
+        return asdict(check_transcription_status(config.transcription))
+    except Exception as exc:  # noqa: BLE001
+        transcription = getattr(config, "transcription", None)
+        return {
+            "backend": getattr(transcription, "backend", "unknown"),
+            "model": getattr(transcription, "model", "unknown"),
+            "device": getattr(transcription, "device", "unknown"),
+            "compute_type": getattr(transcription, "compute_type", "unknown"),
+            "available": False,
+            "detail": str(exc),
+            "provider_class": None,
+        }
 
 
 @router.get("/health")
@@ -19,6 +38,7 @@ async def health(request: Request) -> dict[str, Any]:
         "status": "ok",
         "profile": config.profile,
         "vault_path": config.vault_path,
+        "transcription": _transcription_status_payload(config),
     }
 
 
@@ -37,6 +57,8 @@ async def status(request: Request) -> dict[str, Any]:
         "database_path": config.database_path,
         "daemon_host": config.daemon_host,
         "daemon_port": config.daemon_port,
+        "python_executable": sys.executable,
+        "transcription": _transcription_status_payload(config),
         "watcher_enabled": bool(watcher is not None),
         "scheduler_running": bool(getattr(getattr(scheduler, "scheduler", None), "running", False)),
         "codex": codex_status,

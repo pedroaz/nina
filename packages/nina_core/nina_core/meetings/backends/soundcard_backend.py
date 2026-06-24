@@ -203,9 +203,8 @@ class SoundcardBackend:
         # Best-effort: wait for the reader to finish so the caller knows
         # the PulseAudio stream has been released. Bounded so we don't
         # hang if the reader is stuck.
-        self._stream_finished.wait(
-            timeout=max(1.5, self._chunk_frames / max(self._sample_rate, 1) * 2 + 1.0)
-        )
+        block_seconds = self._chunk_frames / max(self._sample_rate, 1)
+        self._stream_finished.wait(timeout=min(1.0, max(0.35, block_seconds * 2 + 0.15)))
 
     def _teardown_recorder(self) -> None:
         """Tear down the PulseAudio stream. Must be called on the reader

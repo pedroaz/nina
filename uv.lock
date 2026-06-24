@@ -499,7 +499,7 @@ version = "0.1.4"
 source = { virtual = "." }
 dependencies = [
     { name = "nina-cli" },
-    { name = "nina-core" },
+    { name = "nina-core", extra = ["transcription"] },
     { name = "nina-server" },
 ]
 
@@ -517,7 +517,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "nina-cli", editable = "apps/cli" },
-    { name = "nina-core", editable = "packages/nina_core" },
+    { name = "nina-core", extras = ["transcription"], editable = "packages/nina_core" },
     { name = "nina-server", editable = "apps/server" },
 ]
 

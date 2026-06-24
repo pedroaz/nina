@@ -7,7 +7,7 @@ requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "Nina Team" }]
 dependencies = [
-    "nina-core",
+    "nina-core[transcription]",
     "nina-server",
     "nina-cli",
 ]

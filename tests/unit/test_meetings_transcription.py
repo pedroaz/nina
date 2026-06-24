@@ -32,6 +32,51 @@ def test_build_transcription_provider_returns_null_when_backend_null(
     assert isinstance(provider, NullTranscriptionProvider)
 
 
+def test_faster_whisper_provider_reuses_cached_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    from nina_core.llm import transcription as transcription_module
+
+    transcription_module._clear_faster_whisper_model_cache()
+
+    class FakeSegment:
+        start = 0.0
+        end = 0.25
+        text = " hello"
+
+    class FakeWhisperModel:
+        init_count = 0
+
+        def __init__(self, model: str, *, device: str, compute_type: str) -> None:
+            FakeWhisperModel.init_count += 1
+            self.model = model
+            self.device = device
+            self.compute_type = compute_type
+
+        def transcribe(
+            self, audio_path: str, **_kwargs: object
+        ) -> tuple[list[FakeSegment], object]:
+            return [FakeSegment()], SimpleNamespace(language="en")
+
+    monkeypatch.setitem(
+        sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel)
+    )
+    audio_path = tmp_path / "voice.wav"
+    audio_path.write_bytes(b"not-real-audio")
+
+    provider_a = FasterWhisperProvider(model="tiny", device="cpu", compute_type="int8")
+    provider_b = FasterWhisperProvider(model="tiny", device="cpu", compute_type="int8")
+
+    assert provider_a.transcribe(audio_path).text == "hello"
+    assert provider_b.transcribe(audio_path).text == "hello"
+    assert FakeWhisperModel.init_count == 1
+
+    transcription_module._clear_faster_whisper_model_cache()
+
+
 def test_faster_whisper_provider_raises_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     import builtins
 
@@ -46,6 +91,28 @@ def test_faster_whisper_provider_raises_when_missing(monkeypatch: pytest.MonkeyP
     provider = FasterWhisperProvider()
     with pytest.raises(RuntimeError):
         provider.transcribe(Path("/tmp/missing.wav"))
+
+
+def test_build_local_whisper_reports_missing_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import builtins
+    import shutil
+
+    from nina_core.config.settings import TranscriptionConfig
+
+    real_import = builtins.__import__
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "faster_whisper" or name.startswith("faster_whisper."):
+            raise ImportError("not available")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    with pytest.raises(RuntimeError, match="faster-whisper is not installed"):
+        build_transcription_provider(TranscriptionConfig(backend="local_whisper"))
 
 
 def test_whisper_cli_provider_raises_when_missing(

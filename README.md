@@ -93,7 +93,7 @@ Package boundaries:
 - Codex CLI, for the default LLM/research provider
 - An Obsidian-compatible vault path, created automatically by `nina init` if omitted
 
-On Linux, the GPUI desktop client links against native `xcb`, `xkbcommon`, and `xkbcommon-x11` runtime libraries. Desktop global dictation uses the XDG Desktop Portal Global Shortcuts API. Clipboard paste insertion expects `wl-clipboard` plus `wtype` on Wayland, with `xclip`/`xsel` and `xdotool` fallbacks on X11.
+On Linux, the GPUI desktop client links against native `xcb`, `xkbcommon`, and `xkbcommon-x11` runtime libraries. Desktop global dictation uses the XDG Desktop Portal Global Shortcuts API while Nina Desktop is open, with the Nina window/taskbar title showing recording state. Clipboard paste insertion expects `wl-clipboard` plus `ydotool` on Wayland, with `xclip`/`xsel`, `xdotool`, and `xte` fallbacks on X11.
 
 Optional meeting and voice transcription support installs `faster-whisper` through the `nina-core[transcription]` extra or `nina setup transcription`.
 
@@ -176,7 +176,7 @@ nina mt e <meeting-id>
 nina mt o <meeting-id>
 ```
 
-Record a voice clip and copy the transcript:
+Record a voice clip and copy the transcript. Voice captures default to 16 kHz mono with no post-processing for local transcription speed unless a client explicitly overrides the recording options:
 
 ```bash
 nina vc r --copy
@@ -190,6 +190,8 @@ nina config voice-global-hotkey-enabled true
 nina config voice-global-hotkey "Ctrl+Alt+Space"
 make desktop
 ```
+
+The desktop Settings page can capture and register the global hotkey. The Transcriptions tab lists recent CLI and desktop captures, can stop a recovered global recording, and can clean recent non-active recordings to reclaim space.
 
 Useful compact aliases include `nina d` for daemon commands, `nina tk` for tickets, `nina mt` for meetings, `nina vc` for voice capture, `nina c` for config, `nina ll` for LLM, `nina rch` for research, and `nina s` for search.
 

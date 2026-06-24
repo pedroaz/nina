@@ -16,7 +16,9 @@ use crate::models::{
     RepositoryCreateRequest, RepositoryWorktree, ResearchRunRequest, ResearchRunResult,
     RuntimeState, SessionCreateRequest, SessionMessageCreateRequest, SessionRecord,
     SessionSendResponse, TaskCreateRequest, TaskGroup, TaskRunRequest, TaskUpdateRequest, Ticket,
-    VoiceCapture, VoiceRecordRequest, VoiceTranscribeRequest, VoiceTranscribeResult, WorkflowInfo,
+    VoiceActiveResponse, VoiceCapture, VoiceRecordRequest, VoiceTranscribeRequest,
+    VoiceTranscribeResult, VoiceTranscription, VoiceTranscriptionsDeleteResponse,
+    VoiceTranscriptionsResponse, WorkflowInfo,
 };
 
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -227,6 +229,43 @@ impl ApiClient {
 
     pub fn delete_meeting(&self, meeting_id: &str) -> ApiResult<Value> {
         self.delete(&format!("/meetings/{}", encode(meeting_id)))
+    }
+
+    pub fn voice_transcriptions(
+        &self,
+        status: Option<&str>,
+        limit: usize,
+    ) -> ApiResult<Vec<VoiceTranscription>> {
+        let mut path = format!("/voice/transcriptions?limit={limit}");
+        if let Some(status) = status {
+            if !status.trim().is_empty() {
+                path.push_str("&status=");
+                path.push_str(&encode(status));
+            }
+        }
+        self.get::<VoiceTranscriptionsResponse>(&path)
+            .map(|response| response.transcriptions)
+    }
+
+    pub fn delete_voice_transcriptions(
+        &self,
+        status: Option<&str>,
+        limit: usize,
+    ) -> ApiResult<usize> {
+        let mut path = format!("/voice/transcriptions?limit={limit}");
+        if let Some(status) = status {
+            if !status.trim().is_empty() {
+                path.push_str("&status=");
+                path.push_str(&encode(status));
+            }
+        }
+        self.delete::<VoiceTranscriptionsDeleteResponse>(&path)
+            .map(|response| response.deleted)
+    }
+
+    pub fn active_voice(&self) -> ApiResult<Option<VoiceCapture>> {
+        self.get::<VoiceActiveResponse>("/voice/active")
+            .map(|response| response.capture)
     }
 
     pub fn record_voice(&self, title: String) -> ApiResult<VoiceCapture> {

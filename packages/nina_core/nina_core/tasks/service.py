@@ -257,7 +257,7 @@ class TaskService:
             task.pipeline_error = cast(str | None, pipeline_error)
         if pipeline_rework_count is not None:
             task.pipeline_rework_count = _validate_pipeline_rework_count(pipeline_rework_count)
-        if pipeline_stage is not None and pipeline_stage not in {"blocked", "done"}:
+        if pipeline_stage is not None and pipeline_stage != "blocked":
             task.pipeline_error = None
         if repository_id is not None:
             task.repository_id = target_repository_id

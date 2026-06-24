@@ -462,6 +462,19 @@ def test_status_reports_offline_daemon_and_configuration_paths(
             },
         )(),
     )
+    monkeypatch.setattr(
+        main_module,
+        "check_transcription_status",
+        lambda _config: SimpleNamespace(
+            backend="local_whisper",
+            model="small",
+            device="cpu",
+            compute_type="int8",
+            available=False,
+            detail="faster-whisper missing",
+            provider_class=None,
+        ),
+    )
 
     result = runner.invoke(app, ["status"])
 
@@ -1007,13 +1020,23 @@ def test_voice_clipboard_tries_remaining_backends_after_failure(monkeypatch) -> 
 
     def fake_run(argv: list[str], **_kwargs: Any) -> SimpleNamespace:
         calls.append(argv)
-        if argv[0].endswith("wl-copy"):
-            return SimpleNamespace(returncode=1, stderr="wayland unavailable")
-        return SimpleNamespace(returncode=0, stderr="")
+        return SimpleNamespace(returncode=1, stderr="wayland unavailable")
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, argv: list[str], **_kwargs: Any) -> None:
+            calls.append(argv)
+
+        def communicate(self, input: str, timeout: int) -> tuple[str, str]:
+            assert input == "paste me"
+            assert timeout == 5
+            return "", ""
 
     monkeypatch.setattr(voice_module.sys, "platform", "linux")
     monkeypatch.setattr(voice_module.shutil, "which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(voice_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(voice_module.subprocess, "Popen", FakePopen)
 
     copied, error = voice_module._copy_to_clipboard("paste me")
 
@@ -1022,6 +1045,44 @@ def test_voice_clipboard_tries_remaining_backends_after_failure(monkeypatch) -> 
     assert calls == [
         ["/usr/bin/wl-copy"],
         ["/usr/bin/xclip", "-selection", "clipboard"],
+    ]
+
+
+def test_voice_clipboard_tries_xsel_after_xclip_timeout(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from nina_cli import voice_commands as voice_module
+
+    calls: list[list[str]] = []
+
+    class FakePopen:
+        returncode = 0
+
+        def __init__(self, argv: list[str], **_kwargs: Any) -> None:
+            self.argv = argv
+            calls.append(argv)
+
+        def communicate(self, input: str, timeout: int) -> tuple[str, str]:
+            assert input == "paste me"
+            assert timeout == 5
+            if self.argv[0].endswith("xclip"):
+                raise voice_module.subprocess.TimeoutExpired(cmd=self.argv, timeout=timeout)
+            return "", ""
+
+    def fake_which(binary: str) -> str | None:
+        if binary in {"xclip", "xsel"}:
+            return f"/usr/bin/{binary}"
+        return None
+
+    monkeypatch.setattr(voice_module.sys, "platform", "linux")
+    monkeypatch.setattr(voice_module.shutil, "which", fake_which)
+    monkeypatch.setattr(voice_module.subprocess, "Popen", FakePopen)
+
+    copied, error = voice_module._copy_to_clipboard("paste me")
+
+    assert copied is True
+    assert error is None
+    assert calls == [
+        ["/usr/bin/xclip", "-selection", "clipboard"],
+        ["/usr/bin/xsel", "--clipboard", "--input"],
     ]
 
 

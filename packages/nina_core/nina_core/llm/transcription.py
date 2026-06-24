@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import uuid
 import warnings
 from contextlib import contextmanager
@@ -43,6 +44,45 @@ def _suppress_hf_unauth_warning() -> Any:
             category=UserWarning,
         )
         yield
+
+
+@dataclass
+class _CachedFasterWhisperModel:
+    model: Any
+    lock: threading.Lock
+
+
+_FASTER_WHISPER_MODELS: dict[tuple[str, str, str], _CachedFasterWhisperModel] = {}
+_FASTER_WHISPER_MODELS_LOCK = threading.Lock()
+
+
+def _clear_faster_whisper_model_cache() -> None:
+    with _FASTER_WHISPER_MODELS_LOCK:
+        _FASTER_WHISPER_MODELS.clear()
+
+
+def _get_faster_whisper_model(
+    model: str,
+    device: str,
+    compute_type: str,
+) -> _CachedFasterWhisperModel:
+    try:
+        from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise RuntimeError(
+            "faster-whisper is not installed. Install with `pip install nina-core[transcription]`."
+        ) from exc
+
+    key = (model, device, compute_type)
+    with _FASTER_WHISPER_MODELS_LOCK:
+        cached = _FASTER_WHISPER_MODELS.get(key)
+        if cached is not None:
+            return cached
+        with _suppress_hf_unauth_warning():
+            whisper = WhisperModel(model, device=device, compute_type=compute_type)
+        cached = _CachedFasterWhisperModel(model=whisper, lock=threading.Lock())
+        _FASTER_WHISPER_MODELS[key] = cached
+        return cached
 
 
 @dataclass
@@ -101,31 +141,27 @@ class FasterWhisperProvider(TranscriptionProvider):
         self.language = language
 
     def transcribe(self, audio_path: Path, *, language: str | None = None) -> TranscriptResult:
-        try:
-            from faster_whisper import WhisperModel  # type: ignore[import-untyped]
-        except ImportError as exc:
-            raise RuntimeError(
-                "faster-whisper is not installed. Install with `pip install nina-core[transcription]`."
-            ) from exc
         lang = language or self.language
-        with _suppress_hf_unauth_warning():
-            whisper = WhisperModel(self.model, device=self.device, compute_type=self.compute_type)
-        segments_iter, info = whisper.transcribe(
-            str(audio_path),
-            language=lang,
-            vad_filter=True,
-            word_timestamps=False,
-        )
+        cached = _get_faster_whisper_model(self.model, self.device, self.compute_type)
         segments: list[TranscriptSegment] = []
         text_parts: list[str] = []
         duration: float | None = None
-        for seg in segments_iter:
-            text_parts.append(seg.text.strip())
-            segments.append(
-                TranscriptSegment(start=float(seg.start), end=float(seg.end), text=seg.text.strip())
+        with cached.lock:
+            segments_iter, info = cached.model.transcribe(
+                str(audio_path),
+                language=lang,
+                vad_filter=True,
+                word_timestamps=False,
             )
-            if duration is None or float(seg.end) > duration:
-                duration = float(seg.end)
+            for seg in segments_iter:
+                text_parts.append(seg.text.strip())
+                segments.append(
+                    TranscriptSegment(
+                        start=float(seg.start), end=float(seg.end), text=seg.text.strip()
+                    )
+                )
+                if duration is None or float(seg.end) > duration:
+                    duration = float(seg.end)
         text = " ".join(part for part in text_parts if part).strip()
         return TranscriptResult(
             text=text,
@@ -222,8 +258,14 @@ def build_transcription_provider(
                 compute_type=cfg.compute_type,
                 language=cfg.language,
             )
-        except ImportError:
-            return WhisperCliProvider(model=cfg.model, language=cfg.language)
+        except ImportError as exc:
+            if shutil.which("whisper") is not None:
+                return WhisperCliProvider(model=cfg.model, language=cfg.language)
+            raise RuntimeError(
+                "faster-whisper is not installed and the `whisper` CLI is not on PATH. "
+                "Run `nina setup transcription` or "
+                f"`uv pip install --python {os.sys.executable} faster-whisper`."
+            ) from exc
     if name in {"whisper_cli", "whisper"}:
         return WhisperCliProvider(model=cfg.model, language=cfg.language)
     raise RuntimeError(f"Unsupported transcription backend: {cfg.backend}")

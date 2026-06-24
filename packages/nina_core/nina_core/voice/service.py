@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -187,6 +188,74 @@ class VoiceCaptureService:
         finally:
             db.close()
 
+    def list_transcriptions(
+        self, status: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        captures = self.list(status=status, limit=limit)
+        for capture in captures:
+            transcript_path = capture.get("transcript_path")
+            capture["transcript"] = None
+            capture["transcript_missing"] = False
+            capture["transcript_error"] = None
+            if not transcript_path:
+                continue
+            path = Path(transcript_path)
+            try:
+                capture["transcript"] = path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                capture["transcript_missing"] = True
+            except OSError as exc:
+                capture["transcript_missing"] = True
+                capture["transcript_error"] = str(exc)
+        return captures
+
+    def _delete_path(self, path: Path) -> None:
+        try:
+            path.unlink()
+        except OSError:
+            return
+
+    def delete_transcriptions(
+        self,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> int:
+        db = self._session()
+        try:
+            query = db.query(VoiceCapture)
+            if status:
+                query = query.filter(VoiceCapture.status == status)
+            captures = query.order_by(VoiceCapture.started_at.desc()).limit(max(1, limit)).all()
+
+            deleted = 0
+            for capture in captures:
+                if capture.audio_path:
+                    audio_path = Path(capture.audio_path)
+                    self._delete_path(audio_path)
+                    segments_path = audio_path.with_suffix(".segments.json")
+                    self._delete_path(segments_path)
+
+                if capture.transcript_path:
+                    self._delete_path(Path(capture.transcript_path))
+
+                if capture.transcript_note_path:
+                    note_full = self.vault_path / capture.transcript_note_path
+                    if note_full.is_file():
+                        deleted_dir = self.vault_path / "System" / "Deleted"
+                        deleted_dir.mkdir(parents=True, exist_ok=True)
+                        try:
+                            os.rename(note_full, deleted_dir / note_full.name)
+                        except OSError:
+                            pass
+
+                db.delete(capture)
+                deleted += 1
+
+            db.commit()
+            return deleted
+        finally:
+            db.close()
+
     def get(self, capture_id: str) -> dict[str, Any] | None:
         db = self._session()
         try:
@@ -213,19 +282,20 @@ class VoiceCaptureService:
             raise RuntimeError(f"Audio file missing: {audio_path}")
 
         self.update_status(capture_id, status="transcribing")
-        provider = build_transcription_provider(config=transcription_config)
+        provider: Any | None = None
         try:
+            provider = build_transcription_provider(config=transcription_config)
             result = provider.transcribe(audio_path)
         except Exception as exc:
             failed = TranscriptResult(
                 text="",
                 segments=[],
                 language=None,
-                model=getattr(provider, "model", "unknown"),
+                model=getattr(provider, "model", getattr(transcription_config, "model", "unknown")),
             )
             log_transcription_interaction(
                 self.db_path,
-                provider_name=type(provider).__name__,
+                provider_name=type(provider).__name__ if provider is not None else "unavailable",
                 model=failed.model,
                 audio_path=str(audio_path),
                 result=failed,
