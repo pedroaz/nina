@@ -2,6 +2,7 @@ mod actions;
 mod api;
 mod app;
 mod assets;
+mod dictation;
 mod models;
 mod ui;
 

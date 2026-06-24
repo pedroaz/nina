@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     process::Command,
+    time::{Duration, Instant},
 };
 
 use gpui::InteractiveElement as _;
@@ -18,6 +19,7 @@ use serde_json::{json, Value};
 use crate::{
     actions::{ClearConversation, CloseModal, ToggleSidebar, DESKTOP_CONTEXT},
     api::{ApiClient, ApiError, ApiResult},
+    dictation::GlobalDictationController,
     models::{
         CodexTaskLogsResponse, ConfigSnapshot, ConfigUpdateResponse, HealthResponse,
         IntegrationCredentialField, IntegrationCredentialsUpdate, IntegrationRecord,
@@ -27,6 +29,8 @@ use crate::{
     },
     ui::{self, color},
 };
+
+const TASK_BOARD_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 const TASK_TYPE_ORDER: &[&str] = &[
     "unclassified",
@@ -45,6 +49,7 @@ const CONFIG_GROUPS: &[&str] = &[
     "Research",
     "Transcription",
     "Meetings",
+    "Voice",
     "Codex",
 ];
 const LOG_LEVEL_OPTIONS: &[&str] = &["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
@@ -65,6 +70,7 @@ const MEETING_SOURCE_OPTIONS: &[&str] = &["mic", "system", "mixed"];
 const MEETING_CHANNEL_OPTIONS: &[&str] = &["1", "2"];
 const NOISE_REDUCTION_OPTIONS: &[&str] = &["off", "ffmpeg"];
 const BOOL_OPTIONS: &[&str] = &["true", "false"];
+const VOICE_INSERT_MODE_OPTIONS: &[&str] = &["clipboard_paste"];
 const CONFIG_FIELDS: &[ConfigField] = &[
     ConfigField::new(
         "Storage",
@@ -267,6 +273,38 @@ const CONFIG_FIELDS: &[ConfigField] = &[
         ConfigEditor::Choice(NOISE_REDUCTION_OPTIONS),
     ),
     ConfigField::new(
+        "Voice",
+        "voice.global_hotkey_enabled",
+        "Global hotkey",
+        "Desktop-wide dictation trigger",
+        false,
+        ConfigEditor::Choice(BOOL_OPTIONS),
+    ),
+    ConfigField::new(
+        "Voice",
+        "voice.global_hotkey",
+        "Hotkey",
+        "Shortcut shown to the desktop portal",
+        false,
+        ConfigEditor::Text,
+    ),
+    ConfigField::new(
+        "Voice",
+        "voice.insert_mode",
+        "Insert mode",
+        "How transcribed text is inserted",
+        false,
+        ConfigEditor::Choice(VOICE_INSERT_MODE_OPTIONS),
+    ),
+    ConfigField::new(
+        "Voice",
+        "voice.preserve_clipboard",
+        "Preserve clipboard",
+        "Restore previous clipboard contents after paste",
+        false,
+        ConfigEditor::Choice(BOOL_OPTIONS),
+    ),
+    ConfigField::new(
         "Codex",
         "codex.enabled",
         "Codex enabled",
@@ -312,7 +350,7 @@ impl Page {
 
     fn label(self) -> &'static str {
         match self {
-            Page::Tickets => "Tickets",
+            Page::Tickets => "Tasks",
             Page::Repositories => "Repositories",
             Page::Chat => "Chat",
             Page::Agent => "Agent",
@@ -326,7 +364,7 @@ impl Page {
 
     fn description(self) -> &'static str {
         match self {
-            Page::Tickets => "Create tasks and run Nina/Codex automation",
+            Page::Tickets => "Track tasks, automate coding/review stages, and inspect outcomes",
             Page::Repositories => "Register git repositories for coding and review tasks",
             Page::Chat => "Ask questions over local Nina context",
             Page::Agent => "Run safe Nina operations from natural language",
@@ -441,6 +479,8 @@ pub struct NinaDesktop {
     banner: Option<Banner>,
     health: Option<HealthResponse>,
     config: Option<ConfigSnapshot>,
+    dictation: GlobalDictationController,
+    dictation_status: String,
     tasks: TaskGroup,
     repositories: Vec<Repository>,
     worktrees: HashMap<String, Vec<RepositoryWorktree>>,
@@ -454,6 +494,7 @@ pub struct NinaDesktop {
     integrations: Vec<IntegrationRecord>,
     task_logs: Option<CodexTaskLogsResponse>,
     task_modal: Option<TaskModal>,
+    last_task_refresh: Option<Instant>,
     config_modal_open: bool,
     selected_task_id: Option<String>,
     selected_repository_id: Option<String>,
@@ -497,6 +538,8 @@ impl NinaDesktop {
             banner: None,
             health: None,
             config: None,
+            dictation: GlobalDictationController::new(),
+            dictation_status: "Disabled".to_owned(),
             tasks: BTreeMap::new(),
             repositories: Vec::new(),
             worktrees: HashMap::new(),
@@ -510,6 +553,7 @@ impl NinaDesktop {
             integrations: Vec::new(),
             task_logs: None,
             task_modal: None,
+            last_task_refresh: None,
             config_modal_open: false,
             selected_task_id: None,
             selected_repository_id: None,
@@ -599,6 +643,9 @@ impl NinaDesktop {
     fn switch_page(&mut self, page: Page, cx: &mut Context<Self>) {
         self.current_page = page;
         self.banner = None;
+        if self.current_page != Page::Tickets {
+            self.last_task_refresh = None;
+        }
         self.task_modal = None;
         self.config_modal_open = false;
         self.refresh_current_page(cx);
@@ -658,6 +705,21 @@ impl NinaDesktop {
             Page::Jobs => self.refresh_jobs(cx),
             Page::Integrations => self.refresh_integrations(cx),
             Page::Config => self.refresh_config(cx),
+        }
+    }
+
+    fn maybe_refresh_tasks_board(&mut self, cx: &mut Context<Self>) {
+        if self.current_page != Page::Tickets {
+            return;
+        }
+
+        let should_refresh = self
+            .last_task_refresh
+            .is_none_or(|last| last.elapsed() >= TASK_BOARD_REFRESH_INTERVAL)
+            && !self.loading.contains("tasks");
+        if should_refresh {
+            self.last_task_refresh = Some(Instant::now());
+            self.refresh_tasks(cx);
         }
     }
 
@@ -734,6 +796,8 @@ impl NinaDesktop {
             |client| client.config(),
             |state, result, _| {
                 if let Ok(config) = result {
+                    state.dictation_status =
+                        state.dictation.sync(&config.voice, state.client.clone());
                     state.config = Some(config);
                 }
             },
@@ -748,6 +812,7 @@ impl NinaDesktop {
             |state, result, _| match result {
                 Ok(tasks) => {
                     state.tasks = tasks;
+                    state.last_task_refresh = Some(Instant::now());
                     if state.selected_task().is_none() {
                         state.selected_task_id = state.first_task().map(|task| task.id.clone());
                     }
@@ -775,7 +840,19 @@ impl NinaDesktop {
                 Ok((repositories, worktrees)) => {
                     state.repositories = repositories;
                     state.worktrees = worktrees;
-                    if state.task_repository_id.is_none() {
+                    let selected_exists = state
+                        .selected_repository_id
+                        .as_deref()
+                        .is_some_and(|id| state.repositories.iter().any(|repo| repo.id == id));
+                    if !selected_exists {
+                        state.selected_repository_id =
+                            state.repositories.first().map(|repo| repo.id.clone());
+                    }
+                    let task_repository_exists = state
+                        .task_repository_id
+                        .as_deref()
+                        .is_some_and(|id| state.repositories.iter().any(|repo| repo.id == id));
+                    if !task_repository_exists {
                         state.task_repository_id =
                             state.repositories.first().map(|repo| repo.id.clone());
                     }
@@ -1219,6 +1296,12 @@ impl NinaDesktop {
             .find_map(|task_type| self.tasks.get(&task_type).and_then(|tasks| tasks.first()))
     }
 
+    fn selected_repository(&self) -> Option<&Repository> {
+        self.selected_repository_id
+            .as_deref()
+            .and_then(|id| self.repositories.iter().find(|repo| repo.id == id))
+    }
+
     fn selected_job(&self) -> Option<&Job> {
         self.selected_job_name
             .as_deref()
@@ -1390,7 +1473,9 @@ impl Render for NinaDesktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = self.render_page(window, cx);
         let page_frame = match self.current_page {
-            Page::Tickets | Page::Chat | Page::Agent => ui::page_workspace_frame(page),
+            Page::Tickets | Page::Chat | Page::Agent | Page::Meetings | Page::Config => {
+                ui::page_workspace_frame(page)
+            }
             _ => ui::page_scroll_frame(page),
         };
         ui::app_root()
@@ -1570,6 +1655,7 @@ impl NinaDesktop {
     }
 
     fn render_tickets_page(&mut self, cx: &mut Context<Self>) -> Div {
+        self.maybe_refresh_tasks_board(cx);
         let mut lanes = h_flex().h_full().min_h(px(0.)).items_stretch().gap_3();
         for task_type in kanban_task_types(&self.tasks) {
             let task_count = self.tasks.get(&task_type).map(Vec::len).unwrap_or(0);
@@ -1987,6 +2073,7 @@ impl NinaDesktop {
             );
         };
         let task_id = task.id.clone();
+        let task_note_path = task.note_path.clone();
         let selected_repo = task
             .repository_name
             .clone()
@@ -2126,6 +2213,14 @@ impl NinaDesktop {
                             });
                         }
                     }))
+                    .child(self.render_open_note_button(
+                        "task-open-note".to_owned(),
+                        "Open Note",
+                        task_note_path,
+                        "Task has no note yet.",
+                        "Opened the task note.",
+                        cx,
+                    ))
                     .child(Button::new("task-logs").small().label("Logs").on_click(
                         move |_, _, cx| {
                             let _ = open_app.update(cx, |state, cx| {
@@ -2202,8 +2297,10 @@ impl NinaDesktop {
         let create = card(
             "Register Repository",
             v_flex()
-                .gap_2()
+                .gap_3()
+                .child(label("Path"))
                 .child(Input::new(&self.repository_path))
+                .child(label("Display name"))
                 .child(Input::new(&self.repository_name))
                 .child(
                     Button::new("create-repository")
@@ -2217,14 +2314,25 @@ impl NinaDesktop {
                 ),
         );
 
+        let selected_repository_id = self.selected_repository().map(|repo| repo.id.as_str());
+        let repository_count = self.repositories.len();
+        let total_worktrees: usize = self.worktrees.values().map(Vec::len).sum();
         let mut list = v_flex().gap_3();
         for repo in &self.repositories {
             let repo_id = repo.id.clone();
             let select_id = repo.id.clone();
             let delete_id = repo.id.clone();
-            let selected = self.selected_repository_id.as_deref() == Some(repo.id.as_str());
-            let mut worktree_list = v_flex().gap_1();
-            for worktree in self.worktrees.get(&repo.id).cloned().unwrap_or_default() {
+            let selected = selected_repository_id == Some(repo.id.as_str());
+            let task_default = self.task_repository_id.as_deref() == Some(repo.id.as_str());
+            let repo_worktrees = self.worktrees.get(&repo.id).cloned().unwrap_or_default();
+            let worktree_count = repo_worktrees.len();
+            let worktree_count_label = if worktree_count == 1 {
+                "1 worktree".to_owned()
+            } else {
+                format!("{worktree_count} worktrees")
+            };
+            let mut worktree_list = v_flex().gap_2();
+            for worktree in repo_worktrees {
                 let branch = worktree.branch.unwrap_or_else(|| "detached".to_owned());
                 worktree_list = worktree_list.child(
                     ui::compact_row(false, rgb(0x64748b))
@@ -2233,6 +2341,7 @@ impl NinaDesktop {
                         .child(
                             v_flex()
                                 .flex_1()
+                                .min_w(px(0.))
                                 .overflow_hidden()
                                 .gap_1()
                                 .child(ui::row_title(branch))
@@ -2248,41 +2357,76 @@ impl NinaDesktop {
                         ),
                 );
             }
-            if self
-                .worktrees
-                .get(&repo.id)
-                .is_none_or(|worktrees| worktrees.is_empty())
-            {
+            if worktree_count == 0 {
                 worktree_list = worktree_list.child(ui::row_meta("No worktrees reported."));
             }
             list = list.child(
                 ui::surface_block()
                     .child(
+                        ui::compact_row(selected, rgb(0x38bdf8))
+                            .id(format!("repo-row-{}", repo.id))
+                            .on_click({
+                                let app = cx.entity().downgrade();
+                                move |_, _, cx| {
+                                    let _ = app.update(cx, |state, cx| {
+                                        state.selected_repository_id = Some(select_id.clone());
+                                        cx.notify();
+                                    });
+                                }
+                            })
+                            .child(ui::icon_badge(IconName::FolderOpen, rgb(0x38bdf8)))
+                            .child(
+                                v_flex()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .overflow_hidden()
+                                    .gap_1()
+                                    .child(ui::row_title(repo.name.clone()))
+                                    .child(ui::row_meta(repo.path.clone())),
+                            )
+                            .child(if task_default {
+                                status_pill("task default", color::primary())
+                            } else {
+                                div()
+                            })
+                            .child(status_pill(worktree_count_label.clone(), rgb(0x38bdf8))),
+                    )
+                    .child(
                         h_flex()
                             .justify_between()
-                            .gap_3()
+                            .gap_2()
+                            .flex_wrap()
+                            .child(label("Worktrees"))
+                            .child(small_text(format!("Updated {}", repo.updated_at))),
+                    )
+                    .child(worktree_list)
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .flex_wrap()
                             .child(
-                                ui::compact_row(selected, rgb(0x38bdf8))
-                                    .id(format!("repo-row-{}", repo.id))
+                                Button::new(format!("select-repo-{}", repo.id))
+                                    .small()
+                                    .selected(task_default)
+                                    .label(if task_default {
+                                        "Default for new tasks"
+                                    } else {
+                                        "Use for new tasks"
+                                    })
                                     .on_click({
                                         let app = cx.entity().downgrade();
                                         move |_, _, cx| {
                                             let _ = app.update(cx, |state, cx| {
-                                                state.selected_repository_id =
-                                                    Some(select_id.clone());
+                                                state.task_repository_id = Some(repo_id.clone());
+                                                state.banner = Some(Banner {
+                                                    kind: BannerKind::Info,
+                                                    text: "Repository selected for new tasks."
+                                                        .to_owned(),
+                                                });
                                                 cx.notify();
                                             });
                                         }
-                                    })
-                                    .child(ui::icon_badge(IconName::FolderOpen, rgb(0x38bdf8)))
-                                    .child(
-                                        v_flex()
-                                            .flex_1()
-                                            .overflow_hidden()
-                                            .gap_1()
-                                            .child(ui::row_title(repo.name.clone()))
-                                            .child(ui::row_meta(repo.path.clone())),
-                                    ),
+                                    }),
                             )
                             .child(
                                 Button::new(format!("delete-repo-{}", repo.id))
@@ -2312,26 +2456,6 @@ impl NinaDesktop {
                                         }
                                     }),
                             ),
-                    )
-                    .child(label("Worktrees"))
-                    .child(worktree_list)
-                    .child(
-                        Button::new(format!("select-repo-{}", repo.id))
-                            .small()
-                            .label("Use for new tasks")
-                            .on_click({
-                                let app = cx.entity().downgrade();
-                                move |_, _, cx| {
-                                    let _ = app.update(cx, |state, cx| {
-                                        state.task_repository_id = Some(repo_id.clone());
-                                        state.banner = Some(Banner {
-                                            kind: BannerKind::Info,
-                                            text: "Repository selected for new tasks.".to_owned(),
-                                        });
-                                        cx.notify();
-                                    });
-                                }
-                            }),
                     ),
             );
         }
@@ -2342,9 +2466,70 @@ impl NinaDesktop {
                 "Register a local git repository before assigning coding or review tasks.",
             ));
         }
+        let summary = h_flex()
+            .justify_between()
+            .gap_3()
+            .flex_wrap()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .flex_wrap()
+                    .child(status_pill(
+                        format!(
+                            "{} {}",
+                            repository_count,
+                            if repository_count == 1 {
+                                "repository"
+                            } else {
+                                "repositories"
+                            }
+                        ),
+                        color::primary(),
+                    ))
+                    .child(status_pill(
+                        format!(
+                            "{} {}",
+                            total_worktrees,
+                            if total_worktrees == 1 {
+                                "worktree"
+                            } else {
+                                "worktrees"
+                            }
+                        ),
+                        rgb(0x38bdf8),
+                    )),
+            )
+            .child(if self.loading.contains("repositories") {
+                status_pill("Loading...", rgb(0x94a3b8))
+            } else {
+                div()
+            });
+        let repositories = card("Repositories", v_flex().gap_3().child(summary).child(list));
+
+        let mut rail = ui::side_rail().child(create);
+        if let Some(repo) = self.selected_repository() {
+            let worktree_count = self.worktrees.get(&repo.id).map(Vec::len).unwrap_or(0);
+            let task_default = self.task_repository_id.as_deref() == Some(repo.id.as_str());
+            rail = rail.child(card(
+                "Selected Repository",
+                v_flex()
+                    .gap_2()
+                    .child(ui::row_title(repo.name.clone()))
+                    .child(if task_default {
+                        status_pill("Default for new tasks", color::primary())
+                    } else {
+                        status_pill("Available", rgb(0x38bdf8))
+                    })
+                    .child(ui::kv_row("Path", repo.path.clone()))
+                    .child(ui::kv_row("Worktrees", worktree_count.to_string()))
+                    .child(ui::kv_row("Created", repo.created_at.clone()))
+                    .child(ui::kv_row("Updated", repo.updated_at.clone())),
+            ));
+        }
+
         ui::page_columns()
-            .child(ui::side_rail().child(create))
-            .child(ui::content_region().child(card("Repositories", list).w_full()))
+            .child(ui::content_region().child(repositories.w_full()))
+            .child(rail)
     }
 
     fn render_conversation_page(&self, mode: &'static str, cx: &mut Context<Self>) -> Div {
@@ -2683,6 +2868,7 @@ impl NinaDesktop {
     }
 
     fn render_meetings_page(&self, cx: &mut Context<Self>) -> Div {
+        let recording = self.loading.contains("record-meeting");
         let mut source_buttons = h_flex().gap_2().flex_wrap();
         for source in ["mic", "system", "mixed"] {
             let next = source.to_owned();
@@ -2691,6 +2877,7 @@ impl NinaDesktop {
                 Button::new(format!("meeting-source-{source}"))
                     .small()
                     .selected(self.meeting_source == source)
+                    .disabled(recording)
                     .label(source)
                     .on_click(move |_, _, cx| {
                         let _ = app.update(cx, |state, cx| {
@@ -2704,42 +2891,102 @@ impl NinaDesktop {
         let controls = card(
             "Recording",
             v_flex()
-                .gap_2()
-                .child(Input::new(&self.meeting_title))
+                .gap_3()
+                .child(label("Title"))
+                .child(Input::new(&self.meeting_title).disabled(recording))
+                .child(label("Source"))
                 .child(source_buttons)
                 .child(
                     Button::new("start-meeting")
                         .primary()
                         .small()
-                        .label("Start Recording")
+                        .loading(recording)
+                        .disabled(recording)
+                        .label(if recording {
+                            "Starting..."
+                        } else {
+                            "Start Recording"
+                        })
                         .on_click(move |_, _, cx| {
                             let _ = app.update(cx, |state, cx| state.start_recording(cx));
                         }),
                 ),
         );
 
-        let mut list = v_flex().gap_3();
+        let total_meetings = self.meetings.len();
+        let recording_count = self
+            .meetings
+            .iter()
+            .filter(|meeting| meeting.status == "recording")
+            .count();
+        let selected_label = self
+            .selected_meeting()
+            .map(|meeting| compact_text(&meeting.title, 36))
+            .unwrap_or_else(|| "No meeting selected".to_owned());
+        let summary = h_flex()
+            .justify_between()
+            .gap_3()
+            .flex_wrap()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .flex_wrap()
+                    .child(status_pill(
+                        format!(
+                            "{} {}",
+                            total_meetings,
+                            if total_meetings == 1 {
+                                "meeting"
+                            } else {
+                                "meetings"
+                            }
+                        ),
+                        color::primary(),
+                    ))
+                    .child(if recording_count > 0 {
+                        status_pill(format!("{recording_count} recording"), rgb(0xef4444))
+                    } else {
+                        status_pill("idle", rgb(0x64748b))
+                    })
+                    .child(status_pill(selected_label, rgb(0x38bdf8))),
+            )
+            .child(if self.loading.contains("meetings") {
+                status_pill("Loading...", rgb(0x94a3b8))
+            } else {
+                div()
+            });
+
+        let mut list = v_flex().gap_2();
         for meeting in &self.meetings {
             let select_id = meeting.id.clone();
-            let stop_id = meeting.id.clone();
-            let pipeline_id = meeting.id.clone();
-            let note_path = meeting.note_path.clone();
-            let summary_note_path = meeting.summary_note_path.clone();
-            let transcript_note_path = meeting.transcript_note_path.clone();
-            let play_id = meeting.id.clone();
-            let delete_id = meeting.id.clone();
             let selected = self.selected_meeting_id.as_deref() == Some(meeting.id.as_str());
-            let status_color = if meeting.status == "recording" {
-                rgb(0xef4444)
-            } else if meeting.status == "completed" {
-                rgb(0x22c55e)
-            } else {
-                rgb(0x38bdf8)
-            };
+            let status_color = meeting_status_color(&meeting.status);
+            let artifact_color = rgb(0x64748b);
+            let artifact_pills = h_flex()
+                .gap_2()
+                .flex_wrap()
+                .child(status_pill(meeting.source.clone(), status_color))
+                .child(status_pill(meeting_duration_text(meeting), artifact_color))
+                .child(if meeting.note_path.is_some() {
+                    status_pill("note", rgb(0x22c55e))
+                } else {
+                    div()
+                })
+                .child(if meeting.transcript_note_path.is_some() {
+                    status_pill("transcript", rgb(0x38bdf8))
+                } else {
+                    div()
+                })
+                .child(if meeting.summary_note_path.is_some() {
+                    status_pill("summary", color::primary())
+                } else {
+                    div()
+                });
             list = list.child(
                 ui::surface_block()
                     .child(
                         ui::compact_row(selected, status_color)
+                            .min_h(px(60.))
                             .id(format!("meeting-row-{}", meeting.id))
                             .on_click({
                                 let app = cx.entity().downgrade();
@@ -2754,148 +3001,20 @@ impl NinaDesktop {
                             .child(
                                 v_flex()
                                     .flex_1()
+                                    .min_w(px(0.))
                                     .overflow_hidden()
                                     .gap_1()
                                     .child(ui::row_title(meeting.title.clone()))
                                     .child(ui::row_meta(format!(
-                                        "{} - {} - {}",
-                                        meeting.status, meeting.source, meeting.started_at
+                                        "Started {} - ended {}",
+                                        meeting.started_at,
+                                        option_text(&meeting.ended_at)
                                     ))),
                             )
                             .child(status_pill(meeting.status.clone(), status_color)),
                     )
-                    .child(ui::row_meta(format!("Audio: {}", meeting.audio_path)))
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .flex_wrap()
-                            .child(
-                                Button::new(format!("stop-meeting-{}", meeting.id))
-                                    .small()
-                                    .label("Stop")
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                let stop_id = stop_id.clone();
-                                                state.run_api(
-                                                    "stop-meeting",
-                                                    cx,
-                                                    move |client| client.stop_meeting(&stop_id),
-                                                    |state, result, cx| {
-                                                        state.set_result_banner(
-                                                            &result,
-                                                            "Recording stopped.",
-                                                        );
-                                                        state.refresh_meetings(cx);
-                                                    },
-                                                );
-                                            });
-                                        }
-                                    }),
-                            )
-                            .child(
-                                Button::new(format!("pipeline-meeting-{}", meeting.id))
-                                    .small()
-                                    .label("Transcribe + summarize")
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                let pipeline_id = pipeline_id.clone();
-                                                state.run_api(
-                                                    "meeting-pipeline",
-                                                    cx,
-                                                    move |client| {
-                                                        client.run_meeting_pipeline(&pipeline_id)
-                                                    },
-                                                    |state, result, cx| {
-                                                        state.set_result_banner(
-                                                            &result,
-                                                            "Meeting pipeline complete.",
-                                                        );
-                                                        state.refresh_meetings(cx);
-                                                    },
-                                                );
-                                            });
-                                        }
-                                    }),
-                            )
-                            .child(self.render_open_note_button(
-                                format!("open-meeting-{}", meeting.id),
-                                "Open Note",
-                                note_path,
-                                "Meeting has no note yet.",
-                                "Opened the meeting note.",
-                                cx,
-                            ))
-                            .child(if summary_note_path.is_some() {
-                                self.render_open_note_button(
-                                    format!("open-summary-{}", meeting.id),
-                                    "Open Summary",
-                                    summary_note_path,
-                                    "Meeting has no summary note yet.",
-                                    "Opened the meeting summary.",
-                                    cx,
-                                )
-                                .into_any_element()
-                            } else {
-                                div().into_any_element()
-                            })
-                            .child(if transcript_note_path.is_some() {
-                                self.render_open_note_button(
-                                    format!("open-transcript-{}", meeting.id),
-                                    "Open Transcript",
-                                    transcript_note_path,
-                                    "Meeting has no transcript note yet.",
-                                    "Opened the meeting transcript.",
-                                    cx,
-                                )
-                                .into_any_element()
-                            } else {
-                                div().into_any_element()
-                            })
-                            .child(
-                                Button::new(format!("play-meeting-{}", meeting.id))
-                                    .small()
-                                    .label("Play")
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                state.play_meeting(&play_id);
-                                                cx.notify();
-                                            });
-                                        }
-                                    }),
-                            )
-                            .child(
-                                Button::new(format!("delete-meeting-{}", meeting.id))
-                                    .small()
-                                    .danger()
-                                    .label("Delete")
-                                    .on_click({
-                                        let app = cx.entity().downgrade();
-                                        move |_, _, cx| {
-                                            let _ = app.update(cx, |state, cx| {
-                                                let delete_id = delete_id.clone();
-                                                state.run_api(
-                                                    "delete-meeting",
-                                                    cx,
-                                                    move |client| client.delete_meeting(&delete_id),
-                                                    |state, result, cx| {
-                                                        state.set_result_banner(
-                                                            &result,
-                                                            "Meeting deleted.",
-                                                        );
-                                                        state.refresh_meetings(cx);
-                                                    },
-                                                );
-                                            });
-                                        }
-                                    }),
-                            ),
-                    ),
+                    .child(artifact_pills)
+                    .child(self.render_meeting_actions("row", meeting, cx)),
             );
         }
         if self.meetings.is_empty() {
@@ -2906,45 +3025,225 @@ impl NinaDesktop {
             ));
         }
 
-        let detail = self.selected_meeting().map(|meeting| {
-            card(
-                "Selected Meeting",
-                v_flex()
-                    .gap_2()
-                    .child(ui::row_title(meeting.title.clone()))
-                    .child(ui::kv_row("Status", meeting.status.clone()))
-                    .child(ui::kv_row("Source", meeting.source.clone()))
-                    .child(ui::kv_row("Started", meeting.started_at.clone()))
-                    .child(ui::kv_row("Ended", option_text(&meeting.ended_at)))
-                    .child(ui::kv_row(
-                        "Duration",
-                        meeting
-                            .duration_seconds
-                            .map(|duration| format!("{duration:.1}s"))
-                            .unwrap_or_else(|| "running".to_owned()),
-                    ))
-                    .child(ui::kv_row("Format", meeting.audio_format.clone()))
-                    .child(ui::kv_row("Sample rate", meeting.sample_rate.to_string()))
-                    .child(ui::kv_row("Channels", meeting.channels.to_string()))
-                    .child(ui::kv_row("Note", option_text(&meeting.note_path)))
-                    .child(ui::kv_row(
-                        "Transcript note",
-                        option_text(&meeting.transcript_note_path),
-                    ))
-                    .child(ui::kv_row(
-                        "Summary note",
-                        option_text(&meeting.summary_note_path),
-                    )),
-            )
-        });
+        let main = v_flex()
+            .flex_1()
+            .min_w(px(520.))
+            .h_full()
+            .min_h(px(0.))
+            .child(
+                card(
+                    "Meetings",
+                    v_flex()
+                        .flex_1()
+                        .min_h(px(0.))
+                        .gap_3()
+                        .child(summary)
+                        .child(
+                            div().flex_1().min_h(px(0.)).overflow_hidden().child(
+                                div()
+                                    .id("meetings-list-scroll-frame")
+                                    .size_full()
+                                    .overflow_y_scrollbar()
+                                    .pr_1()
+                                    .child(list),
+                            ),
+                        ),
+                )
+                .w_full()
+                .h_full()
+                .min_h(px(0.)),
+            );
 
-        let mut rail = ui::side_rail().child(controls);
-        if let Some(detail) = detail {
-            rail = rail.child(detail);
+        let mut rail_content = v_flex().gap_3().child(controls);
+        if let Some(meeting) = self.selected_meeting() {
+            rail_content = rail_content
+                .child(card(
+                    "Selected Actions",
+                    self.render_meeting_actions("selected", meeting, cx),
+                ))
+                .child(card(
+                    "Selected Meeting",
+                    v_flex()
+                        .gap_2()
+                        .child(ui::row_title(meeting.title.clone()))
+                        .child(status_pill(
+                            meeting.status.clone(),
+                            meeting_status_color(&meeting.status),
+                        ))
+                        .child(ui::kv_row("Source", meeting.source.clone()))
+                        .child(ui::kv_row("Started", meeting.started_at.clone()))
+                        .child(ui::kv_row("Ended", option_text(&meeting.ended_at)))
+                        .child(ui::kv_row("Duration", meeting_duration_text(meeting)))
+                        .child(ui::kv_row("Format", meeting.audio_format.clone()))
+                        .child(ui::kv_row("Sample rate", meeting.sample_rate.to_string()))
+                        .child(ui::kv_row("Channels", meeting.channels.to_string()))
+                        .child(ui::kv_row("Audio", meeting.audio_path.clone()))
+                        .child(ui::kv_row("Note", option_text(&meeting.note_path)))
+                        .child(ui::kv_row(
+                            "Transcript",
+                            option_text(&meeting.transcript_note_path),
+                        ))
+                        .child(ui::kv_row(
+                            "Summary",
+                            option_text(&meeting.summary_note_path),
+                        )),
+                ));
         }
-        ui::page_columns()
+
+        let rail = v_flex()
+            .w(px(360.))
+            .min_w(px(320.))
+            .h_full()
+            .min_h(px(0.))
+            .flex_shrink_0()
+            .overflow_hidden()
+            .child(
+                div()
+                    .id("meetings-rail-scroll-frame")
+                    .size_full()
+                    .overflow_y_scrollbar()
+                    .pr_1()
+                    .child(rail_content),
+            );
+
+        h_flex()
+            .size_full()
+            .min_h(px(0.))
+            .items_stretch()
+            .gap_4()
+            .overflow_hidden()
+            .child(main)
             .child(rail)
-            .child(ui::content_region().child(card("Meetings", list).w_full()))
+    }
+
+    fn render_meeting_actions(
+        &self,
+        id_scope: &'static str,
+        meeting: &Meeting,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let stop_id = meeting.id.clone();
+        let pipeline_id = meeting.id.clone();
+        let note_path = meeting.note_path.clone();
+        let summary_note_path = meeting.summary_note_path.clone();
+        let transcript_note_path = meeting.transcript_note_path.clone();
+        let play_id = meeting.id.clone();
+        let delete_id = meeting.id.clone();
+        h_flex()
+            .gap_2()
+            .flex_wrap()
+            .child(if meeting.status == "recording" {
+                Button::new(format!("{id_scope}-stop-meeting-{}", meeting.id))
+                    .small()
+                    .danger()
+                    .label("Stop")
+                    .on_click({
+                        let app = cx.entity().downgrade();
+                        move |_, _, cx| {
+                            let _ = app.update(cx, |state, cx| {
+                                let stop_id = stop_id.clone();
+                                state.run_api(
+                                    "stop-meeting",
+                                    cx,
+                                    move |client| client.stop_meeting(&stop_id),
+                                    |state, result, cx| {
+                                        state.set_result_banner(&result, "Recording stopped.");
+                                        state.refresh_meetings(cx);
+                                    },
+                                );
+                            });
+                        }
+                    })
+                    .into_any_element()
+            } else {
+                div().into_any_element()
+            })
+            .child(
+                Button::new(format!("{id_scope}-pipeline-meeting-{}", meeting.id))
+                    .small()
+                    .label("Transcribe + summarize")
+                    .on_click({
+                        let app = cx.entity().downgrade();
+                        move |_, _, cx| {
+                            let _ = app.update(cx, |state, cx| {
+                                let pipeline_id = pipeline_id.clone();
+                                state.run_api(
+                                    "meeting-pipeline",
+                                    cx,
+                                    move |client| client.run_meeting_pipeline(&pipeline_id),
+                                    |state, result, cx| {
+                                        state.set_result_banner(
+                                            &result,
+                                            "Meeting pipeline complete.",
+                                        );
+                                        state.refresh_meetings(cx);
+                                    },
+                                );
+                            });
+                        }
+                    }),
+            )
+            .child(self.render_open_note_button(
+                format!("{id_scope}-open-meeting-{}", meeting.id),
+                "Open Note",
+                note_path,
+                "Meeting has no note yet.",
+                "Opened the meeting note.",
+                cx,
+            ))
+            .child(self.render_open_note_button(
+                format!("{id_scope}-open-transcript-{}", meeting.id),
+                "Transcript",
+                transcript_note_path,
+                "Meeting has no transcript note yet.",
+                "Opened the meeting transcript.",
+                cx,
+            ))
+            .child(self.render_open_note_button(
+                format!("{id_scope}-open-summary-{}", meeting.id),
+                "Summary",
+                summary_note_path,
+                "Meeting has no summary note yet.",
+                "Opened the meeting summary.",
+                cx,
+            ))
+            .child(
+                Button::new(format!("{id_scope}-play-meeting-{}", meeting.id))
+                    .small()
+                    .label("Play")
+                    .on_click({
+                        let app = cx.entity().downgrade();
+                        move |_, _, cx| {
+                            let _ = app.update(cx, |state, cx| {
+                                state.play_meeting(&play_id);
+                                cx.notify();
+                            });
+                        }
+                    }),
+            )
+            .child(
+                Button::new(format!("{id_scope}-delete-meeting-{}", meeting.id))
+                    .small()
+                    .danger()
+                    .label("Delete")
+                    .on_click({
+                        let app = cx.entity().downgrade();
+                        move |_, _, cx| {
+                            let _ = app.update(cx, |state, cx| {
+                                let delete_id = delete_id.clone();
+                                state.run_api(
+                                    "delete-meeting",
+                                    cx,
+                                    move |client| client.delete_meeting(&delete_id),
+                                    |state, result, cx| {
+                                        state.set_result_banner(&result, "Meeting deleted.");
+                                        state.refresh_meetings(cx);
+                                    },
+                                );
+                            });
+                        }
+                    }),
+            )
     }
 
     fn render_open_note_button(
@@ -2956,26 +3255,31 @@ impl NinaDesktop {
         success_message: &'static str,
         cx: &mut Context<Self>,
     ) -> Button {
-        Button::new(id).small().label(label).on_click({
-            let app = cx.entity().downgrade();
-            move |_, _, cx| {
-                let _ = app.update(cx, |state, cx| {
-                    let Some(path) = path.clone() else {
-                        state.banner = Some(error_text(missing_message));
-                        cx.notify();
-                        return;
-                    };
-                    state.run_api(
-                        "open-note",
-                        cx,
-                        move |client| client.open_note(path),
-                        move |state, result, _| {
-                            state.set_result_banner(&result, success_message);
-                        },
-                    );
-                });
-            }
-        })
+        let disabled = path.is_none();
+        Button::new(id)
+            .small()
+            .label(label)
+            .disabled(disabled)
+            .on_click({
+                let app = cx.entity().downgrade();
+                move |_, _, cx| {
+                    let _ = app.update(cx, |state, cx| {
+                        let Some(path) = path.clone() else {
+                            state.banner = Some(error_text(missing_message));
+                            cx.notify();
+                            return;
+                        };
+                        state.run_api(
+                            "open-note",
+                            cx,
+                            move |client| client.open_note(path),
+                            move |state, result, _| {
+                                state.set_result_banner(&result, success_message);
+                            },
+                        );
+                    });
+                }
+            })
     }
 
     fn play_meeting(&mut self, meeting_id: &str) {
@@ -3463,34 +3767,65 @@ impl NinaDesktop {
             }
         }
 
-        ui::page_columns()
-            .child(ui::content_region().child(card("Settings", fields).w_full()))
-            .child(
-                ui::side_rail().child(card(
-                    "Runtime",
-                    v_flex()
-                        .gap_2()
-                        .child(ui::kv_row("Profile", config.profile.clone()))
-                        .child(ui::kv_row("Config", config.config_path.clone()))
-                        .child(ui::kv_row("Vault", config.vault_path.clone()))
-                        .child(ui::kv_row("Database", config.database_path.clone()))
-                        .child(ui::kv_row(
-                            "Daemon",
-                            format!("{}:{}", config.daemon_host, config.daemon_port),
-                        ))
-                        .child(ui::kv_row(
-                            "LLM",
-                            format!("{} / {}", config.llm.provider, config.llm.model),
-                        ))
-                        .child(ui::kv_row(
-                            "Research",
-                            format!(
-                                "{} / {}",
-                                config.research.provider, config.research.search_mode
-                            ),
-                        )),
+        let settings = card(
+            "Settings",
+            div().flex_1().min_h(px(0.)).overflow_hidden().child(
+                div()
+                    .id("config-settings-scroll-frame")
+                    .size_full()
+                    .overflow_y_scrollbar()
+                    .pr_1()
+                    .child(fields),
+            ),
+        )
+        .w_full()
+        .h_full()
+        .min_h(px(0.));
+
+        let runtime = card(
+            "Runtime",
+            v_flex()
+                .gap_2()
+                .child(ui::kv_row("Profile", config.profile.clone()))
+                .child(ui::kv_row("Config", config.config_path.clone()))
+                .child(ui::kv_row("Vault", config.vault_path.clone()))
+                .child(ui::kv_row("Database", config.database_path.clone()))
+                .child(ui::kv_row(
+                    "Daemon",
+                    format!("{}:{}", config.daemon_host, config.daemon_port),
+                ))
+                .child(ui::kv_row(
+                    "LLM",
+                    format!("{} / {}", config.llm.provider, config.llm.model),
+                ))
+                .child(ui::kv_row(
+                    "Research",
+                    format!(
+                        "{} / {}",
+                        config.research.provider, config.research.search_mode
+                    ),
+                ))
+                .child(ui::kv_row(
+                    "Voice",
+                    if config.voice.global_hotkey_enabled {
+                        format!(
+                            "{} ({})",
+                            state_text(&self.dictation_status),
+                            config.voice.global_hotkey
+                        )
+                    } else {
+                        "Disabled".to_owned()
+                    },
                 )),
-            )
+        )
+        .w_full();
+
+        ui::page_columns()
+            .h_full()
+            .min_h(px(0.))
+            .items_stretch()
+            .child(ui::content_region().h_full().min_h(px(0.)).child(settings))
+            .child(ui::side_rail().h_full().min_h(px(0.)).child(runtime))
     }
 }
 
@@ -3562,6 +3897,21 @@ fn status_pill(text: impl Into<String>, color: Rgba) -> Div {
     ui::status_pill(text, color)
 }
 
+fn meeting_status_color(status: &str) -> Rgba {
+    match status {
+        "recording" | "failed" | "error" => rgb(0xef4444),
+        "completed" | "summarized" | "transcribed" => rgb(0x22c55e),
+        _ => rgb(0x38bdf8),
+    }
+}
+
+fn meeting_duration_text(meeting: &Meeting) -> String {
+    meeting
+        .duration_seconds
+        .map(|duration| format!("{duration:.1}s"))
+        .unwrap_or_else(|| "running".to_owned())
+}
+
 fn integration_status_color(status: &str) -> Rgba {
     match status {
         "ok" => rgb(0x22c55e),
@@ -3590,6 +3940,10 @@ fn integration_last_text(integration: &IntegrationRecord) -> String {
 
 fn loading_panel(text: &str) -> Div {
     ui::loading_panel(text)
+}
+
+fn state_text(text: &str) -> String {
+    text.to_owned()
 }
 
 fn error_banner(error: ApiError) -> Banner {
@@ -3859,6 +4213,7 @@ fn config_group_icon(group: &str) -> IconName {
         "Schedule" => IconName::Calendar,
         "Transcription" => IconName::BookOpen,
         "Meetings" => IconName::Calendar,
+        "Voice" => IconName::BookOpen,
         "Codex" => IconName::Cpu,
         _ => IconName::Settings2,
     }
@@ -3873,6 +4228,7 @@ fn config_group_color(group: &str) -> Rgba {
         "Schedule" => rgb(0x60a5fa),
         "Transcription" => rgb(0xa855f7),
         "Meetings" => rgb(0x22d3ee),
+        "Voice" => rgb(0xf43f5e),
         "Codex" => color::primary(),
         _ => color::text_muted(),
     }
@@ -3926,6 +4282,10 @@ fn config_value(config: &ConfigSnapshot, key: &str) -> String {
         "meetings.auto_normalize" => config.meetings.auto_normalize.to_string(),
         "meetings.normalize_target_dbfs" => config.meetings.normalize_target_dbfs.to_string(),
         "meetings.noise_reduction" => config.meetings.noise_reduction.clone(),
+        "voice.global_hotkey_enabled" => config.voice.global_hotkey_enabled.to_string(),
+        "voice.global_hotkey" => config.voice.global_hotkey.clone(),
+        "voice.insert_mode" => config.voice.insert_mode.clone(),
+        "voice.preserve_clipboard" => config.voice.preserve_clipboard.to_string(),
         "codex.enabled" => config.codex.enabled.to_string(),
         "codex.binary_path" => config.codex.binary_path.clone(),
         _ => String::new(),
@@ -3974,6 +4334,12 @@ fn build_config_patch(key: &str, raw: &str) -> Result<Value, String> {
             json!({ "meetings": { "normalize_target_dbfs": float_value()? } })
         }
         "meetings.noise_reduction" => json!({ "meetings": { "noise_reduction": raw } }),
+        "voice.global_hotkey_enabled" => {
+            json!({ "voice": { "global_hotkey_enabled": bool_value()? } })
+        }
+        "voice.global_hotkey" => json!({ "voice": { "global_hotkey": raw } }),
+        "voice.insert_mode" => json!({ "voice": { "insert_mode": raw } }),
+        "voice.preserve_clipboard" => json!({ "voice": { "preserve_clipboard": bool_value()? } }),
         "codex.enabled" => json!({ "codex": { "enabled": bool_value()? } }),
         "codex.binary_path" => json!({ "codex": { "binary_path": raw } }),
         _ => return Err(format!("Unsupported config field: {key}")),

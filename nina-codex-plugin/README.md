@@ -9,13 +9,11 @@ The plugin reports two Codex lifecycle events back to Nina:
 - `done`: emitted from the Codex `Stop` hook.
 
 Nina receives those callbacks at `POST /codex/events`, stores them idempotently
-by `(taskId, runId, event)`, and drives the current board fields:
+by `(taskId, runId, event)`, and drives the task pipeline fields:
 
-- `started` sets the task agent `status` to `working`.
-- `done` sets the task agent `status` to `idle`.
-- `done` applies explicit hook actions such as `setStatus`, `setTaskType`, and `createNextTaskType`.
-- Coding completion, including missing or unparseable final reports, marks the task `done` and asks Nina to create a `reviewing` follow-up task. Blocked or partial coding reports mark it `blocked`.
-- Reviewing completion marks the review task `done`; rejected, blocked, partial, missing, or unparseable review reports mark it `blocked`.
+- `started` sets task status to `working` and may set `pipeline_stage`.
+- `done` sets task status to `idle` and applies `setPipelineStage` / `setPipelineError`.
+- Stage-driven transitions are used to move tasks through `created`, `exploration`, `coding`, `testing`, and `reviewing`.
 
 The external runner still owns launching Codex. This plugin only reports
 lifecycle callbacks.
@@ -46,6 +44,7 @@ Nina should start Codex with these environment variables:
 NINA_TASK_ID=<task-id>
 NINA_RUN_ID=<unique-run-id>
 NINA_TASK_TYPE=<coding|reviewing>
+NINA_PIPELINE_STAGE=<created|exploration|coding|testing|reviewing|done|blocked>
 NINA_BASE_URL=http://127.0.0.1:<nina-port>
 NINA_TOKEN=<nina-bearer-token>
 ```
@@ -56,15 +55,8 @@ Optional:
 NINA_HOOK_TIMEOUT_MS=2000
 ```
 
-The hook sends:
-
-```http
-POST /codex/events
-Authorization: Bearer <NINA_TOKEN>
-Content-Type: application/json
-```
-
-Payload:
+The hook sends payload fields including `pipelineStage`, `setPipelineStage`,
+and `setPipelineError` when transitions block progress.
 
 ```json
 {
@@ -77,34 +69,40 @@ Payload:
   "turnId": "codex-turn-id-or-null",
   "cwd": "/repo/path-or-null",
   "taskType": "coding",
+  "pipelineStage": "exploration",
   "setStatus": "working",
-  "lastAssistantMessage": null,
+  "lastAssistantMessage": "...",
   "sentAt": "2026-06-20T12:00:00Z"
 }
 ```
 
-For `done`, `event` is `"done"` and `lastAssistantMessage` contains Codex's
-final assistant message when Codex provides it in the hook input. The hook always includes explicit action fields: `started` sends `setStatus: working`; `done` sends `setStatus: idle`; coding and reviewing runs also send `setTaskType`. Coding runs that are not blocked or partial request a `reviewing` follow-up with `createNextTaskType`.
+For `done`, `event` is `"done"` and `lastAssistantMessage` contains Codex's final assistant
+message when available. The hook adds action fields so Nina can consistently
+advance the ticket through stages.
 
 ## Runner command
 
-Nina should invoke Codex like this from its external runner:
+Nina should invoke Codex with the same pipeline-aware command used in this package:
 
 ```bash
-NINA_TASK_ID="$TASK_ID" NINA_RUN_ID="$RUN_ID" NINA_TASK_TYPE="$TASK_TYPE" NINA_BASE_URL="http://127.0.0.1:$NINA_PORT" NINA_TOKEN="$NINA_TOKEN" codex exec   --cd "$REPO_PATH"   --json   --skip-git-repo-check   --dangerously-bypass-approvals-and-sandbox   --dangerously-bypass-hook-trust   "Use @nina-task.
+NINA_TASK_ID="$TASK_ID" NINA_RUN_ID="$RUN_ID" NINA_TASK_TYPE="$TASK_TYPE" NINA_PIPELINE_STAGE="$PIPELINE_STAGE" NINA_BASE_URL="http://127.0.0.1:$NINA_PORT" NINA_TOKEN="$NINA_TOKEN" codex exec   --cd "$REPO_PATH"   --json   --skip-git-repo-check   --dangerously-bypass-approvals-and-sandbox   --dangerously-bypass-hook-trust   "Use @nina-task.
 
 Nina task id: $TASK_ID
 Nina run id: $RUN_ID
 Nina task type: $TASK_TYPE
+Nina pipeline stage: $PIPELINE_STAGE
+Worktree: $REPO_PATH
 
 Task:
 $TASK_BODY
 
-When finished, provide a concise final report with an Outcome line, changed files, checks run, blockers, and a Decision line when the task type is reviewing."
+When finished, provide a concise final report with an Outcome line, changed files,
+checks run, blockers, and a Decision line when reviewing.
 ```
 
-`--dangerously-bypass-approvals-and-sandbox` and `--dangerously-bypass-hook-trust` are intended only for the controlled Nina
-runner environment. For manual usage, review hooks with `/hooks` inside Codex.
+`--dangerously-bypass-approvals-and-sandbox` and `--dangerously-bypass-hook-trust`
+are intended only for the controlled Nina runner environment. For manual usage,
+review hooks with `/hooks` inside Codex.
 
 ## Install on another machine
 
@@ -147,8 +145,8 @@ nina-codex-plugin/files/
 
 ## Why hooks, not MCP
 
-Hooks are the right v1 mechanism because Nina needs automatic lifecycle
-callbacks. MCP would be useful later if Codex needs Nina as an explicit tool,
+Hooks are the right v1 mechanism because Nina needs automatic lifecycle callbacks.
+MCP would be useful later if Codex needs Nina as an explicit tool,
 for example `nina_get_task`, `nina_add_comment`, or `nina_request_review`.
 
 ## Failure behavior

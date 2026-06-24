@@ -5,6 +5,8 @@ from .config import (
     LLMConfigUpdate,
     MeetingsConfigResponse,
     MeetingsConfigUpdate,
+    VoiceConfigResponse,
+    VoiceConfigUpdate,
     CodexConfigResponse,
     CodexConfigUpdate,
     ResearchConfigResponse,
@@ -17,6 +19,7 @@ from .config import (
 from .integrations import IntegrationCredentialsUpdate
 from .jobs import JobCreate, JobUpdate
 from .meetings import MeetingCreate, MeetingRecord, MeetingStop
+from .voice import VoiceRecord, VoiceStop, VoiceTranscribe
 from .notes import NoteCreate, NoteUpdate, NotesQuery
 from .repositories import RepositoryCreate, RepositoryResponse, RepositoryWorktreeResponse
 from .search import AskQuery, SearchOpen, SearchQuery, SearchReindex
@@ -38,6 +41,11 @@ __all__ = [
     "MeetingStop",
     "MeetingsConfigResponse",
     "MeetingsConfigUpdate",
+    "VoiceConfigResponse",
+    "VoiceConfigUpdate",
+    "VoiceRecord",
+    "VoiceStop",
+    "VoiceTranscribe",
     "NoteCreate",
     "NoteUpdate",
     "NotesQuery",

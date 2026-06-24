@@ -58,38 +58,92 @@ def _report_value(message: str | None, label: str) -> str:
     return ""
 
 
-def _started_actions() -> dict:
-    return {"setStatus": "working"}
+def _is_blocked_result(outcome: str, decision: str) -> bool:
+    return outcome.startswith(("blocked", "partially")) or decision.startswith(
+        ("blocked", "reject", "rejected", "denied")
+    )
 
 
-def _done_actions(task_type: str | None, message: str | None) -> dict:
+def _started_actions(pipeline_stage: str | None) -> dict:
+    actions = {"setStatus": "working"}
+    if pipeline_stage:
+        actions["setPipelineStage"] = pipeline_stage
+    return actions
+
+
+def _done_actions(task_type: str | None, pipeline_stage: str | None, message: str | None) -> dict:
     outcome = _report_value(message, "Outcome")
     decision = _report_value(message, "Decision")
-    actions = {"setStatus": "idle"}
+    blockers = _report_value(message, "Blockers")
+    stage = (pipeline_stage or "").strip().lower()
+    if not stage:
+        stage = "created" if task_type == "coding" else "reviewing"
 
-    if task_type == "coding":
-        if outcome.startswith(("blocked", "partially")) or decision.startswith("blocked"):
-            actions["setTaskType"] = "blocked"
-        else:
-            actions["setTaskType"] = "done"
-            actions["createNextTaskType"] = "reviewing"
-        return actions
-
-    if task_type == "reviewing":
-        if (
-            decision.startswith(("rejected", "reject", "blocked"))
-            or outcome.startswith(("blocked", "partially"))
+    if task_type == "reviewing" or stage == "reviewing":
+        if outcome.startswith(("blocked", "partially")) or _is_blocked_result(outcome, decision):
+            return {
+                "setStatus": "idle",
+                "setTaskType": "blocked",
+                "setPipelineStage": "blocked",
+                "setPipelineError": blockers or "Review blocked.",
+            }
+        if decision.startswith(("approved", "approve")) or outcome.startswith(
+            ("completed", "complete", "done")
         ):
-            actions["setTaskType"] = "blocked"
-        elif decision.startswith(("approved", "approve")) or outcome.startswith(("completed", "complete", "done")):
-            actions["setTaskType"] = "done"
-        else:
-            actions["setTaskType"] = "blocked"
-        return actions
+            return {"setStatus": "idle", "setPipelineStage": "done", "setTaskType": "done"}
+        return {
+            "setStatus": "idle",
+            "setPipelineStage": "blocked",
+            "setTaskType": "blocked",
+            "setPipelineError": blockers or "Review did not return an approval.",
+        }
 
-    if outcome.startswith(("blocked", "partially")) or decision.startswith(("blocked", "rejected", "reject")):
-        actions["setTaskType"] = "blocked"
-    return actions
+    if stage == "created":
+        if _is_blocked_result(outcome, decision):
+            return {
+                "setStatus": "idle",
+                "setPipelineStage": "blocked",
+                "setPipelineError": blockers or "Creation blocked.",
+            }
+        return {"setStatus": "idle", "setPipelineStage": "exploration"}
+
+    if stage == "exploration":
+        if _is_blocked_result(outcome, decision):
+            return {
+                "setStatus": "idle",
+                "setPipelineStage": "blocked",
+                "setPipelineError": blockers or "Exploration blocked.",
+            }
+        return {"setStatus": "idle", "setPipelineStage": "coding"}
+
+    if stage == "coding":
+        if _is_blocked_result(outcome, decision):
+            return {
+                "setStatus": "idle",
+                "setPipelineStage": "blocked",
+                "setPipelineError": blockers or "Coding blocked.",
+            }
+        return {"setStatus": "idle", "setPipelineStage": "testing"}
+
+    if stage == "testing":
+        if _is_blocked_result(outcome, decision):
+            return {
+                "setStatus": "idle",
+                "setPipelineStage": "blocked",
+                "setPipelineError": blockers or "Testing blocked.",
+            }
+        return {"setStatus": "idle", "setPipelineStage": "reviewing"}
+
+    if stage == "blocked":
+        if _is_blocked_result(outcome, decision):
+            return {
+                "setStatus": "idle",
+                "setPipelineStage": "blocked",
+                "setPipelineError": blockers or "Task remains blocked.",
+            }
+        return {"setStatus": "idle", "setPipelineStage": "exploration"}
+
+    return {"setStatus": "idle"}
 
 
 def main() -> int:
@@ -99,6 +153,7 @@ def main() -> int:
     task_id = os.getenv("NINA_TASK_ID")
     run_id = os.getenv("NINA_RUN_ID")
     task_type = os.getenv("NINA_TASK_TYPE")
+    pipeline_stage = os.getenv("NINA_PIPELINE_STAGE")
     base_url = os.getenv("NINA_BASE_URL")
     token = os.getenv("NINA_TOKEN")
 
@@ -120,17 +175,25 @@ def main() -> int:
         "turnId": _first_present(hook_input, ("turn_id", "turnId")),
         "cwd": hook_input.get("cwd"),
         "taskType": task_type,
+        "pipelineStage": pipeline_stage,
         "lastAssistantMessage": _first_present(
             hook_input,
-            ("last_assistant_message", "lastAssistantMessage", "assistant_message", "assistantMessage"),
+            (
+                "last_assistant_message",
+                "lastAssistantMessage",
+                "assistant_message",
+                "assistantMessage",
+            ),
         ),
         "sentAt": _utc_now(),
     }
 
     if event == "started":
-        payload.update(_started_actions())
+        payload.update(_started_actions(pipeline_stage))
     elif event == "done":
-        payload.update(_done_actions(task_type, payload.get("lastAssistantMessage")))
+        payload.update(
+            _done_actions(task_type, pipeline_stage, payload.get("lastAssistantMessage"))
+        )
 
     url = base_url.rstrip("/") + "/codex/events"
     data = json.dumps(payload).encode("utf-8")

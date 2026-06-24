@@ -12,6 +12,7 @@ def test_ensure_vault_structure_creates_only_active_folders(tmp_path) -> None:  
         "Tasks",
         "Research",
         "Meetings",
+        "Voice",
         "System",
         "System/Deleted",
         "System/Archived",
@@ -22,6 +23,7 @@ def test_ensure_vault_structure_creates_only_active_folders(tmp_path) -> None:  
         "Tasks",
         "Research",
         "Meetings",
+        "Voice",
         "System/Deleted",
         "System/Archived",
     }

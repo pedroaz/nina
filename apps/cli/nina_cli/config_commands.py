@@ -78,6 +78,12 @@ def _public_snapshot(config_dir: Path, config: NinaConfig) -> dict[str, Any]:
             "normalize_target_dbfs": config.meetings.normalize_target_dbfs,
             "noise_reduction": config.meetings.noise_reduction,
         },
+        "voice": {
+            "global_hotkey_enabled": config.voice.global_hotkey_enabled,
+            "global_hotkey": config.voice.global_hotkey,
+            "insert_mode": config.voice.insert_mode,
+            "preserve_clipboard": config.voice.preserve_clipboard,
+        },
         "log_level": config.log_level,
     }
 
@@ -97,7 +103,7 @@ def _print_snapshot(snapshot: dict[str, Any]) -> None:
     table.add_row("Research provider", str(snapshot["research"]["provider"]))
     table.add_row("Research model", str(snapshot["research"]["model"]))
     table.add_row("Research search", str(snapshot["research"]["search_mode"]))
-    table.add_row("Research timeout", f'{snapshot["research"]["timeout_seconds"]}s')
+    table.add_row("Research timeout", f"{snapshot['research']['timeout_seconds']}s")
     table.add_row("Daily summary", str(snapshot["scheduler"]["daily_summary_time"]))
     table.add_row("Transcription backend", str(snapshot["transcription"]["backend"]))
     table.add_row("Transcription model", str(snapshot["transcription"]["model"]))
@@ -115,6 +121,10 @@ def _print_snapshot(snapshot: dict[str, Any]) -> None:
     table.add_row("Meetings normalize target", str(snapshot["meetings"]["normalize_target_dbfs"]))
     table.add_row("Meetings noise reduction", str(snapshot["meetings"]["noise_reduction"]))
     table.add_row("Meetings play command", str(snapshot["meetings"]["play_command"]))
+    table.add_row("Voice global hotkey", str(snapshot["voice"]["global_hotkey"]))
+    table.add_row("Voice hotkey enabled", str(snapshot["voice"]["global_hotkey_enabled"]))
+    table.add_row("Voice insert mode", str(snapshot["voice"]["insert_mode"]))
+    table.add_row("Voice preserve clipboard", str(snapshot["voice"]["preserve_clipboard"]))
     table.add_row("Log level", str(snapshot["log_level"]))
     console.print(table)
 
@@ -550,6 +560,50 @@ def meetings_noise_reduction(
         raise typer.Exit(1) from None
     updated, synced = _apply_update(profile, {"meetings": {"noise_reduction": normalized}})
     console.print(f"Meetings noise reduction: {updated.meetings.noise_reduction}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("voice-global-hotkey-enabled")
+def voice_global_hotkey_enabled(
+    value: bool,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"voice": {"global_hotkey_enabled": value}})
+    console.print(f"Voice global hotkey enabled: {updated.voice.global_hotkey_enabled}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("voice-global-hotkey")
+def voice_global_hotkey(
+    value: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"voice": {"global_hotkey": value}})
+    console.print(f"Voice global hotkey: {updated.voice.global_hotkey}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("voice-preserve-clipboard")
+def voice_preserve_clipboard(
+    value: bool,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    updated, synced = _apply_update(profile, {"voice": {"preserve_clipboard": value}})
+    console.print(f"Voice preserve clipboard: {updated.voice.preserve_clipboard}")
+    console.print("Applied to the running daemon." if synced else "Saved on disk.")
+
+
+@config_app.command("voice-insert-mode")
+def voice_insert_mode(
+    value: str,
+    profile: str = typer.Option("default", help="Profile name"),
+) -> None:
+    normalized = value.strip().lower()
+    if normalized != "clipboard_paste":
+        console.print("[red]Voice insert mode must be 'clipboard_paste'.[/red]")
+        raise typer.Exit(1) from None
+    updated, synced = _apply_update(profile, {"voice": {"insert_mode": normalized}})
+    console.print(f"Voice insert mode: {updated.voice.insert_mode}")
     console.print("Applied to the running daemon." if synced else "Saved on disk.")
 
 

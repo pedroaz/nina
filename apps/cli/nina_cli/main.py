@@ -48,6 +48,7 @@ from .research_commands import research_app
 from .search_commands import search_app
 from .task_commands import task_app
 from .ticket_commands import ticket_app
+from .voice_commands import voice_app
 from .workflow_commands import workflow_app
 
 
@@ -62,6 +63,7 @@ def _print_short_help() -> None:
         "  [cyan]nina mt list[/cyan]         list meetings (alias for `meeting list`)\n"
         "  [cyan]nina mt stop[/cyan]         stop the active recording\n"
         "  [cyan]nina mt e <id>[/cyan]       transcribe + summarize a meeting\n"
+        "  [cyan]nina vc r --copy[/cyan]      record, transcribe, and copy a voice clip\n"
         '  [cyan]nina ask "q?"[/cyan]        ask a question over the vault\n'
         '  [cyan]nina search "q"[/cyan]      full-text search the vault\n'
         "  [cyan]nina config show[/cyan]     inspect settings\n"
@@ -72,12 +74,15 @@ def _print_short_help() -> None:
         "  d = daemon              o = open                 n = note\n"
         "  tk = ticket             --h = -h = --help\n"
         "  j = job                  c = config\n"
-        "  rch = research           s = search              ll = llm\n"
+        "  vc = voice               rch = research           s = search              ll = llm\n"
         "  int = integrations       wf = workflow\n"
         "\n"
         "[bold]Meeting subcommands[/bold] (via `nina mt ...`):\n"
         "  ls = list    e = pipeline (transcribe + summarize)    s = stop\n"
         "  o = open     p = play          rm = delete      x = show\n"
+        "\n"
+        "[bold]Voice subcommands[/bold] (via `nina vc ...`):\n"
+        "  r = record   t = transcribe    ls = list       x = show\n"
         "\n"
         "[bold]Task subcommands[/bold] (via `nina task ...` or `nina tk ...`):\n"
         "  list / ls       create         show          type <id> <t>\n"
@@ -173,6 +178,8 @@ _add_alias(app, search_app, "s")
 app.add_typer(setup_app, name="setup")
 app.add_typer(integrations_app, name="integrations")
 _add_alias(app, integrations_app, "int")
+app.add_typer(voice_app, name="voice")
+_add_alias(app, voice_app, "vc")
 app.add_typer(workflow_app, name="workflow")
 _add_alias(app, workflow_app, "wf")
 

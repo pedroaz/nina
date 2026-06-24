@@ -124,6 +124,7 @@ def test_summarize_meeting_workflow_writes_summary_note_and_links_hub(
         db_path: str,
         provider=None,
         config=None,  # noqa: ARG001
+        codex_binary_path=None,  # noqa: ARG001
     ) -> None:  # type: ignore[no-untyped-def]
         self.db_path = db_path
         self.config = config or __import__(
@@ -185,6 +186,7 @@ def test_meeting_pipeline_writes_all_three_files(
         db_path: str,
         provider=None,
         config=None,  # noqa: ARG001
+        codex_binary_path=None,  # noqa: ARG001
     ) -> None:  # type: ignore[no-untyped-def]
         self.db_path = db_path
         self.config = config or __import__(

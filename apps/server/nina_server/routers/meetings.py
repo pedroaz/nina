@@ -17,6 +17,7 @@ from ..dependencies import (
     _request_config_dir,
     get_meeting_recorder,
     get_meeting_service,
+    get_voice_recorder,
 )
 from ..schemas import MeetingCreate, MeetingRecord, MeetingStop
 
@@ -41,6 +42,9 @@ async def create_meeting(request: Request, data: MeetingCreate) -> dict[str, Any
 async def record_meeting(request: Request, data: MeetingRecord) -> dict[str, Any]:
     config = _request_config(request)
     recorder = get_meeting_recorder(request)
+    voice_recorder = get_voice_recorder(request)
+    if voice_recorder.active_capture_id() is not None:
+        raise HTTPException(status_code=409, detail="A voice recording is already active.")
     config_dir = _request_config_dir(request)
     try:
         return recorder.start(

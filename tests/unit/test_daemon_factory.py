@@ -15,7 +15,7 @@ def test_create_app_returns_fresh_instances_and_registers_core_routes() -> None:
     assert first is not second
 
     paths = {route.path for route in first.routes if getattr(route, "path", None)}
-    assert {"/health", "/config", "/tasks", "/meetings", "/jobs"}.issubset(paths)
+    assert {"/health", "/config", "/tasks", "/meetings", "/voice", "/jobs"}.issubset(paths)
 
 
 def test_daemon_route_inventory_is_stable() -> None:
@@ -70,6 +70,8 @@ def test_daemon_route_inventory_is_stable() -> None:
         ("GET", "/tasks/{task_id}/codex-logs"),
         ("GET", "/tickets"),
         ("GET", "/tickets/{ticket_id}"),
+        ("GET", "/voice"),
+        ("GET", "/voice/{capture_id}"),
         ("GET", "/workflow-runs"),
         ("GET", "/workflow-runs/{run_id}"),
         ("GET", "/workflows"),
@@ -106,6 +108,9 @@ def test_daemon_route_inventory_is_stable() -> None:
         ("POST", "/tickets"),
         ("POST", "/tickets/{ticket_id}/classify"),
         ("POST", "/tickets/{ticket_id}/run"),
+        ("POST", "/voice/record"),
+        ("POST", "/voice/{capture_id}/stop"),
+        ("POST", "/voice/{capture_id}/transcribe"),
         ("POST", "/workflows/{workflow_name}/run"),
         ("PUT", "/integrations/{name}/credentials"),
     }

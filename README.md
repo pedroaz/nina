@@ -12,6 +12,7 @@ Nina is designed for one person's workflow, not a multi-user SaaS.
 - Use a GPUI desktop client for mouse-first access to the same daemon-backed workflows.
 - Search and ask questions over the local vault.
 - Record meetings, transcribe locally, summarize with the configured LLM provider, and write meeting notes.
+- Record short voice captures for local transcription, clipboard copy, and desktop global dictation.
 - Use the local Codex CLI as the default LLM and research path.
 - Integrate with Codex task automation through a local plugin and lifecycle hooks.
 
@@ -56,6 +57,7 @@ flowchart TB
     Search[Search index]
     Jobs[Jobs and workflows]
     Meetings[Meeting pipeline]
+    Voice[Voice capture]
     Codex[Codex CLI and hooks]
     LLM[LLM providers]
   end
@@ -70,6 +72,7 @@ flowchart TB
   Daemon --> Search
   Daemon --> Jobs
   Daemon --> Meetings
+  Daemon --> Voice
   Daemon --> Codex
   Daemon --> LLM
 ```
@@ -90,9 +93,9 @@ Package boundaries:
 - Codex CLI, for the default LLM/research provider
 - An Obsidian-compatible vault path, created automatically by `nina init` if omitted
 
-On Linux, the GPUI desktop client links against native `xcb`, `xkbcommon`, and `xkbcommon-x11` runtime libraries.
+On Linux, the GPUI desktop client links against native `xcb`, `xkbcommon`, and `xkbcommon-x11` runtime libraries. Desktop global dictation uses the XDG Desktop Portal Global Shortcuts API. Clipboard paste insertion expects `wl-clipboard` plus `wtype` on Wayland, with `xclip`/`xsel` and `xdotool` fallbacks on X11.
 
-Optional meeting transcription support installs `faster-whisper` through the `nina-core[transcription]` extra or `nina setup transcription`.
+Optional meeting and voice transcription support installs `faster-whisper` through the `nina-core[transcription]` extra or `nina setup transcription`.
 
 ## Install
 
@@ -173,7 +176,22 @@ nina mt e <meeting-id>
 nina mt o <meeting-id>
 ```
 
-Useful compact aliases include `nina d` for daemon commands, `nina tk` for tickets, `nina mt` for meetings, `nina c` for config, `nina ll` for LLM, `nina rch` for research, and `nina s` for search.
+Record a voice clip and copy the transcript:
+
+```bash
+nina vc r --copy
+# Ctrl+C to stop recording and transcribe
+```
+
+Enable desktop global dictation while Nina Desktop is open:
+
+```bash
+nina config voice-global-hotkey-enabled true
+nina config voice-global-hotkey "Ctrl+Alt+Space"
+make desktop
+```
+
+Useful compact aliases include `nina d` for daemon commands, `nina tk` for tickets, `nina mt` for meetings, `nina vc` for voice capture, `nina c` for config, `nina ll` for LLM, `nina rch` for research, and `nina s` for search.
 
 ## Configuration
 
@@ -197,6 +215,9 @@ nina config research-provider codex
 nina config research-model gpt-5.5
 nina config research-search-mode live
 nina config research-timeout 600
+nina config voice-global-hotkey-enabled true
+nina config voice-global-hotkey "Ctrl+Alt+Space"
+nina config voice-preserve-clipboard true
 nina open config
 ```
 

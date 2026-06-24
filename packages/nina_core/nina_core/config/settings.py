@@ -84,6 +84,13 @@ class MeetingsConfig(BaseModel):
     noise_reduction: str = "off"
 
 
+class VoiceConfig(BaseModel):
+    global_hotkey_enabled: bool = False
+    global_hotkey: str = "Ctrl+Alt+Space"
+    insert_mode: str = "clipboard_paste"
+    preserve_clipboard: bool = True
+
+
 class CodexConfig(BaseModel):
     enabled: bool = True
     # Empty string means "use shutil.which('codex')". A user-set path
@@ -112,6 +119,7 @@ class NinaConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
+    voice: VoiceConfig = Field(default_factory=VoiceConfig)
     codex: CodexConfig = Field(default_factory=CodexConfig)
     log_level: str = "INFO"
 

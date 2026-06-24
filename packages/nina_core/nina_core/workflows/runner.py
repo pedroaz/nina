@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from nina_core.config import NinaConfig, get_codex_task_logs_dir, load_effective_config
-from nina_core.models.models import WorkflowRun, WorkflowStep
+from nina_core.models.models import TASK_PIPELINE_STAGES, WorkflowRun, WorkflowStep
 from nina_core.research.service import ResearchService
 
 
@@ -940,8 +940,10 @@ class WorkflowRunner:
 
         run_id = f"{task.id}-{task.task_type}-{uuid.uuid4().hex[:8]}"
         log_path = self._codex_task_log_path(task.id, run_id)
-        prompt = self._build_codex_task_prompt(task, run_id, worktree)
-        env = self._build_codex_task_env(input_data, task.id, run_id, task.task_type)
+        normalized_stage = self._normalize_pipeline_stage(task.pipeline_stage, task.task_type)
+        prompt = self._build_codex_task_prompt(task, run_id, worktree, normalized_stage)
+        env = self._build_codex_task_env(input_data, task.id, run_id, task.task_type, normalized_stage)
+        service.obsidian.set_task_prompt(task, prompt)
 
         step = self._create_step(db, run, f"codex_{task.task_type}")
         _log_task_event(
@@ -1033,19 +1035,35 @@ class WorkflowRunner:
 
         return get_codex_task_logs_dir(self.config_dir) / safe(task_id) / f"{safe(run_id)}.log"
 
+    def _normalize_pipeline_stage(self, pipeline_stage: str | None, task_type: str) -> str:
+        if isinstance(pipeline_stage, str):
+            cleaned = pipeline_stage.strip().lower()
+            if cleaned in TASK_PIPELINE_STAGES and not (task_type == "reviewing" and cleaned == "created"):
+                return cleaned
+        if task_type == "reviewing":
+            return "reviewing"
+        if task_type == "coding":
+            return "coding"
+        return "created"
+
     def _build_codex_task_env(
         self,
         input_data: dict[str, Any],
         task_id: str,
         run_id: str,
         task_type: str,
+        pipeline_stage: str | None = None,
     ) -> dict[str, str]:
         token = str(input_data.get("nina_token") or os.environ.get("NINA_TOKEN") or "")
-        base_url = str(input_data.get("nina_base_url") or os.environ.get("NINA_BASE_URL") or self._default_nina_base_url())
+        base_url = str(
+            input_data.get("nina_base_url") or os.environ.get("NINA_BASE_URL") or self._default_nina_base_url()
+        )
+        normalized_stage = self._normalize_pipeline_stage(pipeline_stage, task_type)
         return {
             "NINA_TASK_ID": task_id,
             "NINA_RUN_ID": run_id,
             "NINA_TASK_TYPE": task_type,
+            "NINA_PIPELINE_STAGE": normalized_stage,
             "NINA_BASE_URL": base_url,
             "NINA_TOKEN": token,
             "NINA_HOOK_TIMEOUT_MS": str(input_data.get("nina_hook_timeout_ms") or "5000"),
@@ -1057,21 +1075,102 @@ class WorkflowRunner:
             host = "127.0.0.1"
         return f"http://{host}:{int(self.config.daemon_port)}"
 
-    def _build_codex_task_prompt(self, task: Any, run_id: str, worktree: str) -> str:
-        instructions = {
-            "coding": "Implement the requested coding work in the worktree. Make the smallest coherent code changes needed.",
-            "reviewing": "Review the implementation as an independent reviewer. Do not make broad unrelated edits. Use Decision: approved only if it is ready.",
-        }.get(task.task_type, "Work this task and report the result clearly.")
+    def _build_codex_task_prompt(
+        self,
+        task: Any,
+        run_id: str,
+        worktree: str,
+        pipeline_stage: str | None = None,
+    ) -> str:
+        title = task.title or "(untitled)"
         description = task.description or "(none)"
+        stage = self._normalize_pipeline_stage(pipeline_stage, task.task_type)
+
+        stage_instructions: dict[str, str] = {
+            "created": (
+                "Do discovery first. Read related files, run quick checks, and define the safest implementation"
+                " approach. Do not implement yet unless there is obvious context from existing code."
+            ),
+            "exploration": (
+                "Explore the ticket end-to-end: inspect current behavior, identify affected files, and propose"
+                " a coding plan with file-level changes, risk and rollback notes. If enough context is found,"
+                " include concrete first implementation steps."
+            ),
+            "coding": (
+                "Implement the requested change with minimal, focused edits. Keep changes limited to this task and"
+                " preserve existing behavior outside the scope. If uncertainty remains, stop and report blockers clearly."
+            ),
+            "testing": (
+                "Validate the change: run the most relevant checks (unit tests, lint/typing commands, and"
+                " targeted build/test commands). If you cannot run checks, state exactly what is missing."
+            ),
+            "reviewing": (
+                "Review the changes as an independent reviewer. Verify requirement coverage and edge cases."
+                " Include explicit go/no-go assessment and provide a Decision line with"
+                " 'approved', 'rejected', or 'blocked'."
+            ),
+            "done": "Finalize with a concise summary, references to evidence, and any remaining risks.",
+            "blocked": "Capture clear blockers and why work is blocked. Propose a concrete next unblock step.",
+        }
         final_report_lines = [
             "- Outcome: completed, partially completed, or blocked",
-            "- Summary: concise result",
             "- Files: key files touched or inspected",
-            "- Checks: commands run, or state not run",
+            "- Checks: commands run or checks not run",
             "- Blockers: any blocker, or none",
         ]
-        if task.task_type == "reviewing":
+
+        if stage == "reviewing":
             final_report_lines.insert(1, "- Decision: approved, rejected, or blocked")
+        elif stage == "exploration":
+            final_report_lines.insert(1, "- Proposed next step: stage name")
+        elif stage == "testing":
+            final_report_lines.insert(1, "- Result: pass/fail per check")
+
+        stage_to_next = {
+            "created": "exploration",
+            "exploration": "coding",
+            "coding": "testing",
+            "testing": "reviewing",
+            "reviewing": "done",
+            "done": "done",
+            "blocked": "exploration",
+        }
+        next_stage = stage_to_next.get(stage, "created")
+        self_prompt_templates: dict[str, list[str]] = {
+            "created": [
+                "- Goal: define scope, constraints, and acceptance criteria from the ticket.",
+                "- Report these clearly in your outcome.",
+                "- Include a proposed handoff prompt (concise) for the next stage.",
+            ],
+            "exploration": [
+                "- Goal: produce a minimal, file-level implementation plan that can be executed next stage.",
+                "- Include a concrete next-stage prompt for coding with changed files, risk notes, and rollback idea.",
+            ],
+            "coding": [
+                "- Goal: ship minimal edits tied directly to the ticket objective.",
+                "- Include a concrete next-stage prompt for testing with exact commands or checks to run.",
+            ],
+            "testing": [
+                "- Goal: validate behavior and regressions; capture test commands and results.",
+                "- Include any blocked checks and the reason when checks cannot run.",
+                "- Include a concrete next-stage prompt for review with findings and risks.",
+            ],
+            "reviewing": [
+                "- Goal: judge go/no-go confidence and required follow-up.",
+                "- Include an explicit Decision line and a concise reviewer summary.",
+                "- If not approved, include one paragraph of required fixes before re-run.",
+            ],
+            "done": [
+                "- Goal: summarize what was achieved and what remains open.",
+                "- Include references to evidence and explicit residual risks.",
+            ],
+            "blocked": [
+                "- Goal: explain why execution is blocked and list exact unblock actions.",
+                "- Include the highest-confidence next attempt once blockers are removed.",
+            ],
+        }
+        template_lines = self_prompt_templates.get(stage, self_prompt_templates["created"])
+
         return "\n".join(
             [
                 "Use @nina-task.",
@@ -1079,19 +1178,30 @@ class WorkflowRunner:
                 f"Nina task id: {task.id}",
                 f"Nina run id: {run_id}",
                 f"Nina task type: {task.task_type}",
+                f"Nina pipeline stage: {stage}",
                 f"Worktree: {worktree}",
                 "",
                 "Task:",
-                f"Title: {task.title}",
+                f"Title: {title}",
                 f"Description: {description}",
                 "",
-                "Instructions:",
-                instructions,
+                "Stage guidance:",
+                stage_instructions.get(stage, stage_instructions["created"]),
+                "",
+                "Execution order:",
+                "1. Do only what this stage requires.",
+                "2. Prefer minimal edits and explicit file-level justifications.",
+                "3. Report a final structured update using the sections below.",
+                "4. For handoff stages, also include the self-prompting lines below.",
                 "",
                 "Final report format:",
                 *final_report_lines,
+                "",
+                f"Self-prompt template (next stage: {next_stage}):",
+                *template_lines,
             ]
         ).strip()
+
 
     def _extract_task_id(self, input_data: dict[str, Any]) -> str:
         task_id = input_data.get("task_id") if isinstance(input_data, dict) else None

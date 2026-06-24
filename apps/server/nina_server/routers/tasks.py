@@ -30,6 +30,10 @@ def _task_to_response(t: Any, repository: Any | None = None) -> TaskResponse:
         description=t.description,
         task_type=t.task_type,
         status=t.status,
+        pipeline_stage=t.pipeline_stage,
+        pipeline_error=t.pipeline_error,
+        note_path=f"Tasks/{t.id}.md",
+        pipeline_rework_count=t.pipeline_rework_count,
         classified_at=t.classified_at,
         classification_reason=t.classification_reason,
         classification_model=t.classification_model,
@@ -64,6 +68,7 @@ async def list_tasks(
     request: Request,
     task_type: str | None = None,
     status: str | None = None,
+    pipeline_stage: str | None = None,
     include_archived: bool = False,
     repository_id: str | None = None,
 ) -> list[TaskResponse]:
@@ -73,6 +78,7 @@ async def list_tasks(
         tasks = service.list(
             task_type=task_type,
             status=status,
+            pipeline_stage=pipeline_stage,
             include_archived=include_archived,
             repository_id=repository_id,
         )
@@ -91,6 +97,7 @@ async def create_task(request: Request, data: TaskCreate) -> TaskResponse:
                 data.description,
                 repository_id=data.repository_id,
                 task_type=data.task_type or "unclassified",
+                pipeline_stage=data.pipeline_stage,
                 auto_classify=data.auto_classify and not wants_run,
             )
         except ValueError as exc:
@@ -150,12 +157,14 @@ async def list_tickets(
     request: Request,
     task_type: str | None = None,
     status: str | None = None,
+    pipeline_stage: str | None = None,
     include_archived: bool = False,
 ) -> list[TaskResponse]:
     return await list_tasks(
         request,
         task_type=task_type,
         status=status,
+        pipeline_stage=pipeline_stage,
         include_archived=include_archived,
     )
 
@@ -247,19 +256,21 @@ async def update_task(request: Request, task_id: str, data: TaskUpdate) -> TaskR
     with get_db_session() as db:
         obsidian = get_obsidian()
         service = TaskService(db, obsidian)
+        update_kwargs: dict[str, Any] = {
+            "title": data.title,
+            "description": data.description,
+            "task_type": data.task_type,
+            "status": data.status,
+            "pipeline_stage": data.pipeline_stage,
+            "pipeline_rework_count": data.pipeline_rework_count,
+            "repository_id": (
+                (data.repository_id or "") if "repository_id" in data.model_fields_set else None
+            ),
+        }
+        if "pipeline_error" in data.model_fields_set:
+            update_kwargs["pipeline_error"] = data.pipeline_error
         try:
-            task = service.update(
-                task_id,
-                title=data.title,
-                description=data.description,
-                task_type=data.task_type,
-                status=data.status,
-                repository_id=(
-                    (data.repository_id or "")
-                    if "repository_id" in data.model_fields_set
-                    else None
-                ),
-            )
+            task = service.update(task_id, **update_kwargs)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         if not task:

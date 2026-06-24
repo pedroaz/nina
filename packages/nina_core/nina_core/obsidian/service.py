@@ -14,8 +14,16 @@ def _slugify(value: str) -> str:
     return slug or "note"
 
 
+TASK_DESCRIPTION_HEADING = "## Description"
+TASK_PROMPT_HEADING = "## Prompt"
+TASK_STATUS_HEADING = "## Status"
+TASK_SUMMARY_HEADING = "## Summary"
 TASK_NOTES_HEADING = "## Notes"
 TASK_ACTIVITY_HEADING = "## Nina Activity"
+
+
+def _format_status_line(label: str, value: str | None) -> str:
+    return f"- {label}: {value}" if value is not None and value != "" else f"- {label}: none"
 
 
 class ObsidianService:
@@ -41,6 +49,9 @@ class ObsidianService:
             "nina_id": task.id,
             "task_type": task.task_type,
             "status": task.status,
+            "pipeline_stage": task.pipeline_stage,
+            "pipeline_error": task.pipeline_error,
+            "pipeline_rework_count": task.pipeline_rework_count,
             "repository_id": task.repository_id,
             "classified_at": task.classified_at,
             "classification_reason": task.classification_reason,
@@ -49,31 +60,96 @@ class ObsidianService:
             "updated_at": task.updated_at,
         }
 
-    def _task_body(self, task: Task, existing_content: str | None = None) -> str:
-        preserved = self._preserved_task_sections(existing_content or "")
-        body = "\n".join(
+    def _task_status_block(self, task: Task) -> str:
+        return "\n".join(
             [
-                f"# {task.title}",
-                "",
-                "## Description",
-                "",
-                task.description or "",
-                "",
+                _format_status_line("task_type", task.task_type),
+                _format_status_line("status", task.status),
+                _format_status_line("pipeline_stage", task.pipeline_stage),
+                f"- pipeline_rework_count: {task.pipeline_rework_count}",
+                f"- pipeline_error: {task.pipeline_error if task.pipeline_error is not None else 'none'}",
+                _format_status_line("last_updated", task.updated_at),
             ]
         )
-        if preserved:
-            return body + preserved.rstrip() + "\n"
-        return body + f"{TASK_NOTES_HEADING}\n\n{TASK_ACTIVITY_HEADING}\n"
 
-    def _preserved_task_sections(self, content: str) -> str:
-        starts = [
-            idx
-            for idx in (content.find(TASK_NOTES_HEADING), content.find(TASK_ACTIVITY_HEADING))
-            if idx >= 0
+    def _task_note_sections(self, task: Task, existing_content: str) -> dict[str, str]:
+        prompt = _extract_section(existing_content, TASK_PROMPT_HEADING)
+        summary = _extract_section(existing_content, TASK_SUMMARY_HEADING)
+        notes = _extract_section(existing_content, TASK_NOTES_HEADING)
+        activity = _extract_section(existing_content, TASK_ACTIVITY_HEADING)
+
+        return {
+            TASK_DESCRIPTION_HEADING: task.description or "",
+            TASK_PROMPT_HEADING: prompt,
+            TASK_STATUS_HEADING: self._task_status_block(task),
+            TASK_SUMMARY_HEADING: summary,
+            TASK_NOTES_HEADING: notes,
+            TASK_ACTIVITY_HEADING: activity,
+        }
+
+    def _task_body(
+        self,
+        task: Task,
+        existing_content: str | None = None,
+        *,
+        prompt: str | None = None,
+        summary: str | None = None,
+        notes: str | None = None,
+        activity_message: str | None = None,
+    ) -> str:
+        existing = existing_content or ""
+        sections = self._task_note_sections(task, existing)
+
+        if prompt is not None:
+            sections[TASK_PROMPT_HEADING] = prompt
+        if summary is not None:
+            sections[TASK_SUMMARY_HEADING] = summary
+        if notes is not None:
+            sections[TASK_NOTES_HEADING] = notes
+
+        if not sections[TASK_NOTES_HEADING]:
+            sections[TASK_NOTES_HEADING] = "- No notes yet."
+
+        if activity_message is not None:
+            existing_activity = sections[TASK_ACTIVITY_HEADING] or ""
+            timestamp = datetime.now(timezone.utc).isoformat()
+            line = f"- {timestamp}: {activity_message.strip()}"
+            if existing_activity.strip():
+                sections[TASK_ACTIVITY_HEADING] = f"{existing_activity.rstrip()}\n{line}"
+            else:
+                sections[TASK_ACTIVITY_HEADING] = line
+        elif not sections[TASK_ACTIVITY_HEADING].strip():
+            sections[TASK_ACTIVITY_HEADING] = "- No activity yet."
+
+        parts = [
+            f"# {task.title}",
+            "",
+            TASK_DESCRIPTION_HEADING,
+            "",
+            sections[TASK_DESCRIPTION_HEADING] or "",
+            "",
+            TASK_PROMPT_HEADING,
+            "",
+            sections[TASK_PROMPT_HEADING] or "No prompt captured yet.",
+            "",
+            TASK_STATUS_HEADING,
+            "",
+            sections[TASK_STATUS_HEADING],
+            "",
+            TASK_SUMMARY_HEADING,
+            "",
+            sections[TASK_SUMMARY_HEADING] or "No summary yet.",
+            "",
+            TASK_NOTES_HEADING,
+            "",
+            sections[TASK_NOTES_HEADING],
+            "",
+            TASK_ACTIVITY_HEADING,
+            "",
+            sections[TASK_ACTIVITY_HEADING],
+            "",
         ]
-        if not starts:
-            return ""
-        return content[min(starts):].strip() + "\n"
+        return "\n".join(parts)
 
     def create_task_note(self, task: Task) -> None:
         path = self._task_path(task)
@@ -89,18 +165,31 @@ class ObsidianService:
             post.metadata.update(self._task_metadata(task))
             path.write_text(frontmatter.dumps(post))
 
+    def set_task_prompt(self, task: Task, prompt: str) -> None:
+        path = self._task_path(task)
+        if not path.exists():
+            self.create_task_note(task)
+        post = frontmatter.loads(path.read_text())
+        post.content = self._task_body(task, post.content, prompt=prompt or "")
+        post.metadata.update(self._task_metadata(task))
+        path.write_text(frontmatter.dumps(post))
+
+    def set_task_summary(self, task: Task, summary: str) -> None:
+        path = self._task_path(task)
+        if not path.exists():
+            self.create_task_note(task)
+        post = frontmatter.loads(path.read_text())
+        post.content = self._task_body(task, post.content, summary=summary or "")
+        post.metadata.update(self._task_metadata(task))
+        path.write_text(frontmatter.dumps(post))
+
     def append_task_activity(self, task: Task, message: str) -> None:
         path = self._task_path(task)
         if not path.exists():
             self.create_task_note(task)
         post = frontmatter.loads(path.read_text())
         post.metadata.update(self._task_metadata(task))
-        content = self._task_body(task, post.content).rstrip()
-        if TASK_ACTIVITY_HEADING not in content:
-            content += f"\n\n{TASK_ACTIVITY_HEADING}"
-        timestamp = datetime.now(timezone.utc).isoformat()
-        content = content.rstrip() + f"\n- {timestamp}: {message.strip()}\n"
-        post.content = content
+        post.content = self._task_body(task, post.content, activity_message=message)
         path.write_text(frontmatter.dumps(post))
 
     def delete_task_note(self, task: Task) -> None:
@@ -178,6 +267,48 @@ class ObsidianService:
     def _meeting_path(self, title: str, started_at: str) -> Path:
         date = started_at[:10]
         return Path("Meetings") / f"{date} - {_slugify(title)}.md"
+
+    def _voice_path(self, title: str, started_at: str) -> Path:
+        date = started_at[:10]
+        return Path("Voice") / f"{date} - {_slugify(title)}.md"
+
+    def write_voice_capture_note(
+        self,
+        capture_id: str,
+        title: str,
+        started_at: str,
+        source: str,
+        audio_path: str,
+        transcript: str,
+        *,
+        language: str | None = None,
+        model: str | None = None,
+    ) -> str:
+        relative_path = self._voice_path(title, started_at)
+        body = "\n".join(
+            [
+                f"# {title}",
+                "",
+                "## Transcript",
+                "",
+                transcript.rstrip() or "_No transcript text returned._",
+                "",
+            ]
+        )
+        metadata = {
+            "nina_type": "voice_capture",
+            "nina_id": capture_id,
+            "title": title,
+            "started_at": started_at,
+            "source": source,
+            "audio_path": audio_path,
+            "language": language,
+            "model": model,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.write_note(relative_path, body, metadata)
+        return str(relative_path)
 
     def _transcript_path(self, title: str, started_at: str) -> Path:
         date = started_at[:10]
@@ -447,8 +578,10 @@ class ObsidianService:
 
 
 def _extract_section(body: str, heading: str) -> str:
+    target = heading.strip()
+    prefix = "## " if not target.startswith("##") else ""
     pattern = re.compile(
-        rf"^##\s+{re.escape(heading)}\s*$\n(?P<content>.*?)(?=^##\s+|\Z)",
+        rf"^{re.escape(prefix + target)}\s*$\n(?P<content>.*?)(?=^##\s+|\Z)",
         re.MULTILINE | re.DOTALL,
     )
     match = pattern.search(body)

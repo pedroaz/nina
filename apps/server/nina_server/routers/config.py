@@ -16,6 +16,7 @@ from ..schemas import (
     ConfigUpdate,
     LLMConfigResponse,
     MeetingsConfigResponse,
+    VoiceConfigResponse,
     CodexConfigResponse,
     ResearchConfigResponse,
     SchedulerConfigResponse,
@@ -65,6 +66,12 @@ def _config_response(config_dir: Path, config: Any) -> ConfigResponse:
             auto_normalize=config.meetings.auto_normalize,
             normalize_target_dbfs=config.meetings.normalize_target_dbfs,
             noise_reduction=config.meetings.noise_reduction,
+        ),
+        voice=VoiceConfigResponse(
+            global_hotkey_enabled=config.voice.global_hotkey_enabled,
+            global_hotkey=config.voice.global_hotkey,
+            insert_mode=config.voice.insert_mode,
+            preserve_clipboard=config.voice.preserve_clipboard,
         ),
         codex=CodexConfigResponse(
             enabled=config.codex.enabled,

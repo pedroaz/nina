@@ -105,3 +105,29 @@ def test_task_status_is_idle_working_or_error(isolated_config: Path) -> None:
             service.update(task.id, status="blocked")
     finally:
         db.close()
+
+
+def test_task_update_can_clear_pipeline_error_explicitly(isolated_config: Path) -> None:
+    db = _session(isolated_config)
+    vault = get_vault_path(isolated_config)
+    try:
+        service = TaskService(db, ObsidianService(vault), background_classify=False)
+        task = service.create("pipeline error task", task_type="research", auto_classify=False)
+
+        blocked = service.update(
+            task.id,
+            pipeline_stage="blocked",
+            pipeline_error="waiting on validation",
+        )
+        assert blocked is not None
+        assert blocked.pipeline_error == "waiting on validation"
+
+        omitted = service.update(task.id, status="idle")
+        assert omitted is not None
+        assert omitted.pipeline_error == "waiting on validation"
+
+        cleared = service.update(task.id, pipeline_stage="done", pipeline_error=None)
+        assert cleared is not None
+        assert cleared.pipeline_error is None
+    finally:
+        db.close()

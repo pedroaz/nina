@@ -25,6 +25,7 @@ from .settings import (
     SchedulerConfig,
     SearchConfig,
     TranscriptionConfig,
+    VoiceConfig,
     merge_config,
 )
 from .token import generate_token, read_token, write_token
@@ -54,6 +55,7 @@ __all__ = [
     "SearchConfig",
     "TranscriptionConfig",
     "MeetingsConfig",
+    "VoiceConfig",
     "CodexConfig",
     "merge_config",
     "generate_token",

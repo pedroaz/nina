@@ -80,6 +80,8 @@ def api_client(
         app.state.runtime.scheduler = None
     if hasattr(app.state, "meeting_recorder"):
         del app.state.meeting_recorder
+    if hasattr(app.state, "voice_recorder"):
+        del app.state.voice_recorder
     if hasattr(app.state, "config"):
         del app.state.config
     if hasattr(app.state, "runtime"):

@@ -47,6 +47,7 @@ def test_task_creation_and_classification_patches_task_and_note(
     first_id = first.json()["id"]
     assert first.json()["task_type"] == "unclassified"
     assert first.json()["status"] == "idle"
+    assert first.json()["note_path"] == f"Tasks/{first_id}.md"
 
     # The background classifier runs in a thread; give it enough time under full-suite load.
     _wait_for_classification(api_client, auth_headers, first_id, expected="coding")

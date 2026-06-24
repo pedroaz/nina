@@ -1,6 +1,7 @@
 from nina_core.db.engine import Base  # type: ignore[import-untyped]
 from .models import (
     TASK_AGENT_STATUSES,
+    TASK_PIPELINE_STAGES,
     TASK_TYPES,
     Event,
     JobRun,
@@ -10,6 +11,7 @@ from .models import (
     NoteEmbedding,
     ScheduledJob,
     Task,
+    VoiceCapture,
     WorkflowRun,
     WorkflowStep,
 )
@@ -18,6 +20,7 @@ __all__ = [
     "Base",
     "Task",
     "TASK_TYPES",
+    "TASK_PIPELINE_STAGES",
     "TASK_AGENT_STATUSES",
     "Note",
     "NoteEmbedding",
@@ -28,4 +31,5 @@ __all__ = [
     "JobRun",
     "Event",
     "Meeting",
+    "VoiceCapture",
 ]

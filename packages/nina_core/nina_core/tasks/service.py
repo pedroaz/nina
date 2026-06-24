@@ -3,16 +3,30 @@ import os
 import threading
 import uuid
 from datetime import datetime, timezone
+from typing import Final, cast
 
 from sqlalchemy.orm import Session
 
-from nina_core.models.models import TASK_AGENT_STATUSES, TASK_TYPES, Repository, Task
+from nina_core.models.models import (
+    TASK_AGENT_STATUSES,
+    TASK_PIPELINE_STAGES,
+    TASK_TYPES,
+    Repository,
+    Task,
+)
 
 from nina_core.obsidian.service import ObsidianService
 
 
 _CLASSIFICATION_THREADS: list[threading.Thread] = []
 _CLASSIFICATION_LOCK = threading.Lock()
+
+
+class _UnsetType:
+    pass
+
+
+_UNSET: Final = _UnsetType()
 
 
 def _background_classify_enabled() -> bool:
@@ -66,6 +80,23 @@ def _validate_status(value: str | None) -> str | None:
     return value
 
 
+def _validate_pipeline_stage(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if value not in TASK_PIPELINE_STAGES:
+        allowed = ", ".join(TASK_PIPELINE_STAGES)
+        raise ValueError(f"Invalid pipeline_stage {value!r}. Expected one of: {allowed}")
+    return value
+
+
+def _validate_pipeline_rework_count(value: int | None) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool) or value < 0:
+        raise ValueError(f"pipeline_rework_count {value!r} must be a non-negative integer")
+    return value
+
+
 NO_REPOSITORY_TASK_TYPES = {"unclassified", "reminder", "research", "blocked", "done"}
 
 
@@ -99,8 +130,10 @@ class TaskService:
         repository_id: str | None = None,
         task_type: str = "unclassified",
         auto_classify: bool = True,
+        pipeline_stage: str | None = None,
     ) -> Task:
         normalized_type = _validate_task_type(task_type) or "unclassified"
+        normalized_stage = _validate_pipeline_stage(pipeline_stage) or "created"
         normalized_repository_id = self._normalize_repository_id(repository_id)
         self._validate_repository_for_task_type(normalized_type, normalized_repository_id)
         task = Task(
@@ -110,6 +143,8 @@ class TaskService:
             repository_id=normalized_repository_id,
             task_type=normalized_type,
             status="idle",
+            pipeline_stage=normalized_stage,
+            pipeline_rework_count=0,
             created_at=_now(),
             updated_at=_now(),
         )
@@ -132,9 +167,7 @@ class TaskService:
             raise ValueError(f"Repository not found: {repository_id}")
         return repo.id
 
-    def _validate_repository_for_task_type(
-        self, task_type: str, repository_id: str | None
-    ) -> None:
+    def _validate_repository_for_task_type(self, task_type: str, repository_id: str | None) -> None:
         if not repository_id and not _task_type_allows_missing_repository(task_type):
             raise ValueError(_repository_required_message(task_type))
 
@@ -163,6 +196,7 @@ class TaskService:
         self,
         task_type: str | None = None,
         status: str | None = None,
+        pipeline_stage: str | None = None,
         include_archived: bool = False,
         repository_id: str | None = None,
     ) -> list[Task]:
@@ -173,6 +207,8 @@ class TaskService:
             query = query.filter(Task.task_type == task_type)
         if status:
             query = query.filter(Task.status == status)
+        if pipeline_stage:
+            query = query.filter(Task.pipeline_stage == pipeline_stage)
         if repository_id:
             query = query.filter(Task.repository_id == repository_id)
         query = query.order_by(Task.created_at.desc())
@@ -188,6 +224,9 @@ class TaskService:
         description: str | None = None,
         task_type: str | None = None,
         status: str | None = None,
+        pipeline_stage: str | None = None,
+        pipeline_error: str | None | _UnsetType = _UNSET,
+        pipeline_rework_count: int | None = None,
         repository_id: str | None = None,
     ) -> Task | None:
         task = self.get(task_id)
@@ -212,6 +251,14 @@ class TaskService:
             task.task_type = normalized
         if status is not None:
             task.status = _validate_status(status) or task.status
+        if pipeline_stage is not None:
+            task.pipeline_stage = _validate_pipeline_stage(pipeline_stage) or task.pipeline_stage
+        if pipeline_error is not _UNSET:
+            task.pipeline_error = cast(str | None, pipeline_error)
+        if pipeline_rework_count is not None:
+            task.pipeline_rework_count = _validate_pipeline_rework_count(pipeline_rework_count)
+        if pipeline_stage is not None and pipeline_stage not in {"blocked", "done"}:
+            task.pipeline_error = None
         if repository_id is not None:
             task.repository_id = target_repository_id
         task.updated_at = _now()

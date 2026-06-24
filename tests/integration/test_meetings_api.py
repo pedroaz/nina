@@ -182,7 +182,13 @@ def test_meeting_pipeline_endpoint_writes_all_three_files(
         "## Decisions\n- Use the pipeline.\n"
     )
 
-    def _patched_init(self, db_path, provider=None, config=None) -> None:  # type: ignore[no-untyped-def]
+    def _patched_init(
+        self,
+        db_path,
+        provider=None,
+        config=None,
+        codex_binary_path=None,  # noqa: ARG001
+    ) -> None:  # type: ignore[no-untyped-def]
         self.db_path = db_path
         from nina_core.config.settings import LLMConfig
 

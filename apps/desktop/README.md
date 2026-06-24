@@ -26,6 +26,19 @@ On Linux, GPUI also links against native X11/XKB libraries for run and test bina
 
 `make desktop` also refreshes the Linux desktop metadata under `$XDG_DATA_HOME` (usually `~/.local/share`) so the taskbar can resolve the `nina` app id to the Nina icon.
 
+
+## Global Dictation
+
+When `voice.global_hotkey_enabled` is true, the desktop client registers the configured shortcut with the XDG Desktop Portal Global Shortcuts API while the app is open. Press the shortcut once to start a daemon-owned voice capture, press it again to stop, transcribe, copy the transcript to the clipboard, and paste into the currently focused OS field.
+
+```bash
+nina config voice-global-hotkey-enabled true
+nina config voice-global-hotkey "Ctrl+Alt+Space"
+nina config voice-preserve-clipboard true
+```
+
+On Wayland, install `wl-clipboard` for clipboard writes and `wtype` for paste automation. X11 sessions can use `xclip` or `xsel` plus `xdotool`.
+
 ## Development
 
 ```bash

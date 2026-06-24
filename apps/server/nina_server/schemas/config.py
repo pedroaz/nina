@@ -41,6 +41,13 @@ class MeetingsConfigResponse(BaseModel):
     noise_reduction: str
 
 
+class VoiceConfigResponse(BaseModel):
+    global_hotkey_enabled: bool
+    global_hotkey: str
+    insert_mode: str
+    preserve_clipboard: bool
+
+
 class CodexConfigResponse(BaseModel):
     enabled: bool
     binary_path: str
@@ -65,6 +72,7 @@ class ConfigResponse(BaseModel):
     scheduler: SchedulerConfigResponse
     transcription: TranscriptionConfigResponse
     meetings: MeetingsConfigResponse
+    voice: VoiceConfigResponse
     codex: CodexConfigResponse
     log_level: str
 
@@ -107,6 +115,13 @@ class MeetingsConfigUpdate(BaseModel):
     noise_reduction: str | None = None
 
 
+class VoiceConfigUpdate(BaseModel):
+    global_hotkey_enabled: bool | None = None
+    global_hotkey: str | None = None
+    insert_mode: str | None = None
+    preserve_clipboard: bool | None = None
+
+
 class CodexConfigUpdate(BaseModel):
     enabled: bool | None = None
     binary_path: str | None = None
@@ -129,4 +144,5 @@ class ConfigUpdate(BaseModel):
     scheduler: SchedulerConfigUpdate | None = None
     transcription: TranscriptionConfigUpdate | None = None
     meetings: MeetingsConfigUpdate | None = None
+    voice: VoiceConfigUpdate | None = None
     codex: CodexConfigUpdate | None = None

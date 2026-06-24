@@ -29,6 +29,7 @@ pub struct Ticket {
     pub description: String,
     pub task_type: String,
     pub status: String,
+    pub note_path: Option<String>,
     pub classified_at: Option<String>,
     pub classification_reason: Option<String>,
     pub classification_model: Option<String>,
@@ -268,6 +269,51 @@ pub struct Meeting {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoiceCapture {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub source: String,
+    pub device_name: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub duration_seconds: Option<f64>,
+    pub audio_path: String,
+    pub audio_size_bytes: Option<u64>,
+    pub audio_format: String,
+    pub sample_rate: u32,
+    pub channels: u32,
+    pub transcript_path: Option<String>,
+    pub transcript_note_path: Option<String>,
+    pub language: Option<String>,
+    pub model: Option<String>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VoiceRecordRequest {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VoiceTranscribeRequest {
+    pub save_note: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoiceTranscribeResult {
+    pub capture: VoiceCapture,
+    pub transcript: String,
+    pub transcript_path: String,
+    pub segments_path: String,
+    pub transcript_note_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct MeetingsResponse {
     #[serde(default)]
     pub meetings: Vec<Meeting>,
@@ -348,6 +394,7 @@ pub struct ConfigSnapshot {
     pub scheduler: SchedulerConfig,
     pub transcription: TranscriptionConfig,
     pub meetings: MeetingsConfig,
+    pub voice: VoiceConfig,
     pub codex: CodexConfig,
     pub log_level: String,
 }
@@ -393,6 +440,14 @@ pub struct MeetingsConfig {
     pub auto_normalize: bool,
     pub normalize_target_dbfs: f64,
     pub noise_reduction: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoiceConfig {
+    pub global_hotkey_enabled: bool,
+    pub global_hotkey: String,
+    pub insert_mode: String,
+    pub preserve_clipboard: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

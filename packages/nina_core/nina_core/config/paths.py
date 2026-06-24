@@ -49,6 +49,10 @@ def get_recordings_path(config_dir: Path) -> Path:
     return config_dir / "recordings"
 
 
+def get_voice_recordings_path(config_dir: Path) -> Path:
+    return config_dir / "voice"
+
+
 def get_codex_pid_path(config_dir: Path) -> Path:
     return config_dir / "codex.pid"
 

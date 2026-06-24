@@ -16,7 +16,7 @@ use crate::models::{
     RepositoryCreateRequest, RepositoryWorktree, ResearchRunRequest, ResearchRunResult,
     RuntimeState, SessionCreateRequest, SessionMessageCreateRequest, SessionRecord,
     SessionSendResponse, TaskCreateRequest, TaskGroup, TaskRunRequest, TaskUpdateRequest, Ticket,
-    WorkflowInfo,
+    VoiceCapture, VoiceRecordRequest, VoiceTranscribeRequest, VoiceTranscribeResult, WorkflowInfo,
 };
 
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -218,6 +218,31 @@ impl ApiClient {
 
     pub fn delete_meeting(&self, meeting_id: &str) -> ApiResult<Value> {
         self.delete(&format!("/meetings/{}", encode(meeting_id)))
+    }
+
+    pub fn record_voice(&self, title: String) -> ApiResult<VoiceCapture> {
+        self.post_json(
+            "/voice/record",
+            &VoiceRecordRequest {
+                title,
+                source: None,
+            },
+        )
+    }
+
+    pub fn stop_voice(&self, capture_id: &str) -> ApiResult<VoiceCapture> {
+        self.post_json(&format!("/voice/{}/stop", encode(capture_id)), &json!({}))
+    }
+
+    pub fn transcribe_voice(
+        &self,
+        capture_id: &str,
+        save_note: bool,
+    ) -> ApiResult<VoiceTranscribeResult> {
+        self.post_json(
+            &format!("/voice/{}/transcribe", encode(capture_id)),
+            &VoiceTranscribeRequest { save_note },
+        )
     }
 
     pub fn integrations(&self) -> ApiResult<IntegrationsResponse> {

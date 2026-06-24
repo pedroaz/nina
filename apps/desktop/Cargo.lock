@@ -3834,6 +3834,9 @@ name = "nina-desktop"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "ashpd",
+ "async-io",
+ "futures-util",
  "gpui",
  "gpui-component",
  "gpui-component-assets",

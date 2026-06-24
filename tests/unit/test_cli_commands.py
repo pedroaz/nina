@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -579,6 +580,10 @@ def test_config_show_json_lists_config_values(isolated_config) -> None:  # type:
     assert payload["daemon_host"] == "127.0.0.1"
     # `default_gain` should be in the snapshot with the model default (1.0).
     assert payload["meetings"]["default_gain"] == 1.0
+    assert payload["voice"]["global_hotkey_enabled"] is False
+    assert payload["voice"]["global_hotkey"] == "Ctrl+Alt+Space"
+    assert payload["voice"]["insert_mode"] == "clipboard_paste"
+    assert payload["voice"]["preserve_clipboard"] is True
     assert payload["research"]["search_mode"] == "live"
     assert payload["research"]["timeout_seconds"] == 600.0
 
@@ -926,6 +931,112 @@ def test_note_update_patches_body(monkeypatch) -> None:  # type: ignore[no-untyp
     )
     assert result.exit_code == 0, result.output
     assert calls == [("PATCH", "/notes/Research/x.md", {"json": {"body": "new"}})]
+
+
+def test_voice_list_calls_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
+        calls.append((method, path, kwargs))
+        return FakeResponse(
+            {
+                "captures": [
+                    {
+                        "id": "vc_1",
+                        "title": "Quick clip",
+                        "status": "transcribed",
+                        "source": "mic",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("nina_cli.voice_commands.request", fake_request)
+
+    result = runner.invoke(app, ["voice", "list", "--status", "transcribed", "--limit", "5"])
+
+    assert result.exit_code == 0, result.stdout
+    assert calls == [("GET", "/voice", {"params": {"limit": 5, "status": "transcribed"}})]
+    assert "Quick clip" in result.stdout
+
+
+def test_voice_transcribe_can_copy_json(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_request(method: str, path: str, **kwargs: Any) -> FakeResponse:
+        calls.append((method, path, kwargs))
+        return FakeResponse(
+            {
+                "capture": {"id": "vc_1", "status": "transcribed"},
+                "transcript": "paste me",
+                "transcript_path": "/tmp/vc_1.txt",
+                "segments_path": "/tmp/vc_1.segments.json",
+                "transcript_note_path": "Voice/vc_1.md",
+            }
+        )
+
+    monkeypatch.setattr("nina_cli.voice_commands.request", fake_request)
+    monkeypatch.setattr(
+        "nina_cli.voice_commands._copy_to_clipboard",
+        lambda text: (text == "paste me", None),
+    )
+
+    result = runner.invoke(
+        app,
+        ["voice", "transcribe", "vc_1", "--save-note", "--copy", "--json"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert calls == [
+        (
+            "POST",
+            "/voice/vc_1/transcribe",
+            {"json": {"save_note": True}, "timeout": 60 * 60},
+        )
+    ]
+    payload = json.loads(result.stdout)
+    assert payload["transcript"] == "paste me"
+    assert payload["copied"] is True
+    assert payload["copy_error"] is None
+
+
+def test_voice_clipboard_tries_remaining_backends_after_failure(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from nina_cli import voice_commands as voice_module
+
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: Any) -> SimpleNamespace:
+        calls.append(argv)
+        if argv[0].endswith("wl-copy"):
+            return SimpleNamespace(returncode=1, stderr="wayland unavailable")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(voice_module.sys, "platform", "linux")
+    monkeypatch.setattr(voice_module.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr(voice_module.subprocess, "run", fake_run)
+
+    copied, error = voice_module._copy_to_clipboard("paste me")
+
+    assert copied is True
+    assert error is None
+    assert calls == [
+        ["/usr/bin/wl-copy"],
+        ["/usr/bin/xclip", "-selection", "clipboard"],
+    ]
+
+
+def test_config_voice_insert_mode_round_trip(isolated_config) -> None:  # type: ignore[no-untyped-def]
+    result = runner.invoke(app, ["config", "voice-insert-mode", "clipboard_paste"])
+    assert result.exit_code == 0, result.stdout
+
+    show = runner.invoke(app, ["config", "show", "--json"])
+    assert show.exit_code == 0
+    payload = json.loads(show.stdout)
+    assert payload["voice"]["insert_mode"] == "clipboard_paste"
+
+    config_path = isolated_config / "config.yaml"
+    on_disk = yaml.safe_load(config_path.read_text())
+    assert on_disk["voice"]["insert_mode"] == "clipboard_paste"
 
 
 # ----------------------------------------------------------------------------

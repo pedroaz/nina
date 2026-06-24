@@ -56,10 +56,11 @@ def _make_task(
     description: str = "",
     task_type: str = "unclassified",
     repository_id: str | None = None,
+    pipeline_stage: str | None = None,
 ) -> str:
     service = svc_factory()
     try:
-        task = service.create(title, description, task_type=task_type, repository_id=repository_id)
+        task = service.create(title, description, task_type=task_type, repository_id=repository_id, pipeline_stage=pipeline_stage)
         return task.id
     finally:
         service.db.close()
@@ -188,6 +189,47 @@ def test_run_task_routes_coding_through_codex_task(services, monkeypatch) -> Non
     finally:
         service.db.close()
 
+
+@pytest.mark.parametrize(
+    ("pipeline_stage", "expected_snippet", "task_type"),
+    [
+        ("created", "Do discovery first", "coding"),
+        ("exploration", "Explore the ticket end-to-end", "coding"),
+        ("coding", "Implement the requested change", "coding"),
+        ("testing", "Validate the change", "coding"),
+        ("reviewing", "Review the changes as an independent reviewer", "reviewing"),
+    ],
+)
+def test_run_task_uses_pipeline_stage_in_prompt_and_env(services, monkeypatch, pipeline_stage: str, expected_snippet: str, task_type: str) -> None:
+    from nina_core.codex.client import CodexClient, CodexExecResult
+
+    async def fake_exec_task(self, prompt, *, cwd, env, json_mode=True, log_path=None, **_kwargs):
+        assert env["NINA_TASK_TYPE"] == task_type
+        assert env["NINA_PIPELINE_STAGE"] == pipeline_stage
+        assert f"Nina pipeline stage: {pipeline_stage}" in prompt
+        assert expected_snippet in prompt
+        return CodexExecResult(
+            exit_code=0,
+            stdout="{}\n",
+            stderr="",
+            last_message="Outcome: completed\n" + ("Decision: approved\n" if task_type == "reviewing" else ""),
+        )
+
+    monkeypatch.setattr(CodexClient, "exec_task", fake_exec_task)
+    svc, _, runner_factory, repo_id = services
+    task_id = _make_task(
+        svc,
+        title=f"Pipeline {pipeline_stage} task",
+        task_type=task_type,
+        repository_id=repo_id,
+        pipeline_stage=pipeline_stage,
+    )
+    result = runner_factory().run("run-task", {"task_id": task_id})
+    assert result["status"] == "completed"
+    output = result["output"]
+    assert output["status"] == "completed"
+    assert output["task_type"] == task_type
+    assert output["would_route_to"] == f"codex:{task_type}"
 
 def test_run_task_routes_reviewing_through_codex_task(services, monkeypatch) -> None:
     from nina_core.codex.client import CodexClient, CodexExecResult

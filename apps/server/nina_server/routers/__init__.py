@@ -10,6 +10,7 @@ from .codex import router as codex_router
 from .search import router as search_router
 from .sessions import router as sessions_router
 from .tasks import router as tasks_router
+from .voice import router as voice_router
 from .workflows import router as workflows_router
 
 ROUTERS = [
@@ -24,6 +25,7 @@ ROUTERS = [
     workflows_router,
     jobs_router,
     meetings_router,
+    voice_router,
     integrations_router,
     codex_router,
 ]

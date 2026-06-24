@@ -45,6 +45,7 @@ class DaemonRuntime:
     watcher: Any | None = None
     codex: CodexSupervisor | None = None
     meeting_recorder: Any | None = None
+    voice_recorder: Any | None = None
     database: DaemonDatabase | None = None
 
     def attach(self) -> None:
@@ -57,6 +58,7 @@ class DaemonRuntime:
         self.app.state.watcher = self.watcher
         self.app.state.codex = self.codex
         self.app.state.meeting_recorder = self.meeting_recorder
+        self.app.state.voice_recorder = self.voice_recorder
         self.app.state.database = self.database
         try:
             self.app.state.token = read_token(get_token_path(self.config_dir))
@@ -246,6 +248,14 @@ def _changed_config_fields(previous: NinaConfig, updated: NinaConfig) -> list[st
         changed.append("meetings.normalize_target_dbfs")
     if previous.meetings.noise_reduction != updated.meetings.noise_reduction:
         changed.append("meetings.noise_reduction")
+    if previous.voice.global_hotkey_enabled != updated.voice.global_hotkey_enabled:
+        changed.append("voice.global_hotkey_enabled")
+    if previous.voice.global_hotkey != updated.voice.global_hotkey:
+        changed.append("voice.global_hotkey")
+    if previous.voice.insert_mode != updated.voice.insert_mode:
+        changed.append("voice.insert_mode")
+    if previous.voice.preserve_clipboard != updated.voice.preserve_clipboard:
+        changed.append("voice.preserve_clipboard")
     if previous.codex.enabled != updated.codex.enabled:
         changed.append("codex.enabled")
     if previous.codex.binary_path != updated.codex.binary_path:

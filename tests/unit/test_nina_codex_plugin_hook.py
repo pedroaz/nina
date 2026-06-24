@@ -27,49 +27,114 @@ def _load_hook() -> ModuleType:
 HOOK = _load_hook()
 
 
-def test_started_action_marks_task_working() -> None:
-    assert HOOK._started_actions() == {"setStatus": "working"}
+def test_started_actions_marks_task_working() -> None:
+    assert HOOK._started_actions(None) == {"setStatus": "working"}
 
 
-def test_coding_done_defaults_to_done_and_review_followup() -> None:
-    assert HOOK._done_actions("coding", None) == {
-        "setStatus": "idle",
-        "setTaskType": "done",
-        "createNextTaskType": "reviewing",
-    }
-    assert HOOK._done_actions("coding", "Outcome: something unexpected") == {
-        "setStatus": "idle",
-        "setTaskType": "done",
-        "createNextTaskType": "reviewing",
+def test_started_actions_preserves_pipeline_stage_when_available() -> None:
+    assert HOOK._started_actions("exploration") == {
+        "setStatus": "working",
+        "setPipelineStage": "exploration",
     }
 
 
-def test_coding_done_blocks_partial_or_blocked_reports() -> None:
-    for message in (
-        "Outcome: blocked\nBlockers: missing access",
-        "Outcome: partially completed\nBlockers: tests failing",
-    ):
-        assert HOOK._done_actions("coding", message) == {"setStatus": "idle", "setTaskType": "blocked"}
-
-
-def test_reviewing_done_marks_done_for_approved_or_completed_reports() -> None:
-    assert HOOK._done_actions("reviewing", "Decision: approved") == {
+def test_created_done_moves_to_exploration_when_not_blocked() -> None:
+    assert HOOK._done_actions("coding", "created", "Outcome: completed\n") == {
         "setStatus": "idle",
-        "setTaskType": "done",
-    }
-    assert HOOK._done_actions("reviewing", "Outcome: completed") == {
-        "setStatus": "idle",
-        "setTaskType": "done",
+        "setPipelineStage": "exploration",
     }
 
 
-def test_reviewing_done_blocks_rejected_partial_or_missing_reports() -> None:
-    assert HOOK._done_actions("reviewing", None) == {"setStatus": "idle", "setTaskType": "blocked"}
-    assert HOOK._done_actions("reviewing", "Outcome: completed\nDecision: rejected") == {
+def test_created_done_blocks_partial_or_blocked_outcomes() -> None:
+    assert HOOK._done_actions(
+        "coding",
+        "created",
+        "Outcome: blocked\nBlockers: missing context",
+    ) == {
         "setStatus": "idle",
+        "setPipelineStage": "blocked",
+        "setPipelineError": "missing context",
+    }
+    assert HOOK._done_actions(
+        "coding",
+        "created",
+        "Outcome: partially completed\nBlockers: no tests",
+    ) == {
+        "setStatus": "idle",
+        "setPipelineStage": "blocked",
+        "setPipelineError": "no tests",
+    }
+
+
+def test_exploration_done_prompts_coding_when_not_blocked() -> None:
+    assert HOOK._done_actions("coding", "exploration", "Outcome: completed\n") == {
+        "setStatus": "idle",
+        "setPipelineStage": "coding",
+    }
+
+
+def test_exploration_done_blocks_partial_or_blocked_outcomes() -> None:
+    assert HOOK._done_actions(
+        "coding",
+        "exploration",
+        "Outcome: blocked\nBlockers: missing data",
+    ) == {
+        "setStatus": "idle",
+        "setPipelineStage": "blocked",
+        "setPipelineError": "missing data",
+    }
+    assert HOOK._done_actions(
+        "coding",
+        "exploration",
+        "Outcome: partially completed\nBlockers: no tests",
+    ) == {
+        "setStatus": "idle",
+        "setPipelineStage": "blocked",
+        "setPipelineError": "no tests",
+    }
+
+
+def test_coding_done_moves_to_testing() -> None:
+    assert HOOK._done_actions("coding", "coding", "Outcome: completed\n") == {
+        "setStatus": "idle",
+        "setPipelineStage": "testing",
+    }
+
+
+def test_testing_done_moves_to_reviewing() -> None:
+    assert HOOK._done_actions("coding", "testing", "Outcome: completed\n") == {
+        "setStatus": "idle",
+        "setPipelineStage": "reviewing",
+    }
+
+
+def test_blocked_coding_rerun_moves_back_to_exploration_when_completed() -> None:
+    assert HOOK._done_actions("coding", "blocked", "Outcome: completed\nBlockers: none") == {
+        "setStatus": "idle",
+        "setPipelineStage": "exploration",
+    }
+
+
+def test_reviewing_done_marks_approved_as_done() -> None:
+    assert HOOK._done_actions(
+        "reviewing",
+        "reviewing",
+        "Outcome: completed\nDecision: approved\n",
+    ) == {
+        "setStatus": "idle",
+        "setTaskType": "done",
+        "setPipelineStage": "done",
+    }
+
+
+def test_reviewing_done_marks_blocked_on_rejection_or_blockers() -> None:
+    assert HOOK._done_actions(
+        "reviewing",
+        "reviewing",
+        "Outcome: completed\nDecision: rejected\nBlockers: missing validation",
+    ) == {
+        "setStatus": "idle",
+        "setPipelineStage": "blocked",
         "setTaskType": "blocked",
-    }
-    assert HOOK._done_actions("reviewing", "Outcome: partially completed") == {
-        "setStatus": "idle",
-        "setTaskType": "blocked",
+        "setPipelineError": "missing validation",
     }

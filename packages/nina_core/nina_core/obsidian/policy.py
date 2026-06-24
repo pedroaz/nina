@@ -8,6 +8,7 @@ DEFAULT_VAULT_FOLDERS = (
     "Tasks",
     "Research",
     "Meetings",
+    "Voice",
     "System/Deleted",
     "System/Archived",
 )

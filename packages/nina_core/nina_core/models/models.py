@@ -18,6 +18,16 @@ TASK_TYPES = (
     "blocked",
     "done",
 )
+
+TASK_PIPELINE_STAGES = (
+    "created",
+    "exploration",
+    "coding",
+    "testing",
+    "reviewing",
+    "done",
+    "blocked",
+)
 TASK_AGENT_STATUSES = ("idle", "working", "error")
 
 
@@ -38,6 +48,9 @@ class Task(Base):
     description = Column(Text, nullable=False, default="")
     task_type = Column(Text, nullable=False, default="unclassified")
     status = Column(Text, nullable=False, default="idle")
+    pipeline_stage = Column(Text, nullable=False, default="created")
+    pipeline_error = Column(Text)
+    pipeline_rework_count = Column(Integer, nullable=False, default=0)
     classified_at = Column(Text)
     classification_reason = Column(Text)
     classification_model = Column(Text)
@@ -207,6 +220,30 @@ class Meeting(Base):
     transcript_note_path = Column(Text)
     summary_note_path = Column(Text)
     workflow_run_id = Column(Text)
+    error = Column(Text)
+    created_at = Column(Text, nullable=False, default=now_utc)
+    updated_at = Column(Text, nullable=False, default=now_utc)
+
+
+class VoiceCapture(Base):
+    __tablename__ = "voice_captures"
+    id = Column(Text, primary_key=True)
+    title = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, default="recording")
+    source = Column(Text, nullable=False, default="mic")
+    device_name = Column(Text)
+    started_at = Column(Text, nullable=False)
+    ended_at = Column(Text)
+    duration_seconds = Column(Integer)
+    audio_path = Column(Text, nullable=False)
+    audio_size_bytes = Column(Integer)
+    audio_format = Column(Text, nullable=False, default="wav")
+    sample_rate = Column(Integer, nullable=False, default=16000)
+    channels = Column(Integer, nullable=False, default=1)
+    transcript_path = Column(Text)
+    transcript_note_path = Column(Text)
+    language = Column(Text)
+    model = Column(Text)
     error = Column(Text)
     created_at = Column(Text, nullable=False, default=now_utc)
     updated_at = Column(Text, nullable=False, default=now_utc)

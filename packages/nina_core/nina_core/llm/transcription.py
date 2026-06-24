@@ -388,6 +388,7 @@ def log_transcription_interaction(
     workflow_run_id: str | None,
     status: str = "completed",
     error: str | None = None,
+    purpose: str = "meeting_transcription",
 ) -> None:
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
     SessionLocal = sessionmaker(bind=engine)
@@ -401,7 +402,7 @@ def log_transcription_interaction(
             id=_interaction_id(),
             provider=provider_name,
             model=model,
-            purpose="meeting_transcription",
+            purpose=purpose,
             prompt=prompt,
             response=result.text[:4000],
             status=status,

@@ -17,6 +17,8 @@ from nina_core.scheduler.service import SchedulerService
 from nina_core.sessions.service import SessionService
 from nina_core.meetings.manager import MeetingRecordingManager
 from nina_core.meetings.service import MeetingService
+from nina_core.voice.manager import VoiceRecordingManager
+from nina_core.voice.service import VoiceCaptureService
 
 from .runtime import DaemonRuntime, get_active_app
 
@@ -128,6 +130,30 @@ def get_meeting_service(request: Request) -> MeetingService:
         config_dir / "recordings",
         str(config.vault_path),
     )
+
+
+def get_voice_service(request: Request) -> VoiceCaptureService:
+    config = _request_config(request)
+    config_dir = _request_config_dir(request)
+    return VoiceCaptureService(
+        config.database_path,
+        config_dir / "voice",
+        str(config.vault_path),
+    )
+
+
+def get_voice_recorder(request: Request) -> VoiceRecordingManager:
+    recorder = getattr(request.app.state, "voice_recorder", None)
+    if recorder is None:
+        runtime = getattr(request.app.state, "runtime", None)
+        if runtime is not None and getattr(runtime, "voice_recorder", None) is not None:
+            recorder = runtime.voice_recorder
+        else:
+            recorder = VoiceRecordingManager()
+        request.app.state.voice_recorder = recorder
+        if runtime is not None:
+            runtime.voice_recorder = recorder
+    return recorder
 
 
 def get_meeting_recorder(request: Request) -> MeetingRecordingManager:

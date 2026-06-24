@@ -12,6 +12,10 @@ class TaskResponse(BaseModel):
     description: str
     task_type: str
     status: str
+    pipeline_stage: str | None
+    pipeline_error: str | None
+    note_path: str | None
+    pipeline_rework_count: int
     classified_at: str | None
     classification_reason: str | None
     classification_model: str | None
@@ -24,6 +28,7 @@ class TaskCreate(BaseModel):
     description: str = ""
     repository_id: str | None = None
     task_type: str | None = None
+    pipeline_stage: str | None = None
     auto_classify: bool = True
     auto_run: bool = False
     auto_run_background: bool = False
@@ -39,4 +44,7 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     task_type: str | None = None
     status: str | None = None
+    pipeline_stage: str | None = None
+    pipeline_error: str | None = None
+    pipeline_rework_count: int | None = None
     repository_id: str | None = None

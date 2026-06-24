@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from nina_core.codex import CodexError, CodexExecResult, Project
-from nina_core.models.models import TASK_AGENT_STATUSES, TASK_TYPES, Event
+from nina_core.models.models import TASK_AGENT_STATUSES, TASK_PIPELINE_STAGES, TASK_TYPES, Event
 
 from nina_core.tasks.service import TaskService
 
@@ -36,6 +36,9 @@ class CodexEventRequest(BaseModel):
     turn_id: str | None = Field(default=None, alias="turnId")
     cwd: str | None = None
     task_type: str | None = Field(default=None, alias="taskType")
+    pipeline_stage: str | None = Field(default=None, alias="pipelineStage")
+    set_pipeline_stage: str | None = Field(default=None, alias="setPipelineStage")
+    set_pipeline_error: str | None = Field(default=None, alias="setPipelineError")
     set_task_type: str | None = Field(default=None, alias="setTaskType")
     set_status: str | None = Field(default=None, alias="setStatus")
     create_next_task_type: str | None = Field(default=None, alias="createNextTaskType")
@@ -91,24 +94,32 @@ def _find_existing_codex_event(
     return None
 
 
-def _task_snapshot(task: Any) -> dict[str, str | None]:
+def _task_snapshot(task: Any) -> dict[str, Any]:
     return {
         "id": task.id,
         "task_type": task.task_type,
         "status": task.status,
+        "pipeline_stage": task.pipeline_stage,
+        "pipeline_error": task.pipeline_error,
+        "pipeline_rework_count": task.pipeline_rework_count,
         "repository_id": task.repository_id,
     }
 
 
 def _activity_for_codex_event(payload: CodexEventRequest) -> str:
     label = payload.task_type or "task"
+    stage = payload.pipeline_stage or "(unset)"
     if payload.event == "started":
-        return f"Codex {label} started (run {payload.run_id})."
-    parts = [f"Codex {label} finished (run {payload.run_id})."]
+        return f"Codex {label} started (run {payload.run_id}) at stage {stage}."
+    parts = [f"Codex {label} finished (run {payload.run_id}) at stage {stage}."]
     if payload.set_task_type:
         parts.append(f"set task_type={payload.set_task_type}")
     if payload.set_status:
         parts.append(f"set status={payload.set_status}")
+    if payload.set_pipeline_stage:
+        parts.append(f"set pipeline_stage={payload.set_pipeline_stage}")
+    if payload.set_pipeline_error:
+        parts.append("set pipeline_error")
     if payload.create_next_task_type:
         parts.append(f"created next task_type={payload.create_next_task_type}")
     return " ".join(parts)
@@ -124,6 +135,8 @@ def _followup_description(parent: Any, final_message: str | None) -> str:
 def _event_actions(payload: CodexEventRequest, task: Any) -> tuple[dict[str, Any], str | None]:
     update_kwargs: dict[str, Any] = {}
     task_type = payload.task_type or getattr(task, "task_type", None)
+    current_stage = getattr(task, "pipeline_stage", None) or "created"
+    explicit_stage_action = payload.set_pipeline_stage is not None
 
     if payload.set_status is not None and payload.set_status not in TASK_AGENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid setStatus: {payload.set_status}")
@@ -131,6 +144,8 @@ def _event_actions(payload: CodexEventRequest, task: Any) -> tuple[dict[str, Any
         raise HTTPException(status_code=400, detail=f"Invalid setTaskType: {payload.set_task_type}")
     if payload.create_next_task_type is not None and payload.create_next_task_type not in TASK_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid createNextTaskType: {payload.create_next_task_type}")
+    if payload.set_pipeline_stage is not None and payload.set_pipeline_stage not in TASK_PIPELINE_STAGES:
+        raise HTTPException(status_code=400, detail=f"Invalid setPipelineStage: {payload.set_pipeline_stage}")
 
     if payload.event == "started":
         if payload.set_status != "working":
@@ -138,16 +153,29 @@ def _event_actions(payload: CodexEventRequest, task: Any) -> tuple[dict[str, Any
         if payload.set_task_type is not None or payload.create_next_task_type is not None:
             raise HTTPException(status_code=400, detail="started callback only supports setStatus")
         update_kwargs["status"] = payload.set_status
+        update_kwargs["pipeline_stage"] = payload.set_pipeline_stage or current_stage
         return update_kwargs, None
 
     if payload.set_status is None:
         raise HTTPException(status_code=400, detail="done callback requires setStatus")
     update_kwargs["status"] = payload.set_status
 
-    if task_type in {"coding", "reviewing"} and payload.set_task_type is None:
-        raise HTTPException(status_code=400, detail=f"done callback for {task_type} requires setTaskType")
     if payload.set_task_type is not None:
         update_kwargs["task_type"] = payload.set_task_type
+
+    if payload.set_pipeline_error is not None:
+        update_kwargs["pipeline_error"] = payload.set_pipeline_error
+
+    if payload.set_pipeline_stage is not None:
+        update_kwargs["pipeline_stage"] = payload.set_pipeline_stage
+        if payload.set_pipeline_stage == "blocked" and current_stage != "blocked":
+            update_kwargs["pipeline_rework_count"] = (task.pipeline_rework_count or 0) + 1
+        if payload.set_pipeline_stage != "blocked" and "set_pipeline_error" not in payload.model_fields_set:
+            update_kwargs["pipeline_error"] = None
+
+    if not explicit_stage_action and task_type in {"coding", "reviewing"}:
+        raise HTTPException(status_code=400, detail=f"done callback for {task_type} requires setPipelineStage")
+
     return update_kwargs, payload.create_next_task_type
 
 
@@ -163,6 +191,7 @@ def _find_existing_followup(service: TaskService, parent: Any, next_task_type: s
         if task.title == expected_title and (task.description or "").startswith(expected_description_prefix):
             return task
     return None
+
 
 
 def _ensure_followup_task(
@@ -309,7 +338,8 @@ async def codex_exec(request: Request, payload: CodexExecRequest) -> Any:
 @router.post("/codex/events")
 async def codex_event(payload: CodexEventRequest) -> dict[str, Any]:
     with get_db_session() as db:
-        service = TaskService(db, get_obsidian())
+        obsidian = get_obsidian()
+        service = TaskService(db, obsidian)
         task = service.get(payload.task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -346,6 +376,9 @@ async def codex_event(payload: CodexEventRequest) -> dict[str, Any]:
             task = service.update(payload.task_id, **update_kwargs)
             if task is None:
                 raise HTTPException(status_code=404, detail="Task not found")
+            if payload.last_assistant_message is not None:
+                obsidian.set_task_summary(task, payload.last_assistant_message)
+
             if next_task_type:
                 _ensure_followup_task(service, task, next_task_type, payload.last_assistant_message)
         except ValueError as exc:
