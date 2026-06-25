@@ -401,7 +401,7 @@ pub fn sidebar_shell(collapsed: bool) -> Div {
         .flex_shrink_0()
 }
 
-pub fn sidebar_brand(collapsed: bool, toggle_icon: IconName) -> Div {
+pub fn sidebar_brand(collapsed: bool) -> Div {
     let mark = div()
         .size(px(36.))
         .rounded(px(8.))
@@ -418,36 +418,13 @@ pub fn sidebar_brand(collapsed: bool, toggle_icon: IconName) -> Div {
                 .text_color(color::brand_orange()),
         );
 
-    let toggle = div()
-        .size(px(34.))
-        .rounded(px(8.))
-        .border_1()
-        .border_color(color::border())
-        .bg(color::surface())
-        .hover(|this| this.bg(color::sidebar_item_hover()))
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor_pointer()
-        .child(
-            Icon::new(toggle_icon)
-                .small()
-                .text_color(color::text_muted()),
-        );
-
     if collapsed {
-        v_flex()
-            .items_center()
-            .gap_2()
-            .cursor_pointer()
-            .child(mark)
-            .child(toggle)
+        v_flex().items_center().gap_2().child(mark)
     } else {
         h_flex()
             .h(px(44.))
             .justify_between()
             .gap_2()
-            .cursor_pointer()
             .child(mark)
             .child(
                 v_flex()
@@ -461,7 +438,6 @@ pub fn sidebar_brand(collapsed: bool, toggle_icon: IconName) -> Div {
                     )
                     .child(small_text("Local operations")),
             )
-            .child(toggle)
     }
 }
 

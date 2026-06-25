@@ -13,12 +13,12 @@ use gpui_component::{
     h_flex,
     input::{Input, InputEvent, InputState},
     scroll::ScrollableElement,
-    v_flex, Disableable, IconName, Selectable, Sizable,
+    v_flex, Disableable, Icon, IconName, Selectable, Sizable,
 };
 use serde_json::{json, Value};
 
 use crate::{
-    actions::{ClearConversation, CloseModal, ToggleSidebar, DESKTOP_CONTEXT},
+    actions::{ClearConversation, CloseModal, DESKTOP_CONTEXT},
     api::{ApiClient, ApiError, ApiResult},
     dictation::{copy_text_to_clipboard, GlobalDictationController},
     models::{
@@ -329,8 +329,6 @@ const CONFIG_FIELDS: &[ConfigField] = &[
 enum Page {
     Tickets,
     Repositories,
-    Chat,
-    Agent,
     Research,
     Meetings,
     Transcriptions,
@@ -340,11 +338,9 @@ enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 10] = [
+    const ALL: [Page; 8] = [
         Page::Tickets,
         Page::Repositories,
-        Page::Chat,
-        Page::Agent,
         Page::Research,
         Page::Meetings,
         Page::Transcriptions,
@@ -357,8 +353,6 @@ impl Page {
         match self {
             Page::Tickets => "Tasks",
             Page::Repositories => "Repositories",
-            Page::Chat => "Chat",
-            Page::Agent => "Agent",
             Page::Research => "Research",
             Page::Meetings => "Meetings",
             Page::Transcriptions => "Transcriptions",
@@ -372,8 +366,6 @@ impl Page {
         match self {
             Page::Tickets => "Track tasks, automate coding/review stages, and inspect outcomes",
             Page::Repositories => "Register git repositories for coding and review tasks",
-            Page::Chat => "Ask questions over local Nina context",
-            Page::Agent => "Run safe Nina operations from natural language",
             Page::Research => "Research a topic and write an Obsidian note",
             Page::Meetings => "Record, transcribe, summarize, and open meeting notes",
             Page::Transcriptions => "Review recent voice dictation transcripts",
@@ -387,14 +379,48 @@ impl Page {
         match self {
             Page::Tickets => IconName::Inbox,
             Page::Repositories => IconName::FolderOpen,
-            Page::Chat => IconName::BookOpen,
-            Page::Agent => IconName::Bot,
             Page::Research => IconName::Globe,
             Page::Meetings => IconName::Calendar,
             Page::Transcriptions => IconName::BookOpen,
             Page::Jobs => IconName::Cpu,
             Page::Integrations => IconName::Network,
             Page::Config => IconName::Settings2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssistantMode {
+    Chat,
+    Agent,
+}
+
+impl AssistantMode {
+    fn key(self) -> &'static str {
+        match self {
+            AssistantMode::Chat => "chat",
+            AssistantMode::Agent => "agent",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            AssistantMode::Chat => "Chat",
+            AssistantMode::Agent => "Agent",
+        }
+    }
+
+    fn icon(self) -> IconName {
+        match self {
+            AssistantMode::Chat => IconName::BookOpen,
+            AssistantMode::Agent => IconName::Bot,
+        }
+    }
+
+    fn accent(self) -> Rgba {
+        match self {
+            AssistantMode::Chat => rgb(0x22d3ee),
+            AssistantMode::Agent => rgb(0xf97316),
         }
     }
 }
@@ -556,7 +582,8 @@ pub struct NinaDesktop {
     client: ApiClient,
     focus_handle: FocusHandle,
     current_page: Page,
-    sidebar_collapsed: bool,
+    assistant_panel_open: bool,
+    assistant_mode: AssistantMode,
     loading: HashSet<String>,
     banner: Option<Banner>,
     health: Option<HealthResponse>,
@@ -647,7 +674,8 @@ impl NinaDesktop {
             client: ApiClient::discover(),
             focus_handle,
             current_page: Page::Tickets,
-            sidebar_collapsed: false,
+            assistant_panel_open: false,
+            assistant_mode: AssistantMode::Chat,
             loading: HashSet::new(),
             banner: None,
             health: None,
@@ -791,22 +819,28 @@ impl NinaDesktop {
         cx.notify();
     }
 
-    fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
-        self.sidebar_collapsed = !self.sidebar_collapsed;
+    fn open_assistant_panel(&mut self, mode: AssistantMode, cx: &mut Context<Self>) {
+        let mode_switched = self.assistant_mode != mode;
+        self.assistant_panel_open = true;
+        self.assistant_mode = mode;
+        if mode_switched || self.current_assistant_session().is_none() {
+            self.load_session(mode.key(), cx);
+        }
         cx.notify();
     }
 
-    fn on_action_toggle_sidebar(
-        &mut self,
-        _: &ToggleSidebar,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.toggle_sidebar(cx);
+    fn close_assistant_panel(&mut self, cx: &mut Context<Self>) {
+        if self.assistant_panel_open {
+            self.assistant_panel_open = false;
+            cx.notify();
+        }
     }
 
     fn on_action_close_modal(&mut self, _: &CloseModal, _: &mut Window, cx: &mut Context<Self>) {
-        if self.task_modal.take().is_some() {
+        if self.assistant_panel_open {
+            self.assistant_panel_open = false;
+            cx.notify();
+        } else if self.task_modal.take().is_some() {
             cx.notify();
         } else if self.config_modal_open {
             self.close_config_modal(cx);
@@ -819,11 +853,117 @@ impl NinaDesktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match self.current_page {
-            Page::Chat => self.clear_conversation("chat", window, cx),
-            Page::Agent => self.clear_conversation("agent", window, cx),
-            _ => {}
+        if self.assistant_panel_open {
+            self.clear_conversation(self.assistant_mode.key(), window, cx);
         }
+    }
+
+    fn current_assistant_session(&self) -> Option<&SessionRecord> {
+        match self.assistant_mode {
+            AssistantMode::Chat => self.chat_session.as_ref(),
+            AssistantMode::Agent => self.agent_session.as_ref(),
+        }
+    }
+
+    fn render_conversation_mode_button(
+        &self,
+        mode: AssistantMode,
+        cx: &mut Context<Self>,
+    ) -> Button {
+        let selected = self.assistant_mode == mode;
+        let app = cx.entity().downgrade();
+        Button::new(format!("assistant-mode-{}", mode.key()))
+            .ghost()
+            .small()
+            .icon(mode.icon())
+            .label(mode.label())
+            .selected(selected)
+            .on_click(move |_, _, cx| {
+                let _ = app.update(cx, |state, cx| {
+                    state.open_assistant_panel(mode, cx);
+                });
+            })
+    }
+
+    fn render_assistant_drawer(&self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
+        if !self.assistant_panel_open {
+            return div();
+        }
+
+        let close = cx.entity().downgrade();
+        let close_btn = close.clone();
+        let overlay = div()
+            .absolute()
+            .inset_0()
+            .bg(rgba(0x00000099))
+            .flex()
+            .justify_end()
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let _ = close.update(cx, |state, cx| {
+                    state.close_assistant_panel(cx);
+                });
+            });
+
+        let panel = div()
+            .w(px(460.))
+            .min_w(px(360.))
+            .h_full()
+            .bg(color::surface())
+            .border_l_1()
+            .border_color(color::border())
+            .shadow_lg()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .child(
+                h_flex()
+                    .px_4()
+                    .py_3()
+                    .items_center()
+                    .justify_between()
+                    .border_b_1()
+                    .border_color(color::border())
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(Icon::new(IconName::Bot).small())
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Assistant")),
+                    )
+                    .child(
+                        h_flex().gap_2().child(
+                            Button::new("assistant-close")
+                                .ghost()
+                                .small()
+                                .icon(IconName::Close)
+                                .on_click(move |_, _, cx| {
+                                    let _ = close_btn.update(cx, |state, cx| {
+                                        state.close_assistant_panel(cx);
+                                    });
+                                }),
+                        ),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .px_4()
+                    .py_3()
+                    .gap_2()
+                    .child(self.render_conversation_mode_button(AssistantMode::Chat, cx))
+                    .child(self.render_conversation_mode_button(AssistantMode::Agent, cx)),
+            )
+            .child(
+                self.render_conversation_page(self.assistant_mode, cx)
+                    .w_full()
+                    .px_4()
+                    .py_4()
+                    .overflow_hidden(),
+            )
+            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                cx.stop_propagation();
+            });
+
+        overlay.child(panel)
     }
 
     fn refresh_current_page(&mut self, cx: &mut Context<Self>) {
@@ -833,8 +973,6 @@ impl NinaDesktop {
                 self.refresh_tasks(cx);
             }
             Page::Repositories => self.refresh_repositories(cx),
-            Page::Chat => self.load_session("chat", cx),
-            Page::Agent => self.load_session("agent", cx),
             Page::Research => {}
             Page::Meetings => {
                 self.refresh_config(cx);
@@ -1662,19 +1800,17 @@ impl NinaDesktop {
         }
     }
 
-    fn message_cache(&self, mode: &'static str) -> &MessageRenderCache {
-        if mode == "chat" {
-            &self.chat_message_cache
-        } else {
-            &self.agent_message_cache
+    fn message_cache(&self, mode: AssistantMode) -> &MessageRenderCache {
+        match mode {
+            AssistantMode::Chat => &self.chat_message_cache,
+            AssistantMode::Agent => &self.agent_message_cache,
         }
     }
 
-    fn conversation_list_state(&self, mode: &'static str) -> ListState {
-        if mode == "chat" {
-            self.chat_list_state.clone()
-        } else {
-            self.agent_list_state.clone()
+    fn conversation_list_state(&self, mode: AssistantMode) -> ListState {
+        match mode {
+            AssistantMode::Chat => self.chat_list_state.clone(),
+            AssistantMode::Agent => self.agent_list_state.clone(),
         }
     }
 
@@ -1985,8 +2121,6 @@ impl Render for NinaDesktop {
         let page_frame = match self.current_page {
             Page::Tickets
             | Page::Repositories
-            | Page::Chat
-            | Page::Agent
             | Page::Meetings
             | Page::Transcriptions
             | Page::Jobs
@@ -1999,7 +2133,6 @@ impl Render for NinaDesktop {
             .track_focus(&self.focus_handle)
             .key_context(DESKTOP_CONTEXT)
             .capture_key_down(cx.listener(Self::capture_config_hotkey))
-            .on_action(cx.listener(Self::on_action_toggle_sidebar))
             .on_action(cx.listener(Self::on_action_close_modal))
             .on_action(cx.listener(Self::on_action_clear_conversation))
             .child(
@@ -2016,24 +2149,15 @@ impl Render for NinaDesktop {
             .child(self.render_dictation_floating_status(cx))
             .child(self.render_task_modal(cx))
             .child(self.render_config_modal(cx))
+            .child(self.render_assistant_drawer(window, cx))
     }
 }
 
 impl NinaDesktop {
     fn render_sidebar(&self, cx: &mut Context<Self>) -> Div {
-        let toggle_icon = if self.sidebar_collapsed {
-            IconName::PanelLeftOpen
-        } else {
-            IconName::PanelLeftClose
-        };
-        let app = cx.entity().downgrade();
-        let sidebar = ui::sidebar_shell(self.sidebar_collapsed).child(
-            ui::sidebar_brand(self.sidebar_collapsed, toggle_icon)
-                .id("sidebar-brand-toggle")
-                .on_click(move |_, _, cx| {
-                    let _ = app.update(cx, |state, cx| state.toggle_sidebar(cx));
-                }),
-        );
+        let collapsed = true;
+        let sidebar =
+            ui::sidebar_shell(collapsed).child(ui::sidebar_brand(collapsed).id("sidebar-brand"));
 
         let mut nav = v_flex().gap_1();
         for page in Page::ALL {
@@ -2045,7 +2169,7 @@ impl NinaDesktop {
                     page.description(),
                     page.icon(),
                     selected,
-                    self.sidebar_collapsed,
+                    collapsed,
                 )
                 .id(format!("nav-{}", page.label()))
                 .on_click(move |_, _, cx| {
@@ -2053,7 +2177,25 @@ impl NinaDesktop {
                 }),
             );
         }
-        let footer = if self.sidebar_collapsed {
+        let app = cx.entity().downgrade();
+        let assistant_nav = ui::sidebar_item(
+            "Assistant",
+            "Open assistant panel",
+            IconName::Bot,
+            self.assistant_panel_open,
+            collapsed,
+        )
+        .id("nav-assistant")
+        .on_click(move |_, _, cx| {
+            let _ = app.update(cx, |state, cx| {
+                if state.assistant_panel_open {
+                    state.close_assistant_panel(cx);
+                } else {
+                    state.open_assistant_panel(AssistantMode::Chat, cx);
+                }
+            });
+        });
+        let footer = if collapsed {
             div()
                 .flex()
                 .justify_center()
@@ -2088,7 +2230,11 @@ impl NinaDesktop {
         };
 
         sidebar.child(ui::sidebar_scroll_frame(
-            v_flex().gap_3().child(nav).child(footer),
+            v_flex()
+                .gap_3()
+                .child(nav)
+                .child(assistant_nav)
+                .child(footer),
         ))
     }
 
@@ -2271,8 +2417,6 @@ impl NinaDesktop {
         match self.current_page {
             Page::Tickets => self.render_tickets_page(cx),
             Page::Repositories => self.render_repositories_page(cx),
-            Page::Chat => self.render_conversation_page("chat", cx),
-            Page::Agent => self.render_conversation_page("agent", cx),
             Page::Research => self.render_research_page(cx),
             Page::Meetings => self.render_meetings_page(cx),
             Page::Transcriptions => self.render_transcriptions_page(cx),
@@ -3314,28 +3458,22 @@ impl NinaDesktop {
             .child(rail)
     }
 
-    fn render_conversation_page(&self, mode: &'static str, cx: &mut Context<Self>) -> Div {
-        let session = if mode == "chat" {
-            self.chat_session.as_ref()
-        } else {
-            self.agent_session.as_ref()
+    fn render_conversation_page(&self, mode: AssistantMode, cx: &mut Context<Self>) -> Div {
+        let session = match mode {
+            AssistantMode::Chat => self.chat_session.as_ref(),
+            AssistantMode::Agent => self.agent_session.as_ref(),
         };
-        let input = if mode == "chat" {
-            &self.chat_prompt
-        } else {
-            &self.agent_prompt
+        let input = match mode {
+            AssistantMode::Chat => &self.chat_prompt,
+            AssistantMode::Agent => &self.agent_prompt,
         };
-        let accent = if mode == "chat" {
-            rgb(0x22d3ee)
-        } else {
-            rgb(0xf97316)
-        };
-        let empty_title = if mode == "chat" {
+        let accent = mode.accent();
+        let empty_title = if mode == AssistantMode::Chat {
             "Ask Nina anything"
         } else {
             "Run an agent task"
         };
-        let empty_detail = if mode == "chat" {
+        let empty_detail = if mode == AssistantMode::Chat {
             "Start a local-context conversation with your notes, tasks, jobs, and repositories."
         } else {
             "Describe the operation you want Nina to perform and review the response here."
@@ -3343,7 +3481,7 @@ impl NinaDesktop {
         let title = session
             .and_then(|session| session.title.clone())
             .unwrap_or_else(|| {
-                if mode == "chat" {
+                if mode == AssistantMode::Chat {
                     "Chat session".to_owned()
                 } else {
                     "Agent session".to_owned()
@@ -3369,12 +3507,12 @@ impl NinaDesktop {
                         "No active session".to_owned()
                     })),
             )
-            .child(status_pill(mode, accent));
+            .child(status_pill(mode.label(), accent));
         let history_panel = if session.is_some() {
             if message_count == 0 {
                 ui::chat_history().child(
                     v_flex()
-                        .id(format!("{mode}-empty-history-scroll"))
+                        .id(format!("{}-empty-history-scroll", mode.key()))
                         .size_full()
                         .min_h(px(0.))
                         .gap_3()
@@ -3382,7 +3520,7 @@ impl NinaDesktop {
                         .overflow_y_scrollbar()
                         .child(header)
                         .child(ui::empty_state(
-                            if mode == "chat" {
+                            if mode == AssistantMode::Chat {
                                 IconName::BookOpen
                             } else {
                                 IconName::Bot
@@ -3419,7 +3557,7 @@ impl NinaDesktop {
         } else {
             ui::chat_history().child(
                 v_flex()
-                    .id(format!("{mode}-inactive-history-scroll"))
+                    .id(format!("{}-inactive-history-scroll", mode.key()))
                     .size_full()
                     .min_h(px(0.))
                     .gap_3()
@@ -3427,7 +3565,7 @@ impl NinaDesktop {
                     .overflow_y_scrollbar()
                     .child(header)
                     .child(ui::empty_state(
-                        if mode == "chat" {
+                        if mode == AssistantMode::Chat {
                             IconName::BookOpen
                         } else {
                             IconName::Bot
@@ -3440,8 +3578,8 @@ impl NinaDesktop {
         let app_send = cx.entity().downgrade();
         let app_cancel = cx.entity().downgrade();
         let app_clear = cx.entity().downgrade();
-        let send_label = format!("{mode}-send");
-        let clear_label = format!("{mode}-clear");
+        let send_label = format!("{}-send", mode.key());
+        let clear_label = format!("{}-clear", mode.key());
         let sending = self.loading.contains(&send_label);
         let clearing = self.loading.contains(&clear_label);
         ui::chat_canvas().child(history_panel).child(
@@ -3451,7 +3589,7 @@ impl NinaDesktop {
                     .gap_2()
                     .child(if sending {
                         status_pill("Sending...", color::primary())
-                    } else if mode == "chat" {
+                    } else if mode == AssistantMode::Chat {
                         ui::row_meta("Local context chat")
                     } else {
                         ui::row_meta("Nina agent session")
@@ -3460,32 +3598,33 @@ impl NinaDesktop {
                         h_flex()
                             .gap_2()
                             .child(
-                                Button::new(format!("{mode}-clear"))
+                                Button::new(format!("{}-clear", mode.key()))
                                     .small()
                                     .label(if clearing { "Clearing..." } else { "Clear" })
                                     .on_click(move |_, window, cx| {
                                         let _ = app_clear.update(cx, |state, cx| {
-                                            state.clear_conversation(mode, window, cx)
+                                            state.clear_conversation(mode.key(), window, cx)
                                         });
                                     }),
                             )
                             .child(
-                                Button::new(format!("{mode}-cancel"))
+                                Button::new(format!("{}-cancel", mode.key()))
                                     .small()
                                     .label("Cancel")
                                     .on_click(move |_, _, cx| {
-                                        let _ = app_cancel
-                                            .update(cx, |state, cx| state.cancel_session(mode, cx));
+                                        let _ = app_cancel.update(cx, |state, cx| {
+                                            state.cancel_session(mode.key(), cx)
+                                        });
                                     }),
                             )
                             .child(
-                                Button::new(format!("{mode}-send"))
+                                Button::new(format!("{}-send", mode.key()))
                                     .primary()
                                     .small()
                                     .label(if sending { "Sending..." } else { "Send" })
                                     .on_click(move |_, window, cx| {
                                         let _ = app_send.update(cx, |state, cx| {
-                                            state.send_prompt(mode, window, cx)
+                                            state.send_prompt(mode.key(), window, cx)
                                         });
                                     }),
                             ),
