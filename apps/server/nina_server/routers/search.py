@@ -89,9 +89,7 @@ def _build_open_command(
 ) -> list[str]:
     template = command_template.strip()
     if template in {"", AUTO_OPEN_COMMAND, LEGACY_OBSIDIAN_PATH_COMMAND}:
-        if (vault_path / ".obsidian").exists():
-            return ["xdg-open", _obsidian_uri(vault_path, rel_path)]
-        return ["xdg-open", str(full_path)]
+        return ["xdg-open", _obsidian_uri(vault_path, rel_path)]
 
     values = _open_command_values(vault_path, full_path, rel_path)
     return [part.format(**values) for part in shlex.split(command_template)]

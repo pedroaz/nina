@@ -20,7 +20,7 @@ from nina_core.tasks.service import _drain_classification_threads
 @pytest.fixture
 def isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     config_dir = tmp_path / "nina-config"
-    initialize(config_dir=config_dir, force=True)
+    initialize(config_dir=config_dir, force=True, vault_path=config_dir / "vault")
     monkeypatch.setenv("NINA_CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("NINA_TOKEN", read_token(get_token_path(config_dir)))
     return config_dir

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -545,6 +546,37 @@ def test_api_base_prefers_runtime_state(monkeypatch, isolated_config) -> None:  
     )
 
     assert api_base() == "http://10.0.0.5:9123"
+
+
+def test_init_prompts_for_vault_and_creates_structure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_dir = tmp_path / "nina-config"
+    vault = tmp_path / "nina-vault"
+    monkeypatch.setattr(main_module, "get_config_dir", lambda profile="default": config_dir)
+
+    result = runner.invoke(app, ["init"], input=f"{vault}\n")
+
+    assert result.exit_code == 0, result.stdout
+    config = load_effective_config(config_dir)
+    assert config.vault_path == str(vault)
+    assert (vault / "Tasks").exists()
+    assert "Obsidian vault path" in result.stdout
+
+
+def test_init_existing_configured_profile_does_not_prompt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_dir = tmp_path / "nina-config"
+    vault = tmp_path / "nina-vault"
+    initialize(config_dir=config_dir, force=True, vault_path=vault)
+    monkeypatch.setattr(main_module, "get_config_dir", lambda profile="default": config_dir)
+
+    result = runner.invoke(app, ["init"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "Obsidian vault path" not in result.stdout
+    assert load_effective_config(config_dir).vault_path == str(vault)
 
 
 def test_config_vault_command_updates_config_and_vault_structure(

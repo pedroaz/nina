@@ -91,7 +91,7 @@ Package boundaries:
 - `uv`
 - Rust/Cargo, for the GPUI desktop client
 - Codex CLI, for the default LLM/research provider
-- An Obsidian-compatible vault path, created automatically by `nina init` if omitted
+- An explicit Obsidian-compatible vault path, configured with `nina config vault <path>` or `nina init --vault <path>`
 
 On Linux, the GPUI desktop client links against native `xcb`, `xkbcommon`, and `xkbcommon-x11` runtime libraries. Desktop global dictation uses the XDG Desktop Portal Global Shortcuts API while Nina Desktop is open, with the Nina window/taskbar title showing recording state. Clipboard paste insertion expects `wl-clipboard` plus `ydotool` on Wayland, with `xclip`/`xsel`, `xdotool`, and `xte` fallbacks on X11.
 
@@ -103,7 +103,7 @@ From the repository root:
 
 ```bash
 make build
-nina init
+nina init --vault ~/nina-vault
 ```
 
 `make build` syncs Python dependencies, builds Nina, and refreshes the local Nina Codex plugin. The installed CLI entry point is `nina`.
@@ -191,7 +191,7 @@ nina config voice-global-hotkey "Ctrl+Alt+Space"
 make desktop
 ```
 
-The desktop Settings page can capture and register the global hotkey. The Transcriptions tab lists recent CLI and desktop captures, can stop a recovered global recording, and can clean recent non-active recordings to reclaim space.
+The desktop Transcriptions settings gear can capture and register the global hotkey. The Transcriptions tab lists recent CLI and desktop captures, can stop a recovered global recording, and can clean recent non-active recordings to reclaim space. Open Note actions use Obsidian URIs by default; set `meetings.open_command` in `config.yaml` only for a custom opener. `Ctrl+B` toggles the Assistant drawer; `Ctrl+O` opens Obsidian with the configured Nina vault path; `Tab` switches Chat/Agent while the drawer is open.
 
 Useful compact aliases include `nina d` for daemon commands, `nina tk` for tickets, `nina mt` for meetings, `nina vc` for voice capture, `nina c` for config, `nina ll` for LLM, `nina rch` for research, and `nina s` for search.
 
@@ -207,7 +207,7 @@ Common commands:
 
 ```bash
 nina config show
-nina config vault <path>
+nina config vault ~/nina-vault
 nina config database <path>
 nina config daemon-port 8765
 nina config log-level INFO
@@ -276,7 +276,9 @@ make smoke-research
 RESEARCH_TOPIC="modern mobile authentication patterns" CODEX_MODEL=gpt-5.5 make smoke-research
 ```
 
-`make smoke` uses the selected Nina profile, defaulting to `default`. `make smoke-research` uses the running daemon or starts it, runs `nina research run ... --json` through live Codex web search, and verifies that the Obsidian note exists with a summary and sources. The optional real CLI plus daemon smoke test is excluded from the default test suite and can be run with:
+`make smoke` uses the selected Nina profile, defaulting to `default`. `make smoke-research` uses the running daemon or starts it, runs `nina research run ... --json` through live Codex web search, and verifies that the Obsidian note exists with a summary and sources. For fresh profiles, `nina init`, `make dev-start`, `make smoke`, and `make smoke-research` prompt for an Obsidian vault path. In non-interactive shells, pass one explicitly, for example `NINA_VAULT=~/nina-vault make smoke`.
+
+The optional real CLI plus daemon smoke test is excluded from the default test suite and can be run with:
 
 ```bash
 uv run pytest -m daemon_smoke tests/integration/test_cli_daemon_smoke.py

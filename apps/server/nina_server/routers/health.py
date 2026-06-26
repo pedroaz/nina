@@ -38,6 +38,7 @@ async def health(request: Request) -> dict[str, Any]:
         "status": "ok",
         "profile": config.profile,
         "vault_path": config.vault_path,
+        "vault_configured": bool(config.vault_path),
         "transcription": _transcription_status_payload(config),
     }
 
@@ -54,6 +55,7 @@ async def status(request: Request) -> dict[str, Any]:
         "config_dir": str(getattr(request.app.state, "config_dir", "")),
         "config_path": str(getattr(request.app.state, "config_path", "")),
         "vault_path": config.vault_path,
+        "vault_configured": bool(config.vault_path),
         "database_path": config.database_path,
         "daemon_host": config.daemon_host,
         "daemon_port": config.daemon_port,

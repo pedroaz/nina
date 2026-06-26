@@ -6,12 +6,11 @@ from .paths import (
     get_database_path,
     get_log_path,
     get_token_path,
-    get_vault_path,
 )
 from nina_core.db import create_database  # type: ignore[import-untyped]
 from nina_core.search.indexer import create_fts_table  # type: ignore[import-untyped]
 
-from .settings import NinaConfig
+from .settings import NinaConfig, merge_config
 from .token import generate_token, write_token
 from nina_core.obsidian.policy import DEFAULT_VAULT_FOLDERS
 
@@ -28,6 +27,7 @@ def initialize(
     profile: str = "default",
     config_dir: Path | None = None,
     force: bool = False,
+    vault_path: Path | str | None = None,
 ) -> None:
     if config_dir is None:
         config_dir = get_config_dir(profile)
@@ -43,11 +43,18 @@ def initialize(
             ensure_password_file,
         )
 
-        config = NinaConfig.load(config_path)
+        config = NinaConfig.load(config_path).with_resolved_paths(config_dir)
+        if vault_path is not None and not config.vault_path:
+            config = merge_config(config, {"vault_path": str(vault_path)}, config_dir)
+            config.save(config_path)
+            ensure_vault_structure(Path(config.vault_path))
         ensure_password_file(config_dir, config.codex.password_ref, force=False)
         return
 
-    config = NinaConfig(profile=profile).with_resolved_paths(config_dir)
+    config = NinaConfig(
+        profile=profile,
+        vault_path=str(vault_path) if vault_path is not None else "",
+    ).with_resolved_paths(config_dir)
     config.save(config_path)
 
     token_path = get_token_path(config_dir)
@@ -55,7 +62,8 @@ def initialize(
         token = generate_token()
         write_token(token_path, token)
 
-    ensure_vault_structure(Path(get_vault_path(config_dir)))
+    if config.vault_path:
+        ensure_vault_structure(Path(config.vault_path))
 
     db_path = get_database_path(config_dir)
     if force and db_path.exists():

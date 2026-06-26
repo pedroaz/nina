@@ -388,7 +388,7 @@ def test_search_open_uses_configured_open_command(
     ]
 
 
-def test_search_open_auto_uses_file_path_for_plain_vault(
+def test_search_open_auto_uses_obsidian_uri_for_plain_vault(
     api_client: TestClient,
     auth_headers: dict[str, str],
     isolated_config: Path,
@@ -414,7 +414,12 @@ def test_search_open_auto_uses_file_path_for_plain_vault(
 
     assert opened.status_code == 200
     assert opened.json() == {"opened": True}
-    assert calls == [["xdg-open", str(note_path)]]
+    assert calls == [
+        [
+            "xdg-open",
+            "obsidian://open?vault=vault&file=Meetings/plain%20vault.md",
+        ]
+    ]
 
 
 def test_search_open_auto_uses_obsidian_uri_for_obsidian_vault(

@@ -49,19 +49,54 @@ def with_profile(profile: str) -> dict[str, str]:
     return env
 
 
-def ensure_profile(profile: str, env: dict[str, str]) -> Path:
+def _normalized_vault_arg(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise SystemExit("Vault path cannot be empty.")
+    return str(Path(value).expanduser())
+
+
+def profile_needs_vault(config_dir: Path) -> bool:
+    config_path = config_dir / "config.yaml"
+    if not config_path.exists():
+        return True
+    return not load_effective_config(config_dir).vault_path
+
+
+def prompt_for_vault(profile: str) -> str:
+    if not sys.stdin.isatty():
+        raise SystemExit(
+            "Vault path is required for profile initialization. "
+            "Pass --vault <path> or set NINA_VAULT."
+        )
+    return _normalized_vault_arg(input(f"Obsidian vault path for Nina profile {profile!r}: "))
+
+
+def init_vault_arg(profile: str, config_dir: Path, vault: str | None) -> str | None:
+    if vault is None:
+        vault = os.environ.get("NINA_VAULT")
+    if vault is not None:
+        return _normalized_vault_arg(vault)
+    if profile_needs_vault(config_dir):
+        return prompt_for_vault(profile)
+    return None
+
+
+def ensure_profile(profile: str, env: dict[str, str], vault: str | None = None) -> Path:
     config_dir = profile_config_dir(profile)
     config_path = config_dir / "config.yaml"
-    if config_path.exists():
-        init = run(["uv", "run", "nina", "init", "--profile", profile], env=env)
-    else:
+    init_cmd = ["uv", "run", "nina", "init", "--profile", profile]
+    vault_arg = init_vault_arg(profile, config_dir, vault)
+    if vault_arg is not None:
+        init_cmd.extend(["--vault", vault_arg])
+    if not config_path.exists():
         print(f"Initializing Nina profile '{profile}' at {config_dir}")
-        init = run(["uv", "run", "nina", "init", "--profile", profile], env=env)
+    init = run(init_cmd, env=env)
     if init.returncode != 0:
         sys.stderr.write(init.stderr)
         raise SystemExit(init.returncode)
     config = load_effective_config(config_dir)
-    ensure_vault_structure(Path(config.vault_path))
+    ensure_vault_structure(Path(config.require_vault_path()))
     if not Path(config.database_path).exists():
         create_database(config.database_path)
         create_fts_table(config.database_path)
@@ -70,13 +105,17 @@ def ensure_profile(profile: str, env: dict[str, str]) -> Path:
 
 def require_config(config_dir: Path) -> None:
     config = load_effective_config(config_dir)
+    try:
+        vault_path = Path(config.require_vault_path())
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     missing = [
         path
         for path in [
             config_dir / "config.yaml",
             config_dir / "token",
             Path(config.database_path),
-            Path(config.vault_path),
+            vault_path,
         ]
         if not path.exists()
     ]
@@ -98,7 +137,7 @@ def daemon_url(config_dir: Path) -> str:
 
 
 def expected_vault(config_dir: Path) -> Path:
-    return Path(load_effective_config(config_dir).vault_path).resolve()
+    return Path(load_effective_config(config_dir).require_vault_path()).resolve()
 
 
 def health(config_dir: Path, timeout: float = 2.0) -> dict[str, object]:
@@ -198,7 +237,7 @@ def ensure_daemon_running(profile: str, env: dict[str, str], config_dir: Path) -
 def cmd_smoke(args: argparse.Namespace) -> int:
     profile = args.profile
     env = with_profile(profile)
-    config_dir = ensure_profile(profile, env)
+    config_dir = ensure_profile(profile, env, args.vault)
     require_config(config_dir)
     result_code = 0
     smoke_ticket_id: str | None = None
@@ -262,7 +301,7 @@ def cmd_smoke(args: argparse.Namespace) -> int:
 def cmd_research_smoke(args: argparse.Namespace) -> int:
     profile = args.profile
     env = with_profile(profile)
-    config_dir = ensure_profile(profile, env)
+    config_dir = ensure_profile(profile, env, args.vault)
     require_config(config_dir)
 
     print(f"Using Nina profile '{profile}' at {config_dir}")
@@ -371,6 +410,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     smoke_parser = sub.add_parser("smoke")
     smoke_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    smoke_parser.add_argument("--vault", help="Obsidian vault path for profile initialization")
     smoke_parser.set_defaults(func=cmd_smoke)
 
     research_smoke_parser = sub.add_parser(
@@ -378,6 +418,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a live Codex research request through the CLI and verify the note output.",
     )
     research_smoke_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    research_smoke_parser.add_argument(
+        "--vault", help="Obsidian vault path for profile initialization"
+    )
     research_smoke_parser.add_argument(
         "--topic",
         default=os.environ.get("NINA_RESEARCH_SMOKE_TOPIC", DEFAULT_RESEARCH_SMOKE_TOPIC),

@@ -62,6 +62,10 @@ def search_reindex_embeddings() -> None:
         config_dir_str = str(get_config_dir(os.environ.get("NINA_PROFILE", "default")))
     config_dir = Path(config_dir_str)
     db_path = str(get_database_path(config_dir))
-    vault_path = str(get_vault_path(config_dir))
+    try:
+        vault_path = str(get_vault_path(config_dir))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
     result = reindex_vault(db_path, vault_path)
     console.print(f"Reindexed vault. Embedded: {result.get('embedded', 0)}")

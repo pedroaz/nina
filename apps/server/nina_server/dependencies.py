@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from nina_core.config import NinaConfig, get_config_dir, load_effective_config
@@ -49,6 +49,13 @@ def _active_config() -> NinaConfig | None:
     return None
 
 
+def _configured_vault_path(config: NinaConfig) -> str:
+    try:
+        return config.require_vault_path()
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 def _active_config_path() -> str:
     config = _active_config()
     if config is not None:
@@ -59,8 +66,14 @@ def _active_config_path() -> str:
 def _active_vault_path() -> str:
     config = _active_config()
     if config is not None:
-        return str(config.vault_path)
-    return os.environ.get("NINA_VAULT_PATH", "")
+        return _configured_vault_path(config)
+    vault_path = os.environ.get("NINA_VAULT_PATH", "").strip()
+    if not vault_path:
+        raise HTTPException(
+            status_code=409,
+            detail="Obsidian vault path is not configured. Run `nina config vault <path>`.",
+        )
+    return vault_path
 
 
 def get_db() -> Session:
@@ -128,7 +141,7 @@ def get_meeting_service(request: Request) -> MeetingService:
     return MeetingService(
         config.database_path,
         config_dir / "recordings",
-        str(config.vault_path),
+        _configured_vault_path(config),
     )
 
 
@@ -138,7 +151,7 @@ def get_voice_service(request: Request) -> VoiceCaptureService:
     return VoiceCaptureService(
         config.database_path,
         config_dir / "voice",
-        str(config.vault_path),
+        _configured_vault_path(config),
     )
 
 

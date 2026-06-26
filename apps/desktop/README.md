@@ -16,7 +16,7 @@ Run the desktop client:
 make desktop
 ```
 
-The client discovers the active profile from `NINA_CONFIG_DIR` or `NINA_PROFILE`, reads the daemon runtime address and bearer token from the profile directory, and falls back to `http://127.0.0.1:8765`.
+The client discovers the active profile from `NINA_CONFIG_DIR` or `NINA_PROFILE`, reads the daemon runtime address and bearer token from the profile directory, and falls back to `http://127.0.0.1:8765`. Note-open actions call the daemon and use `obsidian://open` URIs by default so research and meeting notes open in Obsidian instead of the OS file editor.
 
 The Integrations page lists daemon-reported Confluence, Jira, Slack, and Teams health and lets you save, clear, and test credentials through the daemon API. Stored secrets remain in the active Nina profile under `integrations/*.json`; the desktop only receives field metadata and set/empty status.
 
@@ -37,7 +37,7 @@ nina config voice-global-hotkey "Ctrl+Alt+Space"
 nina config voice-preserve-clipboard true
 ```
 
-The Settings page can also capture a new global hotkey. Capturing a shortcut saves it through `/config`, enables global dictation, and re-registers the desktop portal shortcut. Recording state is shown through the Nina window/taskbar title and an in-app status panel. The Transcriptions page lists recent CLI and desktop voice captures, can stop a recovered global dictation capture, and can clean recent completed/stopped/failed captures without deleting active recordings.
+The Transcriptions page settings gear can capture a new global hotkey. Capturing a shortcut saves it through `/config`, enables global dictation, and re-registers the desktop portal shortcut. Recording state is shown through the Nina window/taskbar title, the left-rail dictation indicator, and an in-app status panel when attention is needed. `Ctrl+B` toggles the Assistant drawer; `Ctrl+O` opens Obsidian with the configured Nina vault path; `Tab` switches between Chat and Agent while the drawer is open.
 
 On Wayland, install `wl-clipboard` for clipboard writes and `ydotool` for focused-window text insertion. Make sure `ydotoold` is running and permitted to inject input. X11 sessions can use `xclip` or `xsel` plus `xdotool` or `xte`.
 

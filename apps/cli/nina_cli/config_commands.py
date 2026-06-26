@@ -130,9 +130,10 @@ def _print_snapshot(snapshot: dict[str, Any]) -> None:
 
 
 def _ensure_storage(previous: NinaConfig, updated: NinaConfig) -> None:
-    updated_vault = Path(updated.vault_path)
-    if previous.vault_path != updated.vault_path or not updated_vault.exists():
-        ensure_vault_structure(updated_vault)
+    if updated.vault_path:
+        updated_vault = Path(updated.vault_path)
+        if previous.vault_path != updated.vault_path or not updated_vault.exists():
+            ensure_vault_structure(updated_vault)
 
     updated_db = Path(updated.database_path)
     if previous.database_path != updated.database_path or not updated_db.exists():
@@ -175,6 +176,9 @@ def vault(
     path: str,
     profile: str = typer.Option("default", help="Profile name"),
 ) -> None:
+    if not path.strip():
+        console.print("[red]Vault path cannot be empty.[/red]")
+        raise typer.Exit(1) from None
     updated, synced = _apply_update(profile, {"vault_path": path})
     console.print(f"Vault path: {updated.vault_path}")
     console.print("Applied to the running daemon." if synced else "Saved on disk.")

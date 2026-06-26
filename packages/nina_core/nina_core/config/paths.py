@@ -22,7 +22,7 @@ def load_effective_config(config_dir: Path) -> NinaConfig:
 
 
 def get_vault_path(config_dir: Path) -> Path:
-    return Path(load_effective_config(config_dir).vault_path)
+    return Path(load_effective_config(config_dir).require_vault_path())
 
 
 def get_database_path(config_dir: Path) -> Path:

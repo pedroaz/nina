@@ -156,17 +156,6 @@ pub fn app_root() -> Div {
         .font_family("Inter")
 }
 
-pub fn page_scroll_frame(content: impl IntoElement) -> Div {
-    div().flex_1().min_h(px(0.)).overflow_hidden().child(
-        div()
-            .id("page-scroll-frame")
-            .size_full()
-            .overflow_y_scrollbar()
-            .p_4()
-            .child(content),
-    )
-}
-
 pub fn page_workspace_frame(content: impl IntoElement) -> Div {
     div()
         .flex_1()

@@ -16,7 +16,6 @@ from nina_core.config import (
     get_log_path,
     get_pid_path,
     get_token_path,
-    get_vault_path,
     initialize,
     load_effective_config,
 )
@@ -229,7 +228,7 @@ def _configuration_entries(config_dir: Path, config: NinaConfig) -> list[tuple[s
         ("Config file", str(get_config_path(config_dir))),
         ("Token", str(get_token_path(config_dir))),
         ("Database", config.database_path),
-        ("Vault", config.vault_path),
+        ("Vault", config.vault_path or "(not configured)"),
         ("Daemon host", config.daemon_host),
         ("Daemon port", str(config.daemon_port)),
         ("Daemon URL", api_base()),
@@ -361,6 +360,8 @@ def _format_codex_status() -> str:
 
 def _format_config_warnings(config: NinaConfig) -> list[str]:
     warnings: list[str] = []
+    if not config.vault_path:
+        warnings.append("Obsidian vault path is not configured. Run `nina config vault <path>`.")
     provider = (config.llm.provider or "").lower()
     llm_status = check_provider_status(config.llm, timeout=1.0)
     transcription = check_transcription_status(config.transcription)
@@ -439,13 +440,19 @@ def open_path(
     ),
 ) -> None:
     config_dir = get_config_dir(profile)
+    config = load_effective_config(config_dir)
+    if target == "vault" and not config.vault_path:
+        console.print(
+            "[red]Obsidian vault path is not configured. Run `nina config vault <path>`.[/red]"
+        )
+        raise typer.Exit(1) from None
     targets: dict[str, Path] = {
         "config": config_dir,
         "all": config_dir,
         "config-folder": config_dir,
         "config-file": get_config_path(config_dir),
         "token": get_token_path(config_dir),
-        "vault": Path(get_vault_path(config_dir)),
+        "vault": Path(config.vault_path),
         "db": get_database_path(config_dir),
         "logs": get_log_path(config_dir),
         "daemon-pid": get_pid_path(config_dir),
@@ -546,15 +553,37 @@ def nina_h() -> None:
     _print_short_help()
 
 
+def _prompt_init_vault_path(config_dir: Path, force: bool, vault_path: str | None) -> str | None:
+    if vault_path is None:
+        should_prompt = force or not get_config_path(config_dir).exists()
+        if not should_prompt:
+            config = load_effective_config(config_dir)
+            should_prompt = not config.vault_path
+        if should_prompt:
+            vault_path = typer.prompt("Obsidian vault path")
+    if vault_path is not None:
+        vault_path = vault_path.strip()
+        if not vault_path:
+            console.print("[red]Vault path cannot be empty.[/red]")
+            raise typer.Exit(1) from None
+    return vault_path
+
+
 @app.command("init", help="Initialize a Nina profile (config dir, token, vault, database).")
 def init(
     profile: str = typer.Option("default", help="Profile name"),
     force: bool = typer.Option(False, help="Overwrite existing config"),
+    vault_path: str | None = typer.Option(None, "--vault", help="Obsidian vault path to use."),
 ) -> None:
     config_dir = get_config_dir(profile)
-    initialize(profile=profile, force=force)
+    vault_path = _prompt_init_vault_path(config_dir, force, vault_path)
+    initialize(profile=profile, config_dir=config_dir, force=force, vault_path=vault_path)
+    config = load_effective_config(config_dir)
     console.print(f"Initialized Nina profile '{profile}' at {config_dir}")
-    console.print(f"  Vault: {get_vault_path(config_dir)}")
+    if config.vault_path:
+        console.print(f"  Vault: {config.vault_path}")
+    else:
+        console.print("  Vault: not configured (run `nina config vault <path>`)")
 
 
 def _print_version() -> None:
@@ -637,7 +666,8 @@ def doctor(
         "token_exists": (get_token_path(config_dir)).exists(),
         "daemon_running": running,
         "database_exists": (get_database_path(config_dir)).exists(),
-        "vault_exists": (get_vault_path(config_dir)).exists(),
+        "vault_configured": bool(config.vault_path),
+        "vault_exists": Path(config.vault_path).exists() if config.vault_path else False,
         "daemon_health": _daemon_health() if running else "offline",
     }
 

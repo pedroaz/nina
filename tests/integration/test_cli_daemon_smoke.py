@@ -79,7 +79,7 @@ def test_real_cli_daemon_task_and_job_flow(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     config_dir = tmp_path / "nina-cli-daemon"
 
-    init = run_cli(repo_root, config_dir, ["init", "--force"])
+    init = run_cli(repo_root, config_dir, ["init", "--force", "--vault", str(config_dir / "vault")])
     assert init.returncode == 0, init.stderr
 
     start = run_cli(repo_root, config_dir, ["daemon", "start"])
@@ -131,7 +131,7 @@ def test_real_cli_daemon_live_research_flow(tmp_path: Path) -> None:
     topic = os.environ.get("NINA_LIVE_CODEX_TOPIC", "modern mobile authentication patterns")
     timeout_seconds = int(os.environ.get("NINA_LIVE_CODEX_TIMEOUT", "600"))
 
-    init = run_cli(repo_root, config_dir, ["init", "--force"])
+    init = run_cli(repo_root, config_dir, ["init", "--force", "--vault", str(config_dir / "vault")])
     assert init.returncode == 0, init.stderr
 
     start = run_cli(repo_root, config_dir, ["daemon", "start"])

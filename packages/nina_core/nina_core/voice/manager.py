@@ -110,8 +110,12 @@ class VoiceRecordingManager:
             if any(not session.done_event.is_set() for session in self._sessions.values()):
                 raise RecorderError("Another voice recording is already active.")
 
+        try:
+            vault_path = config.require_vault_path()
+        except ValueError as exc:
+            raise RecorderError(str(exc)) from exc
         service = VoiceCaptureService(
-            config.database_path, get_voice_recordings_path(config_dir), config.vault_path
+            config.database_path, get_voice_recordings_path(config_dir), vault_path
         )
         capture = service.start(
             title=request.title,

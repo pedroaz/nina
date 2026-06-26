@@ -10,6 +10,7 @@ pub struct HealthResponse {
     pub status: String,
     pub profile: Option<String>,
     pub vault_path: Option<String>,
+    pub vault_configured: Option<bool>,
     pub transcription: Option<TranscriptionHealth>,
 }
 

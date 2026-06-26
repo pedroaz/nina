@@ -3,6 +3,8 @@
 PYTHON := uv run python
 UV := uv
 NINA_PROFILE ?= default
+NINA_VAULT ?=
+NINA_INIT_VAULT_ARG = $(if $(strip $(NINA_VAULT)),--vault "$(NINA_VAULT)",)
 DEFAULT_CONFIG_DIR ?= $(HOME)/.nina/$(NINA_PROFILE)
 NINA_DEV_ENV := NINA_PROFILE=$(NINA_PROFILE)
 NINA_DESKTOP_NATIVE_LIB_DIR := $(CURDIR)/apps/desktop/.native-libs
@@ -50,6 +52,7 @@ help:
 	@printf '%s\n' ""
 	@printf '%s\n' "Variables"
 	@printf '  %-20s %s\n' "NINA_PROFILE" "$(NINA_PROFILE)"
+	@printf '  %-20s %s\n' "NINA_VAULT" "$(NINA_VAULT)"
 	@printf '  %-20s %s\n' "PACKAGE_DIR" "$(PACKAGE_DIR)"
 	@printf '  %-20s %s\n' "PACKAGE_NAME" "$(PACKAGE_NAME)"
 	@printf '  %-20s %s\n' "PACKAGE_COMPONENTS" "$(PACKAGE_COMPONENTS)"
@@ -98,13 +101,13 @@ test-integration:
 check: check-python format lint typecheck test
 
 smoke:
-	$(PYTHON) scripts/nina_dev.py smoke --profile $(NINA_PROFILE)
+	$(PYTHON) scripts/nina_dev.py smoke --profile $(NINA_PROFILE) $(NINA_INIT_VAULT_ARG)
 
 smoke-research:
-	$(PYTHON) scripts/nina_dev.py research-smoke --profile $(NINA_PROFILE) --topic "$(RESEARCH_TOPIC)" --model "$(CODEX_MODEL)" --timeout $(RESEARCH_TIMEOUT)
+	$(PYTHON) scripts/nina_dev.py research-smoke --profile $(NINA_PROFILE) $(NINA_INIT_VAULT_ARG) --topic "$(RESEARCH_TOPIC)" --model "$(CODEX_MODEL)" --timeout $(RESEARCH_TIMEOUT)
 
 dev-init:
-	$(NINA_DEV_ENV) uv run nina init --profile $(NINA_PROFILE)
+	$(NINA_DEV_ENV) uv run nina init --profile $(NINA_PROFILE) $(NINA_INIT_VAULT_ARG)
 
 dev: dev-start
 

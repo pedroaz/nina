@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from nina_core.config import ensure_vault_structure, get_config_path, merge_config
 from nina_core.db import create_database
@@ -99,6 +99,12 @@ async def update_config(request: Request, data: ConfigUpdate) -> dict[str, Any]:
     config_dir = _request_config_dir(request)
     current = _request_config(request)
     patch = data.model_dump(exclude_unset=True, exclude_none=False)
+    if "vault_path" in patch and not str(patch["vault_path"] or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="vault_path cannot be empty. Run `nina config vault <path>` with an Obsidian vault path.",
+        )
+
     if not patch:
         return {
             "config": _config_response(config_dir, current).model_dump(),
@@ -114,7 +120,8 @@ async def update_config(request: Request, data: ConfigUpdate) -> dict[str, Any]:
         updated = runtime.reconfigure(config_dir, updated)
     else:
         updated = apply_runtime_config(request.app, config_dir, updated)
-        ensure_vault_structure(Path(updated.vault_path))
+        if updated.vault_path:
+            ensure_vault_structure(Path(updated.vault_path))
         create_database(updated.database_path)
         create_fts_table(updated.database_path)
 

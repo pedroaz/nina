@@ -134,7 +134,7 @@ class WorkflowRunner:
 
     @property
     def vault_path(self) -> Path:
-        return Path(self.config.vault_path)
+        return Path(self.config.require_vault_path())
 
     @property
     def config_dir(self) -> Path:

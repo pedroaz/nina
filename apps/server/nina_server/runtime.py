@@ -83,7 +83,7 @@ class DaemonRuntime:
             vault_changed or previous.search.live_indexing != self.config.search.live_indexing
         )
 
-        if vault_changed:
+        if vault_changed and self.config.vault_path:
             ensure_vault_structure(Path(self.config.vault_path))
 
         if database_changed:
@@ -122,6 +122,9 @@ class DaemonRuntime:
                 self.watcher.stop()
             except Exception:  # noqa: BLE001
                 pass
+        if not self.config.vault_path:
+            self.watcher = None
+            return
         self.watcher = make_watcher_if_enabled(
             self.config.database_path,
             self.config.vault_path,
@@ -147,20 +150,24 @@ class DaemonRuntime:
         return runtime_path
 
     def start_services(self) -> None:
-        ensure_vault_structure(Path(self.config.vault_path))
+        if self.config.vault_path:
+            ensure_vault_structure(Path(self.config.vault_path))
         self._prepare_database()
         self._ensure_database()
 
         self.scheduler = SchedulerService(self.config.database_path)
         self.scheduler.start()
 
-        self.watcher = make_watcher_if_enabled(
-            self.config.database_path,
-            self.config.vault_path,
-            enabled=self.config.search.live_indexing,
-        )
-        if self.watcher is not None:
-            self.watcher.start()
+        if self.config.vault_path:
+            self.watcher = make_watcher_if_enabled(
+                self.config.database_path,
+                self.config.vault_path,
+                enabled=self.config.search.live_indexing,
+            )
+            if self.watcher is not None:
+                self.watcher.start()
+        else:
+            self.watcher = None
 
         self.codex = CodexSupervisor(
             self.config_dir,

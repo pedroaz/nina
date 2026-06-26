@@ -110,7 +110,11 @@ class MeetingRecordingManager:
                 raise RecorderError("Another meeting recording is already active.")
 
         recordings_path = get_recordings_path(config_dir)
-        service = MeetingService(config.database_path, recordings_path, config.vault_path)
+        try:
+            vault_path = config.require_vault_path()
+        except ValueError as exc:
+            raise RecorderError(str(exc)) from exc
+        service = MeetingService(config.database_path, recordings_path, vault_path)
         meeting = service.start(
             title=request.title,
             source=source_name,

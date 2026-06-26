@@ -136,7 +136,7 @@ class NinaConfig(BaseModel):
         )
 
     def with_resolved_paths(self, config_dir: Path) -> Self:
-        self.vault_path = _normalize_path(self.vault_path, config_dir / "vault", config_dir)
+        self.vault_path = _normalize_configured_path(self.vault_path, config_dir)
         self.database_path = _normalize_path(
             self.database_path,
             config_dir / "nina.db",
@@ -144,9 +144,29 @@ class NinaConfig(BaseModel):
         )
         return self
 
+    def require_vault_path(self) -> str:
+        if not self.vault_path:
+            raise ValueError(
+                "Obsidian vault path is not configured. Run `nina config vault <path>`."
+            )
+        return self.vault_path
+
+    def has_vault_path(self) -> bool:
+        return bool(self.vault_path)
+
 
 def _normalize_path(value: str, default: Path, config_dir: Path) -> str:
     path = Path(value).expanduser() if value else default
+    if not path.is_absolute():
+        path = config_dir / path
+    return str(path)
+
+
+def _normalize_configured_path(value: str, config_dir: Path) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    path = Path(value).expanduser()
     if not path.is_absolute():
         path = config_dir / path
     return str(path)
